@@ -14,6 +14,8 @@ import type {
   HomeData,
   ImportOutcome,
   ImportPreview,
+  PayeeRenameResult,
+  PayeeView,
   PreviewResult,
   Settings,
   TransactionChanges,
@@ -218,6 +220,41 @@ export function createDexieRepository(options: DexieRepositoryOptions = {}): Dat
         if (tx.type === 'expense' && tx.categoryId) counts.set(tx.categoryId, (counts.get(tx.categoryId) ?? 0) + 1);
       }
       return [...counts.entries()].sort((a, b) => b[1] - a[1]).map(([id]) => id);
+    },
+
+    async listPayees(): Promise<PayeeView[]> {
+      const [payees, used] = await Promise.all([db.payees.toArray(), db.transactions.orderBy('payeeId').keys()]);
+      const counts = new Map<unknown, number>();
+      for (const payeeId of used) counts.set(payeeId, (counts.get(payeeId) ?? 0) + 1);
+      return payees
+        .map((payee) => ({ ...payee, transactionCount: counts.get(payee.id) ?? 0 }))
+        .sort((a, b) => a.name.localeCompare(b.name, 'es', { sensitivity: 'base' }));
+    },
+
+    async renamePayee(id, newName): Promise<PayeeRenameResult> {
+      const name = newName.replace(/\s+/g, ' ').trim();
+      if (name === '') return { ok: false, reason: 'empty' };
+      const normalized = normalizeText(name);
+      const result = await db.transaction('rw', db.payees, async (): Promise<PayeeRenameResult> => {
+        const existing = await db.payees.where('normalized').equals(normalized).first();
+        if (existing && existing.id !== id) return { ok: false, reason: 'exists', existing };
+        await db.payees.update(id, { name, normalized });
+        return { ok: true };
+      });
+      if (result.ok) changed();
+      return result;
+    },
+
+    async mergePayees(keepId, mergeIds) {
+      const merged = mergeIds.filter((id) => id !== keepId);
+      if (merged.length === 0) return;
+      await db.transaction('rw', db.payees, db.transactions, async () => {
+        if (!(await db.payees.get(keepId))) throw new Error(`Payee ${keepId} not found`);
+        // Only the payee changes: category, note and the user's edited marker stay as they were.
+        await db.transactions.where('payeeId').anyOf(merged).modify({ payeeId: keepId, updatedAt: stamp() });
+        await db.payees.bulkDelete(merged);
+      });
+      changed();
     },
 
     async previewImport(file, fileName): Promise<PreviewResult> {

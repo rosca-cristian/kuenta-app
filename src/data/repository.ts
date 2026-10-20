@@ -62,6 +62,13 @@ export interface TransactionChanges {
   note?: string;
 }
 
+export interface PayeeView extends Payee {
+  transactionCount: number;
+}
+
+/** Why a rename was refused: another payee already has that name, ignoring case and accents. */
+export type PayeeRenameResult = { ok: true } | { ok: false; reason: 'empty' } | { ok: false; reason: 'exists'; existing: Payee };
+
 /** The only data interface screens use. */
 export interface DataRepository {
   /** Called after every write. Returns an unsubscribe function. */
@@ -84,6 +91,19 @@ export interface DataRepository {
   deleteAdjustment(id: Id): Promise<void>;
   /** Expense categories used on a date, most used first. */
   expenseCategoriesUsedOn(date: IsoDate): Promise<Id[]>;
+
+  /** Every payee, sorted by name, with its number of transactions. */
+  listPayees(): Promise<PayeeView[]>;
+  /**
+   * Renames a payee everywhere it's shown. Refused when another payee already has the
+   * name ignoring case and accents: the caller can offer to merge into it instead.
+   */
+  renamePayee(id: Id, name: string): Promise<PayeeRenameResult>;
+  /**
+   * Moves every transaction of the merged payees to the kept one and deletes the merged
+   * payees, in one transaction. Category, note and the edited marker don't change.
+   */
+  mergePayees(keepId: Id, mergeIds: Id[]): Promise<void>;
 
   previewImport(file: Blob | ArrayBuffer, fileName: string): Promise<PreviewResult>;
   /** Imports the new rows of a preview, except the excluded fingerprints, in one transaction. */

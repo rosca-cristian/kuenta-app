@@ -1,6 +1,13 @@
 import { useEffect, useState } from 'react';
+import { Link } from 'react-router-dom';
+import { ChevronRight, Store, type LucideIcon } from 'lucide-react';
 import { Card, EmptyState, PageHeader } from '../../ui/components';
 import { useRepoQuery, useServices } from '../../lib/repo';
+
+/** Management screens reachable from Más, in the order of the spec (§4.8). */
+const SECTIONS: { to: string; label: string; icon: LucideIcon }[] = [
+  { to: '/mas/comercios', label: 'Comercios', icon: Store },
+];
 
 export function More() {
   const { platform } = useServices();
@@ -13,6 +20,19 @@ export function More() {
     <>
       <PageHeader title="Más" />
       <div className="flex flex-col gap-4 px-4">
+        <nav aria-label="Gestión">
+          <ul className="overflow-hidden rounded-2xl border border-line bg-card">
+            {SECTIONS.map(({ to, label, icon: Icon }) => (
+              <li key={to} className="border-b border-line last:border-b-0">
+                <Link to={to} className="flex min-h-14 items-center gap-3 px-4 active:bg-card-2">
+                  <Icon size={20} className="text-muted" aria-hidden />
+                  <span className="flex-1">{label}</span>
+                  <ChevronRight size={18} className="text-muted" aria-hidden />
+                </Link>
+              </li>
+            ))}
+          </ul>
+        </nav>
         <Card>
           <h2 className="mb-2 font-medium">Ajustes</h2>
           <dl className="grid grid-cols-[1fr_auto] gap-x-4 gap-y-2 text-sm">
@@ -27,7 +47,7 @@ export function More() {
         <Card>
           <h2 className="mb-1 font-medium">Próximamente</h2>
           <p className="text-sm text-muted">
-            Cuentas, categorías, comercios, reglas, presupuestos, objetivos y copias de seguridad.
+            Cuentas, categorías, reglas, presupuestos, objetivos y copias de seguridad.
           </p>
         </Card>
       </div>

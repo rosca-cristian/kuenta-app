@@ -1,4 +1,5 @@
 import type { ButtonHTMLAttributes, ReactNode } from 'react';
+import { Link } from 'react-router-dom';
 import { ChevronLeft, ChevronRight } from 'lucide-react';
 import { addMonths, formatMonth, type Month } from '../domain/dates';
 import { formatMoney, type Cents } from '../domain/money';
@@ -26,10 +27,18 @@ export function Card({ children, className = '' }: { children: ReactNode; classN
   return <section className={`rounded-2xl border border-line bg-card p-4 ${className}`}>{children}</section>;
 }
 
-export function PageHeader({ title, action }: { title: string; action?: ReactNode }) {
+/** A screen's title. `back` adds a link to the parent screen, for screens nested under a tab. */
+export function PageHeader({ title, action, back }: { title: string; action?: ReactNode; back?: string }) {
   return (
-    <header className="flex min-h-14 items-center justify-between px-4 pt-[env(safe-area-inset-top)]">
-      <h1 className="text-xl font-semibold">{title}</h1>
+    <header className="flex min-h-14 items-center justify-between gap-2 px-4 pt-[env(safe-area-inset-top)]">
+      <div className="flex min-w-0 items-center">
+        {back && (
+          <Link to={back} aria-label="Volver" className="-ml-3 flex size-11 shrink-0 items-center justify-center text-muted">
+            <ChevronLeft />
+          </Link>
+        )}
+        <h1 className="truncate text-xl font-semibold">{title}</h1>
+      </div>
       {action}
     </header>
   );
