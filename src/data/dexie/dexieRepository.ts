@@ -159,6 +159,16 @@ export function createDexieRepository(options: DexieRepositoryOptions = {}): Dat
       .catch((error: unknown) => console.error('Could not add the starter data', error)),
   );
 
+  /** Points rules that set one of these payees (by normalized name) to the payee's new name. */
+  async function renameInRules(normalizedNames: string[], name: string) {
+    const targets = new Set(normalizedNames);
+    await db.rules
+      .filter((rule) => rule.actions.payeeName !== undefined && targets.has(normalizeText(rule.actions.payeeName)))
+      .modify((rule) => {
+        rule.actions = { ...rule.actions, payeeName: name };
+      });
+  }
+
   async function toViews(txs: Transaction[]): Promise<TransactionView[]> {
     const [accounts, categories, payees] = await Promise.all([
       db.accounts.toArray(),
@@ -327,10 +337,12 @@ export function createDexieRepository(options: DexieRepositoryOptions = {}): Dat
       const name = tidyName(newName);
       if (name === '') return { ok: false, reason: 'empty' };
       const normalized = normalizeText(name);
-      const result = await db.transaction('rw', db.payees, async (): Promise<PayeeRenameResult> => {
+      const result = await db.transaction('rw', db.payees, db.rules, async (): Promise<PayeeRenameResult> => {
         const existing = await db.payees.where('normalized').equals(normalized).first();
         if (existing && existing.id !== id) return { ok: false, reason: 'exists', existing };
+        const payee = await db.payees.get(id);
         await db.payees.update(id, { name, normalized });
+        if (payee) await renameInRules([payee.normalized], name);
         return { ok: true };
       });
       if (result.ok) changed();
@@ -340,11 +352,14 @@ export function createDexieRepository(options: DexieRepositoryOptions = {}): Dat
     async mergePayees(keepId, mergeIds) {
       const merged = mergeIds.filter((id) => id !== keepId);
       if (merged.length === 0) return;
-      await db.transaction('rw', db.payees, db.transactions, async () => {
-        if (!(await db.payees.get(keepId))) throw new Error(`Payee ${keepId} not found`);
+      await db.transaction('rw', db.payees, db.transactions, db.rules, async () => {
+        const kept = await db.payees.get(keepId);
+        if (!kept) throw new Error(`Payee ${keepId} not found`);
         // Only the payee changes: category, note and the user's edited marker stay as they were.
         await db.transactions.where('payeeId').anyOf(merged).modify({ payeeId: keepId, updatedAt: stamp() });
+        const gone = (await db.payees.bulkGet(merged)).filter((payee) => payee !== undefined);
         await db.payees.bulkDelete(merged);
+        await renameInRules(gone.map((payee) => payee.normalized), kept.name);
       });
       changed();
     },

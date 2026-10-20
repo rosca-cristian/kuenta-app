@@ -166,3 +166,24 @@ describe('merging payees', () => {
     expect(await repo.listPayees()).toEqual(before);
   });
 });
+
+describe('payees set by rules', () => {
+  const amazon: SampleMovement[] = [{ valor: '01/10/2026', concepto: 'Www.amazon*nv14y8j34', movimiento: 'Pago con tarjeta', importe: -10 }];
+  const later: SampleMovement[] = [{ valor: '09/10/2026', concepto: 'Www.amazon*zz99', movimiento: 'Pago con tarjeta', importe: -5 }];
+
+  it('keeps a rule’s payee in step when the payee is renamed', async () => {
+    const repo = await setup();
+    await importFile(repo, amazon);
+    await repo.renamePayee((await payeeNamed(repo, 'Amazon')).id, 'Amazon.es');
+    await importFile(repo, later);
+    expect((await repo.listPayees()).map((p) => [p.name, p.transactionCount])).toEqual([['Amazon.es', 2]]);
+  });
+
+  it('keeps a rule’s payee in step when the payee is merged into another', async () => {
+    const repo = await setup();
+    await importFile(repo, [...amazon, { valor: '02/10/2026', concepto: 'Compras online', importe: -3 }]);
+    await repo.mergePayees((await payeeNamed(repo, 'Compras Online')).id, [(await payeeNamed(repo, 'Amazon')).id]);
+    await importFile(repo, later);
+    expect((await repo.listPayees()).map((p) => [p.name, p.transactionCount])).toEqual([['Compras Online', 3]]);
+  });
+});
