@@ -16,6 +16,10 @@ _Avoid_: Booking date (for the transaction's date)
 The account's balance before its oldest imported transaction, derived from the first import, not typed by the user.
 _Avoid_: Initial balance
 
+**Transfer**:
+A transaction that moves money between two of the user's own accounts. It is neither income nor expense, and it never has a category.
+_Avoid_: Traspaso (in docs), internal movement
+
 **Payee**:
 The other party of a transaction, whether a shop, a person or an employer. Shown in the Spanish UI as "Comercio".
 _Avoid_: Beneficiary, beneficiario, merchant
