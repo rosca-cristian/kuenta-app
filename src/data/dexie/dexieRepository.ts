@@ -55,6 +55,7 @@ const tidyName = (name: string) => name.replace(/\s+/g, ' ').trim();
  * Absent when no update brought them (e.g. a first run).
  */
 const STARTER_RULES_OFFER = 'starterRulesOffer';
+type StarterRulesOffer = 'pending' | 'done';
 
 export function createDexieRepository(options: DexieRepositoryOptions = {}): DataRepository {
   const db = new KuentaDb(options.name);
@@ -67,6 +68,8 @@ export function createDexieRepository(options: DexieRepositoryOptions = {}): Dat
     const row = await db.settings.get(key);
     return row === undefined ? fallback : (row.value as T);
   }
+
+  const setStarterRulesOffer = (state: StarterRulesOffer) => db.settings.put({ key: STARTER_RULES_OFFER, value: state });
 
   async function importAccountId(): Promise<Id> {
     const id = await setting<Id | null>('importAccountId', null);
@@ -215,7 +218,7 @@ export function createDexieRepository(options: DexieRepositoryOptions = {}): Dat
         if (version >= STARTER_DATA_VERSION) return;
         const addedRules = await addStarterData(version);
         if (addedRules > 0 && (await ruleChanges(await db.rules.toArray())).length > 0) {
-          await db.settings.put({ key: STARTER_RULES_OFFER, value: 'pending' });
+          await setStarterRulesOffer('pending');
         }
       })
       .catch((error: unknown) => console.error('Could not add the starter data', error)),
@@ -362,7 +365,7 @@ export function createDexieRepository(options: DexieRepositoryOptions = {}): Dat
 
     async starterRulesOffer() {
       return db.transaction('r', db.settings, db.rules, db.transactions, db.payees, async () => {
-        if ((await setting(STARTER_RULES_OFFER, null)) !== 'pending') return null;
+        if ((await setting<StarterRulesOffer | null>(STARTER_RULES_OFFER, null)) !== 'pending') return null;
         const count = (await ruleChanges(await db.rules.toArray())).length;
         return count > 0 ? count : null;
       });
@@ -370,7 +373,7 @@ export function createDexieRepository(options: DexieRepositoryOptions = {}): Dat
 
     async acceptStarterRulesOffer() {
       const count = await db.transaction('rw', db.settings, db.rules, db.transactions, db.payees, async () => {
-        await db.settings.put({ key: STARTER_RULES_OFFER, value: 'done' });
+        await setStarterRulesOffer('done');
         return applyToNeverEdited(await db.rules.toArray());
       });
       changed();
@@ -378,7 +381,7 @@ export function createDexieRepository(options: DexieRepositoryOptions = {}): Dat
     },
 
     async dismissStarterRulesOffer() {
-      await db.settings.put({ key: STARTER_RULES_OFFER, value: 'done' });
+      await setStarterRulesOffer('done');
       changed();
     },
 
