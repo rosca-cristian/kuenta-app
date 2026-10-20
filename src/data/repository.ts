@@ -66,7 +66,10 @@ export interface PayeeView extends Payee {
   transactionCount: number;
 }
 
-/** Why a rename was refused: another payee already has that name, ignoring case and accents. */
+/**
+ * The outcome of renaming a payee. It's refused when the name is empty, or when another
+ * payee (`existing`) already has it ignoring case and accents.
+ */
 export type PayeeRenameResult = { ok: true } | { ok: false; reason: 'empty' } | { ok: false; reason: 'exists'; existing: Payee };
 
 /** The only data interface screens use. */

@@ -31,6 +31,9 @@ export interface DexieRepositoryOptions {
 
 type Link = ChainLink & { tx: Transaction };
 
+/** A payee name as stored: single spaces, no leading or trailing ones. */
+const tidyName = (name: string) => name.replace(/\s+/g, ' ').trim();
+
 export function createDexieRepository(options: DexieRepositoryOptions = {}): DataRepository {
   const db = new KuentaDb(options.name);
   const now = options.now ?? (() => new Date());
@@ -86,7 +89,7 @@ export function createDexieRepository(options: DexieRepositoryOptions = {}): Dat
   }
 
   async function payeeIdFor(name: string | null): Promise<Id | null> {
-    const trimmed = name?.replace(/\s+/g, ' ').trim() ?? '';
+    const trimmed = tidyName(name ?? '');
     if (trimmed === '') return null;
     const normalized = normalizeText(trimmed);
     const existing = await db.payees.where('normalized').equals(normalized).first();
@@ -223,16 +226,17 @@ export function createDexieRepository(options: DexieRepositoryOptions = {}): Dat
     },
 
     async listPayees(): Promise<PayeeView[]> {
-      const [payees, used] = await Promise.all([db.payees.toArray(), db.transactions.orderBy('payeeId').keys()]);
+      // One payeeId per transaction that has a payee.
+      const [payees, payeeIds] = await Promise.all([db.payees.toArray(), db.transactions.orderBy('payeeId').keys()]);
       const counts = new Map<unknown, number>();
-      for (const payeeId of used) counts.set(payeeId, (counts.get(payeeId) ?? 0) + 1);
+      for (const payeeId of payeeIds) counts.set(payeeId, (counts.get(payeeId) ?? 0) + 1);
       return payees
         .map((payee) => ({ ...payee, transactionCount: counts.get(payee.id) ?? 0 }))
         .sort((a, b) => a.name.localeCompare(b.name, 'es', { sensitivity: 'base' }));
     },
 
     async renamePayee(id, newName): Promise<PayeeRenameResult> {
-      const name = newName.replace(/\s+/g, ' ').trim();
+      const name = tidyName(newName);
       if (name === '') return { ok: false, reason: 'empty' };
       const normalized = normalizeText(name);
       const result = await db.transaction('rw', db.payees, async (): Promise<PayeeRenameResult> => {

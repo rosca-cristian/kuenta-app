@@ -5,8 +5,8 @@ import { bbvaXlsx, type SampleMovement } from './support/bbvaXlsx';
 
 let dbCount = 0;
 
-async function setup() {
-  const repo = createDexieRepository({ name: `kuenta-payees-test-${++dbCount}`, now: () => new Date('2026-10-20T10:00:00') });
+async function setup(now = () => new Date('2026-10-20T10:00:00')) {
+  const repo = createDexieRepository({ name: `kuenta-payees-test-${++dbCount}`, now });
   await repo.completeOnboarding({ importAccountName: 'BBVA' });
   return repo;
 }
@@ -116,7 +116,8 @@ describe('merging payees', () => {
   });
 
   it('keeps the category, note and edited marker of the moved transactions, and every balance', async () => {
-    const repo = await setup();
+    let clock = new Date('2026-10-20T10:00:00');
+    const repo = await setup(() => clock);
     await importFile(repo, october);
     const shopping = (await repo.listCategories()).find((c) => c.name === 'Compras')!;
     const amazon = await payeeNamed(repo, 'Amazon');
@@ -127,6 +128,7 @@ describe('merging payees', () => {
     const accountsBefore = await repo.listAccounts();
     const untouched = (await repo.listTransactions('2026-10')).find((tx) => tx.bankConcept === 'Www.amazon*nm1zi14p4')!;
 
+    clock = new Date('2026-10-21T18:30:00');
     await repo.mergePayees(amazon.id, [order.id, (await payeeNamed(repo, 'Www.amazon*nm1zi14p4')).id]);
 
     const after = (await repo.getTransaction(edited.id))!;
