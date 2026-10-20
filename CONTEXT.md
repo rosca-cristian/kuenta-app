@@ -37,3 +37,7 @@ An uncategorized transaction created to make an account's balance agree with the
 **Gap**:
 A stretch of time with transactions missing between two imports, detected because the bank's running balance doesn't chain from the last imported row to the first new one.
 _Avoid_: Hole, missing period
+
+**Expected charge**:
+An expense from a payee that was charged in each of the last two months and hasn't been charged yet this month. Used to forecast the month's spending.
+_Avoid_: Recurring transaction, subscription
