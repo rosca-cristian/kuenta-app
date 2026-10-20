@@ -9,3 +9,6 @@ playwright-report
 *.xlsx
 *.xls
 *.tsbuildinfo
+
+# Worktrees of agents working on tickets
+.claude/worktrees/
