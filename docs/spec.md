@@ -35,7 +35,7 @@
 2. **Transactions**: expense, income and transfer. Amount, date and account are locked; category, payee and note are editable; an expense or income can be turned into a transfer.
 3. **Categories** with icon and colour (one level), with a Spanish starter set.
 4. **Payees**, filled from the bank concept and renamed by rules.
-5. **Rules** applied on import: set category, payee or note, or turn the transaction into a transfer to another account.
+5. **Rules** that set category or payee, or turn the transaction into a transfer to another account. They run on import and, on request, on existing transactions the user never edited. They can be created from the import preview or suggested when categorizing by hand.
 6. **Accounts**: the import account and non-imported accounts with an optional opening balance and "Actualizar saldo".
 7. **Savings goals** linked to an account.
 8. **Monthly budgets** per category.
@@ -160,18 +160,17 @@ interface Transaction {
 interface Rule {
   id: Id;
   name: string;
-  order: number;             // the first enabled rule that matches wins
+  order: number;             // the first enabled rule that matches wins; the user's new rules go before starter rules
   enabled: boolean;
   match: {
-    field: 'concept' | 'movement' | 'conceptOrMovement';
-    op: 'contains' | 'startsWith' | 'equals';
+    field: 'concept' | 'movement' | 'conceptOrMovement';   // default: conceptOrMovement
+    op: 'contains' | 'startsWith' | 'equals';               // default: contains
     value: string;           // compared ignoring case and accents
     direction: 'any' | 'out' | 'in';   // charge, credit or both
   };
   actions: {
     categoryId?: Id;
     payeeName?: string;      // creates or reuses the payee
-    note?: string;
     transferAccountId?: Id;  // turns it into a transfer with this account
   };
 }
@@ -206,7 +205,7 @@ interface ImportBatch {
 }
 
 interface Setting { key: string; value: unknown }
-// keys: importAccountId, privacyMode, lastBackupAt, lastChangeAt,
+// keys: importAccountId, starterDataVersion, privacyMode, lastBackupAt, lastChangeAt,
 //       onboardingDone, persistRequested, schemaVersion
 ```
 
@@ -280,6 +279,7 @@ Fixed bottom navigation: **Inicio · Movimientos · Importar · Análisis · Má
 - List grouped by day with a header such as "lunes, 20 oct · −45,30 €" (date and day's net).
 - Row: circle with the category's icon and colour; payee or note; category · account in grey; amount on the right (income in green, expenses in normal text colour).
 - Tapping a row opens the **edit sheet**: amount, date and account shown read-only; category, payee and note editable; "Convertir en transferencia" (pick the other account); the original bank concept and movement. For an incoming amount, the category picker shows first the **expense** categories used that same day.
+- **Rule suggestion**: after saving a category on a transaction whose payee has other uncategorized transactions, Kuenta asks "¿Usar siempre Supermercado para Mercadona? (3 más)" with "Crear regla". The proposed text is the concept cut at the first `-`, `*` or digit (`Mercadona - crta del inge` → `mercadona`), editable, with a live count of matching transactions. Not offered for Bizum rows.
 - "Exportar CSV", respecting active filters.
 
 ### 4.4 Importar
@@ -309,12 +309,17 @@ Tabs:
 ### 4.8 Más
 Cuentas · Categorías · Comercios · Reglas · Presupuestos · Objetivos · Copias de seguridad · Ajustes (import account, persistent storage status, space used, version, library licences).
 
-### 4.9 Cuentas
+### 4.9 Reglas, Categorías y Comercios
+- **Reglas**: list in order, with enable/disable, move up/down, edit and delete. The editor shows "Concepto o movimiento contiene ___" and the action (category and/or payee name), with field, operator and direction under "Opciones avanzadas", plus a live count of matching transactions. Saving offers "Aplicar también a N movimientos" (those never edited by the user). Deleting explains that already categorized transactions keep their category.
+- **Categorías**: create, rename, change icon, colour and order; delete with reassignment (§5.6).
+- **Comercios**: list with the number of transactions each; rename; merge several into one. Renaming to an existing name offers to merge.
+
+### 4.10 Cuentas
 - Create a non-imported account with name, type, icon, colour and an optional opening balance.
 - "Actualizar saldo": type the real balance; Kuenta creates a balance adjustment for the difference.
 - Archive. The import account can't be archived until another account is chosen as the import account.
 
-### 4.10 Copias de seguridad
+### 4.11 Copias de seguridad
 - "Exportar copia" (downloads the JSON) and "Compartir copia" (system menu: Drive, email, Telegram…).
 - "Restaurar copia": pick the JSON, see a summary ("Copia del 12/10/2026: 3 cuentas, 845 movimientos…"), confirm with "Sustituir todos mis datos", optionally exporting current data first.
 - "Exportar movimientos (CSV)" with a date range.
@@ -378,20 +383,27 @@ All checked at a 390×844 viewport. Items marked 🧪 have a unit test.
 
 ### 5.6 Categories and payees
 - On first run these categories exist:
-  - Expense: Supermercado, Restaurantes, Transporte, Vivienda, Suministros, Salud, Ocio, Compras, Suscripciones, Viajes, Educación, Regalos, Comisiones e impuestos, Efectivo and Otros gastos.
-  - Income: Nómina, Reembolsos, Intereses and Otros ingresos.
+  - Expense: Supermercado, Restaurantes, Transporte, Vivienda, Suministros, Salud, Ocio, Compras, Suscripciones, Viajes, Educación, Regalos, Comisiones e impuestos, Efectivo, Préstamos and Otros gastos.
+  - Income: Nómina, Prestaciones, Reembolsos, Intereses and Otros ingresos.
+- 🧪 An existing install gets the starter categories and rules it's missing when the app updates (tracked by `starterDataVersion`), without duplicating any the user already has by name.
 - They can be created, renamed, and have their icon, colour and order changed.
 - 🧪 Deleting a used category asks for another category to move its transactions to, or "Sin categoría". Its budgets are deleted and the rules that used it are disabled, all in one transaction.
 - 🧪 Two payees whose normalized names match are never created; the existing one is reused.
+- 🧪 Merging payees moves all their transactions to the kept payee and deletes the others.
+- 🧪 Renaming a payee to a name that already exists (normalized) is refused unless the user chooses to merge.
 
 ### 5.7 Rules
 - 🧪 The first enabled rule that matches, by order, wins.
 - 🧪 "Concepto contiene *mercadona*" matches "Mercadona - crta del inge", ignoring case and accents.
 - 🧪 Direction *out* only matches negative Importe values.
 - 🧪 A rule with `transferAccountId = Revolut` turns `Revolut**5625*` (−200 €) into a transfer BBVA → Revolut of 200 €.
-- 🧪 Starter rule: Concepto contains "retirada" or "cajero" → category Efectivo (a cash withdrawal counts as spent the day it's withdrawn).
-- From a preview row a rule can be created with the concept prefilled; once saved, it's applied to the remaining new rows of that preview.
-- In v1 rules are only applied on import.
+- 🧪 By default a rule matches "concepto o movimiento contiene", so "recibido: alquiler" matches a Bizum whose Movimiento is `Recibido: alquiler`.
+- 🧪 Starter rules (editable, about 15): Mercadona, Carrefour, Alcampo, Lidl, Dia (concept *starts with* "dia ", so "Media Markt" doesn't match) → Supermercado; Uber Eats, Glovo, Just Eat → Restaurantes; Repsol, Waylet, Cepsa, gasolinera → Transporte; Amazon → Compras with payee "Amazon"; "abono de nómina" → Nómina; "comisión" → Comisiones e impuestos; "retirada", "cajero" → Efectivo (a cash withdrawal counts as spent the day it's withdrawn).
+- 🧪 A rule created by the user is placed before the starter rules.
+- 🧪 Applying a rule to existing transactions changes only those the user never edited (no category, payee or note change by hand); it reports how many it changed.
+- 🧪 Deleting a rule leaves the categories it set untouched.
+- 🧪 The rule suggestion proposes the concept cut at the first `-`, `*` or digit: `Mercadona - crta del inge` → `mercadona`, `Www.amazon*nv14y8j34` → `www.amazon`.
+- From a preview row a rule can be created with the concept prefilled; once saved, it's applied to the remaining new rows of that preview, and the preview shows each new row's category (from a rule or "Sin categoría"), editable in the row.
 
 ### 5.8 Search and filters
 - 🧪 Search finds text in the payee, note, bank concept and movement, ignoring case and accents.
@@ -457,7 +469,6 @@ All checked at a 390×844 viewport. Items marked 🧪 have a unit test.
 | Light theme, custom accent colour | Dark only. Colours live in CSS variables, so a light theme would be cheap. |
 | Other UI languages | Spanish only. |
 | Month starting on payday | Calendar month. |
-| Applying rules to existing transactions | In v1 rules only run on import. |
 | Debts and loans, calendar, heatmap, Sankey, custom reports, period comparison | Not chosen or of little value on a phone. |
 | Shortcuts, widgets, notifications | Not chosen or impossible in a PWA. |
 | Multi-user, AI, attachments, location | Out of scope. |
@@ -480,7 +491,7 @@ Each part ends with green tests, a commit, a summary and your go-ahead before th
    - Inicio: balance, month summary, import reminder and "sin categoría" alert.
    - Dark theme, bottom navigation, base components, PWA (manifest, service worker, update prompt).
    - GitHub Actions → GitHub Pages on push to `main`, and a README (run, install on Android, weekly import).
-2. **Rules and categories**: rules engine and screen, "Crear regla con este concepto" in the preview, starter rules, category and payee management.
+2. **Rules and categories**: rules engine and screen, applying rules to existing transactions, rule suggestion when categorizing, categories in the preview with "Crear regla con este concepto", starter rules and categories (also added to existing installs), category management with delete-and-reassign, payee management with rename and merge.
 3. **Transfers and non-imported accounts**: "Convertir en transferencia", rule transfers, Cuentas screen, "Actualizar saldo", archiving.
 4. **Goals and budgets.**
 5. **Charts and full Inicio**: category, monthly and net worth analysis, forecast with expected charges, budget and goal widgets.
