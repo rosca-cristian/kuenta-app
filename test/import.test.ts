@@ -308,7 +308,8 @@ describe('home', () => {
     const home = await repo.home('2026-10');
     expect(home.summary).toEqual({ income: 100000, expenses: 25000, savings: 75000, savingsRate: 0.75 });
     expect(home.totalBalance).toBe(125000);
-    expect(home.uncategorized).toBe(3);
+    // A starter rule categorizes Mercadona.
+    expect(home.uncategorized).toBe(2);
     expect(home.daysSinceLastImport).toBe(0);
   });
 

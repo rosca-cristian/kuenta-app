@@ -27,14 +27,23 @@ test('first run, weekly import, categorize and see the month', async ({ page }) 
       { valor: thisMonth(1), concepto: 'Abono de nómina', movimiento: 'Empresa ejemplo', importe: 1500 },
       { valor: thisMonth(2), concepto: 'Bar ejemplo', movimiento: 'Pago con tarjeta', importe: -40 },
       { valor: thisMonth(2), concepto: 'Bizum', movimiento: 'Recibido: cena', importe: 15 },
+      { valor: thisMonth(3), concepto: 'Mercadona - crta del inge', movimiento: 'Pago con tarjeta', importe: -20 },
     ],
     { startBalance: 1000 },
   );
   await page.getByTestId('file-input').setInputFiles(file);
 
-  await expect(page.getByText('3 nuevos · 0 ya importados')).toBeVisible();
-  await page.getByRole('button', { name: 'Importar 3' }).click();
-  await expect(page.getByTestId('import-created')).toHaveText('3 movimientos creados');
+  await expect(page.getByText('4 nuevos · 0 ya importados')).toBeVisible();
+
+  // Starter rules categorize what they know; the rest shows "Sin categoría".
+  const previewRow = (name: string) => page.locator('li', { hasText: name }).getByTestId('preview-category');
+  await expect(previewRow('Abono De Nómina')).toHaveText('Nómina');
+  await expect(previewRow('Mercadona - Crta Del Inge')).toHaveText('Supermercado');
+  await expect(previewRow('Bar Ejemplo')).toHaveText('Sin categoría');
+  await expect(previewRow('Recibido: cena')).toHaveText('Sin categoría');
+
+  await page.getByRole('button', { name: 'Importar 4' }).click();
+  await expect(page.getByTestId('import-created')).toHaveText('4 movimientos creados');
   await expect(page.getByTestId('balance-check')).toHaveText('✓ Cuadra');
 
   // Categorize the bar expense.
@@ -53,15 +62,15 @@ test('first run, weekly import, categorize and see the month', async ({ page }) 
 
   // Inicio shows the balance and the month.
   await page.getByRole('link', { name: 'Inicio' }).click();
-  await expect(page.getByTestId('total-balance')).toHaveText('2.475,00 €');
+  await expect(page.getByTestId('total-balance')).toHaveText('2.455,00 €');
   await expect(page.getByTestId('month-income')).toHaveText('+1.515,00 €');
-  await expect(page.getByTestId('month-expenses')).toHaveText('40,00 €');
-  await expect(page.getByText('2 movimientos sin categoría')).toBeVisible();
+  await expect(page.getByTestId('month-expenses')).toHaveText('60,00 €');
+  await expect(page.getByText('1 movimiento sin categoría')).toBeVisible();
 
   // Re-importing the same file creates nothing.
   await page.getByRole('link', { name: 'Importar' }).click();
   await page.getByTestId('file-input').setInputFiles(file);
-  await expect(page.getByText('0 nuevos · 3 ya importados')).toBeVisible();
+  await expect(page.getByText('0 nuevos · 4 ya importados')).toBeVisible();
 
   expect(thirdParty).toEqual([]);
 });

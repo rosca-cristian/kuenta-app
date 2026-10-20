@@ -24,6 +24,13 @@ _Avoid_: Traspaso (in docs), internal movement
 The other party of a transaction, whether a shop, a person or an employer. Shown in the Spanish UI as "Comercio".
 _Avoid_: Beneficiary, beneficiario, merchant
 
+**Rule**:
+An instruction applied to new rows on import: when the bank concept or movement matches a text, the transaction gets a category and/or a payee. The first enabled matching rule, by order, wins. Applying a rule never counts as the user editing the transaction.
+_Avoid_: Filter, automation
+
+**Starter rule**:
+A rule Kuenta ships for common Spanish merchants and bank movements (Mercadona → Supermercado, Amazon → Compras with payee "Amazon"…). Once added to an install it's an ordinary rule the user can change.
+
 **Import account**:
 The single account that bank statement imports post into. It's a global setting, not a property of the account.
 _Avoid_: BBVA account (as an account attribute)

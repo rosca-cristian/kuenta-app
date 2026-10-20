@@ -3,6 +3,8 @@ import type { IsoDate } from './dates';
 import { bankOrder, findGaps, type ChainLink, type Gap } from './chain';
 import { cleanPayeeName, normalizeText } from './text';
 import type { BankRow } from './bankRow';
+import type { Id, Rule } from './model';
+import { applyRules } from './rules';
 
 export interface PlannedRow {
   /** Fingerprint of the bank row; identifies it across overlapping files. */
@@ -17,6 +19,8 @@ export interface PlannedRow {
   bankBalance: Cents;
   concept: string;
   movement: string;
+  /** Set by the first rule that matches; null = "Sin categoría". */
+  categoryId: Id | null;
   payeeName: string | null;
   note: string;
 }
@@ -42,15 +46,17 @@ const isBizum = (row: BankRow) => normalizeText(row.concept) === 'bizum';
 
 /**
  * Decides what an import would do: which rows are new, which were imported
- * before, and what to warn about. `existing` are the import account's
- * imported transactions as chain links, with their fingerprints.
+ * before, what rules give each row, and what to warn about. `existing` are
+ * the import account's imported transactions as chain links, with their
+ * fingerprints.
  */
-export function planImport(rows: BankRow[], existing: (ChainLink & { hash: string })[]): ImportPlan {
+export function planImport(rows: BankRow[], existing: (ChainLink & { hash: string })[], rules: Rule[] = []): ImportPlan {
   const known = new Set(existing.map((link) => link.hash));
   const planned: PlannedRow[] = rows.map((row) => {
     const hash = rowHash(row);
     const status = known.has(hash) ? 'already-imported' : 'new';
     known.add(hash);
+    const actions = applyRules(rules, row);
     return {
       hash,
       status,
@@ -62,7 +68,8 @@ export function planImport(rows: BankRow[], existing: (ChainLink & { hash: strin
       bankBalance: row.balance,
       concept: row.concept,
       movement: row.movement,
-      payeeName: isBizum(row) || row.concept === '' ? null : cleanPayeeName(row.concept),
+      categoryId: actions?.categoryId ?? null,
+      payeeName: actions?.payeeName ?? (isBizum(row) || row.concept === '' ? null : cleanPayeeName(row.concept)),
       note: isBizum(row) ? row.movement : '',
     };
   });

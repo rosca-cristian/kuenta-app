@@ -1,5 +1,5 @@
 import Dexie, { type EntityTable } from 'dexie';
-import type { Account, Category, ImportBatch, Payee, Transaction } from '../../domain/model';
+import type { Account, Category, ImportBatch, Payee, Rule, Transaction } from '../../domain/model';
 
 export interface SettingRow {
   key: string;
@@ -11,6 +11,7 @@ export class KuentaDb extends Dexie {
   categories!: EntityTable<Category, 'id'>;
   payees!: EntityTable<Payee, 'id'>;
   transactions!: EntityTable<Transaction, 'id'>;
+  rules!: EntityTable<Rule, 'id'>;
   importBatches!: EntityTable<ImportBatch, 'id'>;
   settings!: EntityTable<SettingRow, 'key'>;
 
@@ -25,5 +26,7 @@ export class KuentaDb extends Dexie {
       importBatches: 'id, importedAt',
       settings: 'key',
     });
+    // Part 2: rules. Starter data for existing installs is added on startup, not here (see the repository).
+    this.version(2).stores({ rules: 'id, order' });
   }
 }

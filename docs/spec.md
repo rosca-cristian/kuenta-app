@@ -207,10 +207,12 @@ interface ImportBatch {
 
 interface Setting { key: string; value: unknown }
 // keys: importAccountId, privacyMode, lastBackupAt, lastChangeAt,
-//       onboardingDone, persistRequested, schemaVersion
+//       onboardingDone, persistRequested, schemaVersion, starterDataVersion
 ```
 
-### Dexie indexes (schema version 1)
+### Dexie indexes
+
+Version 1 (part 1) has every table below except `rules`, `budgetLimits` and `goals`; version 2 (part 2) adds `rules`.
 
 ```
 accounts:      id, order
@@ -378,8 +380,8 @@ All checked at a 390×844 viewport. Items marked 🧪 have a unit test.
 
 ### 5.6 Categories and payees
 - On first run these categories exist:
-  - Expense: Supermercado, Restaurantes, Transporte, Vivienda, Suministros, Salud, Ocio, Compras, Suscripciones, Viajes, Educación, Regalos, Comisiones e impuestos, Efectivo and Otros gastos.
-  - Income: Nómina, Reembolsos, Intereses and Otros ingresos.
+  - Expense: Supermercado, Restaurantes, Transporte, Vivienda, Suministros, Salud, Ocio, Compras, Suscripciones, Viajes, Educación, Regalos, Comisiones e impuestos, Efectivo, Préstamos and Otros gastos.
+  - Income: Nómina, Reembolsos, Intereses, Prestaciones and Otros ingresos.
 - They can be created, renamed, and have their icon, colour and order changed.
 - 🧪 Deleting a used category asks for another category to move its transactions to, or "Sin categoría". Its budgets are deleted and the rules that used it are disabled, all in one transaction.
 - 🧪 Two payees whose normalized names match are never created; the existing one is reused.
