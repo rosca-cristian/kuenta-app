@@ -2,6 +2,7 @@ import { KuentaDb } from './db';
 import { STARTER_CATEGORIES, STARTER_DATA_VERSION, STARTER_RULES } from '../seed';
 import { bankOrder, findGaps, latestBalanceOf, openingBalanceOf, type ChainLink } from '../../domain/chain';
 import { planImport } from '../../domain/importPlan';
+import { applyRules as firstMatchActions } from '../../domain/rules';
 import { monthSummary } from '../../domain/stats';
 import { addMonths, daysBetween, today } from '../../domain/dates';
 import { normalizeText } from '../../domain/text';
@@ -42,8 +43,18 @@ export interface DexieRepositoryOptions {
 
 type Link = ChainLink & { tx: Transaction };
 
+/** What applying rules changes on one transaction. */
+type RuleChange = { id: Id; categoryId?: Id; payeeName?: string };
+
 /** A payee name as stored: single spaces, no leading or trailing ones. */
 const tidyName = (name: string) => name.replace(/\s+/g, ' ').trim();
+
+/**
+ * Setting for Inicio's offer to apply the starter rules to the transactions imported
+ * before an update brought them: 'pending' until accepted or dismissed, then 'done'.
+ * Absent when no update brought them (e.g. a first run).
+ */
+const STARTER_RULES_OFFER = 'starterRulesOffer';
 
 export function createDexieRepository(options: DexieRepositoryOptions = {}): DataRepository {
   const db = new KuentaDb(options.name);
@@ -112,10 +123,10 @@ export function createDexieRepository(options: DexieRepositoryOptions = {}): Dat
 
   /**
    * Adds the starter categories missing by normalized name, and the starter rules
-   * newer than `fromVersion` that the install doesn't already have. Call it inside
-   * a transaction on categories, rules and settings.
+   * newer than `fromVersion` that the install doesn't already have. Returns how many
+   * rules it added. Call it inside a transaction on categories, rules and settings.
    */
-  async function addStarterData(fromVersion: number) {
+  async function addStarterData(fromVersion: number): Promise<number> {
     const categories = await db.categories.toArray();
     const categoryIds = new Map(categories.map((category) => [normalizeText(category.name), category.id]));
     let categoryOrder = Math.max(-1, ...categories.map((category) => category.order));
@@ -130,8 +141,10 @@ export function createDexieRepository(options: DexieRepositoryOptions = {}): Dat
     const rules = await db.rules.toArray();
     const existingMatches = new Set(rules.map((rule) => matchKey(rule.match)));
     let ruleOrder = Math.max(-1, ...rules.map((rule) => rule.order));
+    let added = 0;
     for (const starter of STARTER_RULES.filter((rule) => rule.since > fromVersion)) {
       if (existingMatches.has(matchKey(starter.match))) continue;
+      added++;
       const actions: RuleActions = { categoryId: categoryIds.get(normalizeText(starter.category))! };
       if (starter.payeeName) actions.payeeName = starter.payeeName;
       await db.rules.add({
@@ -144,17 +157,66 @@ export function createDexieRepository(options: DexieRepositoryOptions = {}): Dat
       });
     }
     await db.settings.put({ key: 'starterDataVersion', value: STARTER_DATA_VERSION });
+    return added;
+  }
+
+  /**
+   * What the rules (first enabled match wins, by order) would change on the imported
+   * transactions the user never edited: only what differs from what they have.
+   */
+  async function ruleChanges(rules: Rule[]): Promise<RuleChange[]> {
+    const [txs, payees] = await Promise.all([
+      db.transactions.filter((tx) => tx.source === 'import' && tx.type !== 'transfer' && tx.editedAt === null).toArray(),
+      db.payees.toArray(),
+    ]);
+    const payeeNames = new Map(payees.map((payee) => [payee.id, payee.normalized]));
+    const changes: RuleChange[] = [];
+    for (const tx of txs) {
+      const actions = firstMatchActions(rules, {
+        concept: tx.bankConcept ?? '',
+        movement: tx.bankMovement ?? '',
+        amount: signedAmount(tx, tx.accountId),
+      });
+      if (!actions) continue;
+      const change: RuleChange = { id: tx.id };
+      if (actions.categoryId !== undefined && actions.categoryId !== tx.categoryId) change.categoryId = actions.categoryId;
+      const payeeName = tidyName(actions.payeeName ?? '');
+      if (payeeName !== '' && normalizeText(payeeName) !== (tx.payeeId && payeeNames.get(tx.payeeId))) change.payeeName = payeeName;
+      if (change.categoryId !== undefined || change.payeeName !== undefined) changes.push(change);
+    }
+    return changes;
+  }
+
+  /**
+   * Applies the rules to the transactions the user never edited, leaving them never
+   * edited. Returns how many changed. Call it inside a transaction on rules, transactions and payees.
+   */
+  async function applyToNeverEdited(rules: Rule[]): Promise<number> {
+    const changes = await ruleChanges(rules);
+    for (const change of changes) {
+      const update: Partial<Transaction> = { updatedAt: stamp() };
+      if (change.categoryId !== undefined) update.categoryId = change.categoryId;
+      if (change.payeeName !== undefined) update.payeeId = await payeeIdFor(change.payeeName);
+      await db.transactions.update(change.id, update);
+    }
+    return changes.length;
   }
 
   // On startup, an install made by an older version gets the starter data added since.
   // The first run seeds the current version itself (completeOnboarding). If it fails,
   // nothing is written, the app still opens and the next startup tries again.
+  // When the new starter rules would change transactions already imported, Inicio
+  // offers to apply them (STARTER_RULES_OFFER).
   db.on('ready', () =>
     db
-      .transaction('rw', db.categories, db.rules, db.settings, async () => {
+      .transaction('rw', [db.categories, db.rules, db.settings, db.transactions, db.payees], async () => {
         if (!(await setting('onboardingDone', false))) return;
         const version = await setting('starterDataVersion', 1);
-        if (version < STARTER_DATA_VERSION) await addStarterData(version);
+        if (version >= STARTER_DATA_VERSION) return;
+        const addedRules = await addStarterData(version);
+        if (addedRules > 0 && (await ruleChanges(await db.rules.toArray())).length > 0) {
+          await db.settings.put({ key: STARTER_RULES_OFFER, value: 'pending' });
+        }
       })
       .catch((error: unknown) => console.error('Could not add the starter data', error)),
   );
@@ -281,6 +343,42 @@ export function createDexieRepository(options: DexieRepositoryOptions = {}): Dat
         const updated: Rule = { ...rule, ...changes, match: { ...rule.match, ...changes.match } };
         await db.rules.put(updated);
       });
+      changed();
+    },
+
+    async applyRules(ruleId) {
+      const count = await db.transaction('rw', db.rules, db.transactions, db.payees, async () => {
+        let rules = await db.rules.toArray();
+        if (ruleId !== undefined) {
+          const rule = rules.find((r) => r.id === ruleId);
+          if (!rule) throw new Error(`Rule ${ruleId} not found`);
+          rules = [{ ...rule, enabled: true }];
+        }
+        return applyToNeverEdited(rules);
+      });
+      if (count > 0) changed();
+      return count;
+    },
+
+    async starterRulesOffer() {
+      return db.transaction('r', db.settings, db.rules, db.transactions, db.payees, async () => {
+        if ((await setting(STARTER_RULES_OFFER, null)) !== 'pending') return null;
+        const count = (await ruleChanges(await db.rules.toArray())).length;
+        return count > 0 ? count : null;
+      });
+    },
+
+    async acceptStarterRulesOffer() {
+      const count = await db.transaction('rw', db.settings, db.rules, db.transactions, db.payees, async () => {
+        await db.settings.put({ key: STARTER_RULES_OFFER, value: 'done' });
+        return applyToNeverEdited(await db.rules.toArray());
+      });
+      changed();
+      return count;
+    },
+
+    async dismissStarterRulesOffer() {
+      await db.settings.put({ key: STARTER_RULES_OFFER, value: 'done' });
       changed();
     },
 

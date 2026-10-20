@@ -1,8 +1,8 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Alert, Amount, Card, MonthSelector, PageHeader } from '../../ui/components';
+import { Alert, Amount, Button, Card, MonthSelector, PageHeader } from '../../ui/components';
 import { IconBadge } from '../../ui/icons';
-import { useRepoQuery } from '../../lib/repo';
+import { useRepo, useRepoQuery } from '../../lib/repo';
 import { formatDate, monthOf, today } from '../../domain/dates';
 import { formatMoney } from '../../domain/money';
 
@@ -63,6 +63,7 @@ export function Home() {
             Faltan movimientos entre el {formatDate(gap.after)} y el {formatDate(gap.before)}: importa ese periodo.
           </Alert>
         ))}
+        <StarterRulesOffer />
         {home.uncategorized > 0 && (
           <Alert onClick={() => navigate('/movimientos')}>
             {home.uncategorized === 1 ? '1 movimiento sin categoría' : `${home.uncategorized} movimientos sin categoría`}
@@ -83,5 +84,50 @@ export function Home() {
         </Card>
       </div>
     </>
+  );
+}
+
+/**
+ * After the update that brought the starter rules: offers to apply them to the
+ * transactions already imported, then says how many changed.
+ */
+function StarterRulesOffer() {
+  const repo = useRepo();
+  const offer = useRepoQuery((r) => r.starterRulesOffer());
+  const [busy, setBusy] = useState(false);
+  const [changed, setChanged] = useState<number | null>(null);
+
+  async function accept() {
+    setBusy(true);
+    try {
+      setChanged(await repo.acceptStarterRulesOffer());
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  if (changed !== null) {
+    return (
+      <Alert onClick={() => setChanged(null)}>
+        <span role="status">Reglas de serie aplicadas: {changed === 1 ? '1 movimiento cambiado' : `${changed} movimientos cambiados`}.</span>
+      </Alert>
+    );
+  }
+  if (!offer) return null;
+  return (
+    <Card>
+      <p className="text-sm">
+        Aplicar las reglas de serie a {offer === 1 ? '1 movimiento ya importado' : `${offer} movimientos ya importados`}
+      </p>
+      <p className="mt-1 text-xs text-muted">Solo cambian los que no has editado a mano.</p>
+      <div className="mt-3 flex gap-2">
+        <Button onClick={() => void accept()} disabled={busy}>
+          Aplicar
+        </Button>
+        <Button variant="secondary" onClick={() => void repo.dismissStarterRulesOffer()} disabled={busy}>
+          Descartar
+        </Button>
+      </div>
+    </Card>
   );
 }

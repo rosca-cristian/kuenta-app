@@ -50,7 +50,10 @@ function partOneData(extraCategories: [string, Category['kind']][] = []) {
 
 let dbCount = 0;
 
-async function createPartOneDatabase(options: { onboardingDone?: boolean; extraCategories?: [string, Category['kind']][] } = {}) {
+/** `categorizedByHand`: the user categorized every Part 1 transaction by hand. */
+async function createPartOneDatabase(
+  options: { onboardingDone?: boolean; extraCategories?: [string, Category['kind']][]; categorizedByHand?: boolean } = {},
+) {
   const name = `kuenta-upgrade-${++dbCount}`;
   const data = partOneData(options.extraCategories);
   const db = new Dexie(name);
@@ -65,6 +68,9 @@ async function createPartOneDatabase(options: { onboardingDone?: boolean; extraC
   await db.table('accounts').add(data.account);
   await db.table('categories').bulkAdd(data.categories);
   await db.table('payees').bulkAdd(data.payees);
+  if (options.categorizedByHand) {
+    data.transactions = data.transactions.map((tx) => ({ ...tx, categoryId: tx.categoryId ?? 'cat-0', editedAt: stamp }));
+  }
   await db.table('transactions').bulkAdd(data.transactions);
   await db.table('importBatches').add({
     id: 'batch-1', importedAt: stamp, fileName: 'movimientos.xlsx', accountId: data.account.id, dateFrom: '2026-09-02',
@@ -155,6 +161,71 @@ describe('updating a Part 1 install', () => {
     const { name } = await createPartOneDatabase({ onboardingDone: false });
     const repo = open(name);
     expect(await repo.listRules()).toHaveLength(0);
+  });
+});
+
+describe('the offer to apply the starter rules to what was already imported', () => {
+  const categoryOf = async (repo: ReturnType<typeof open>, id: string, month: string) =>
+    (await repo.listTransactions(month)).find((tx) => tx.id === id)!.category?.name ?? null;
+
+  it('counts the never-edited transactions the starter rules would change', async () => {
+    const { name } = await createPartOneDatabase();
+    // Two Mercadona purchases; the edited bar transaction doesn't count.
+    expect(await open(name).starterRulesOffer()).toBe(2);
+  });
+
+  it('applies the rules when accepted, says how many changed, and is gone for good', async () => {
+    const { name } = await createPartOneDatabase();
+    const repo = open(name);
+    expect((await repo.home('2026-10')).uncategorized).toBe(2);
+
+    expect(await repo.acceptStarterRulesOffer()).toBe(2);
+    expect(await categoryOf(repo, 'tx-1', '2026-09')).toBe('Supermercado');
+    expect(await categoryOf(repo, 'tx-3', '2026-10')).toBe('Supermercado');
+    expect(await categoryOf(repo, 'tx-2', '2026-09')).toBe('Restaurantes');
+    expect((await repo.home('2026-10')).uncategorized).toBe(0);
+    expect(await repo.starterRulesOffer()).toBeNull();
+    expect(await open(name).starterRulesOffer()).toBeNull();
+  });
+
+  it('changes nothing when dismissed, and is gone for good', async () => {
+    const { name } = await createPartOneDatabase();
+    const repo = open(name);
+    await repo.dismissStarterRulesOffer();
+    expect(await repo.starterRulesOffer()).toBeNull();
+    expect(await categoryOf(repo, 'tx-1', '2026-09')).toBeNull();
+    expect(await open(name).starterRulesOffer()).toBeNull();
+  });
+
+  it('is not made when the starter rules would change nothing', async () => {
+    const { name } = await createPartOneDatabase();
+    const repo = open(name);
+    for (const id of ['tx-1', 'tx-3']) await repo.updateTransaction(id, { note: 'compra' });
+    expect(await repo.starterRulesOffer()).toBeNull();
+  });
+
+  it('is not made when the update found nothing to change, even if a later rule would', async () => {
+    const { name } = await createPartOneDatabase({ categorizedByHand: true });
+    const repo = open(name);
+    const result = await repo.previewImport(
+      await bbvaXlsx([{ valor: '15/10/2026', concepto: 'Kfc', importe: -9 }], { startBalance: 910 }),
+      'movimientos.xlsx',
+    );
+    if (!result.ok) throw new Error(result.error.message);
+    await repo.commitImport(result.preview);
+    await repo.createRule({ name: 'Kfc', match: { value: 'kfc' }, actions: { categoryId: 'cat-1' } });
+    expect(await repo.starterRulesOffer()).toBeNull();
+  });
+
+  it('is not made on a first run, which imports with the rules already', async () => {
+    const repo = createDexieRepository({ name: `kuenta-upgrade-${++dbCount}`, now: () => new Date('2026-10-20T10:00:00') });
+    await repo.completeOnboarding({ importAccountName: 'BBVA' });
+    const result = await repo.previewImport(await bbvaXlsx([{ valor: '01/10/2026', concepto: 'Kfc', importe: -9 }]), 'movimientos.xlsx');
+    if (!result.ok) throw new Error(result.error.message);
+    await repo.commitImport(result.preview);
+    const restaurants = (await repo.listCategories()).find((c) => c.name === 'Restaurantes')!;
+    await repo.createRule({ name: 'Kfc', match: { value: 'kfc' }, actions: { categoryId: restaurants.id } });
+    expect(await repo.starterRulesOffer()).toBeNull();
   });
 });
 
