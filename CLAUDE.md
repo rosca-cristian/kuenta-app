@@ -16,6 +16,5 @@ Single-context: one `CONTEXT.md` and `docs/adr/` at the repo root. See `docs/age
 
 ## Commits
 
-- End every commit message with this trailer, so the user is credited as co-author:
-  `Co-Authored-By: rosca-cristian <cristiancod98@gmail.com>`
-- Don't add any Claude attribution to commit messages: no `Co-Authored-By: Claude …` line and no `Claude-Session:` line.
+- Commits are authored by the user, not by Claude: author and committer `rosca-cristian <cristiancod98@gmail.com>` (set `user.name` and `user.email` in the repo's git config, or pass `--author`).
+- Don't add any Claude attribution to commit messages: no `Co-Authored-By:` line for Claude and no `Claude-Session:` line.
