@@ -20,6 +20,10 @@ import { readBbvaFile } from '../../import/bbva/reader';
 import type {
   AccountView,
   BalanceCheck,
+  CategoryChanges,
+  CategoryDraft,
+  CategorySaveResult,
+  CategoryUsage,
   DataRepository,
   HomeData,
   ImportOutcome,
@@ -234,6 +238,14 @@ export function createDexieRepository(options: DexieRepositoryOptions = {}): Dat
       });
   }
 
+  /** Why a category can't take this name: it's empty, or another category has it ignoring case and accents. */
+  async function refuseCategoryName(name: string, ownId: Id): Promise<CategorySaveResult | null> {
+    if (name === '') return { ok: false, reason: 'empty' };
+    const normalized = normalizeText(name);
+    const existing = await db.categories.filter((category) => category.id !== ownId && normalizeText(category.name) === normalized).first();
+    return existing ? { ok: false, reason: 'exists', existing } : null;
+  }
+
   async function toViews(txs: Transaction[]): Promise<TransactionView[]> {
     const [accounts, categories, payees] = await Promise.all([
       db.accounts.toArray(),
@@ -315,6 +327,77 @@ export function createDexieRepository(options: DexieRepositoryOptions = {}): Dat
 
     async listCategories() {
       return db.categories.orderBy('order').filter((category) => !category.archived).toArray();
+    },
+
+    async createCategory(draft: CategoryDraft): Promise<CategorySaveResult> {
+      const id = crypto.randomUUID();
+      const name = tidyName(draft.name);
+      const result = await db.transaction('rw', db.categories, async (): Promise<CategorySaveResult> => {
+        const refused = await refuseCategoryName(name, id);
+        if (refused) return refused;
+        const last = await db.categories.orderBy('order').last();
+        await db.categories.add({ ...draft, name, id, order: last ? last.order + 1 : 0, archived: false });
+        return { ok: true, id };
+      });
+      if (result.ok) changed();
+      return result;
+    },
+
+    async updateCategory(id, changes: CategoryChanges): Promise<CategorySaveResult> {
+      const update = changes.name === undefined ? { ...changes } : { ...changes, name: tidyName(changes.name) };
+      const result = await db.transaction('rw', db.categories, async (): Promise<CategorySaveResult> => {
+        if (!(await db.categories.get(id))) throw new Error(`Category ${id} not found`);
+        const refused = update.name === undefined ? null : await refuseCategoryName(update.name, id);
+        if (refused) return refused;
+        await db.categories.update(id, update);
+        return { ok: true, id };
+      });
+      if (result.ok) changed();
+      return result;
+    },
+
+    async moveCategory(id, direction) {
+      await db.transaction('rw', db.categories, async () => {
+        const category = await db.categories.get(id);
+        if (!category) throw new Error(`Category ${id} not found`);
+        const sameKind = await db.categories
+          .orderBy('order')
+          .filter((other) => other.kind === category.kind && !other.archived)
+          .toArray();
+        const neighbour = sameKind[sameKind.findIndex((other) => other.id === id) + (direction === 'up' ? -1 : 1)];
+        if (!neighbour) return;
+        await db.categories.update(id, { order: neighbour.order });
+        await db.categories.update(neighbour.id, { order: category.order });
+      });
+      changed();
+    },
+
+    async categoryUsage(id): Promise<CategoryUsage> {
+      const [transactions, rules] = await Promise.all([
+        db.transactions.where('categoryId').equals(id).count(),
+        db.rules.filter((rule) => rule.actions.categoryId === id).count(),
+      ]);
+      return { transactions, rules };
+    },
+
+    async deleteCategory(id, moveTo) {
+      await db.transaction('rw', db.categories, db.transactions, db.rules, async () => {
+        if (!(await db.categories.get(id))) throw new Error(`Category ${id} not found`);
+        if (moveTo === id || (moveTo !== null && !(await db.categories.get(moveTo)))) {
+          throw new Error(`Can't move the transactions of category ${id} to ${moveTo}`);
+        }
+        // Only the category changes: the user's edited marker and every amount stay as they were.
+        await db.transactions.where('categoryId').equals(id).modify({ categoryId: moveTo, updatedAt: stamp() });
+        // Disabled rather than deleted, so the user can repoint them; any payee action stays.
+        await db.rules
+          .filter((rule) => rule.actions.categoryId === id)
+          .modify((rule) => {
+            delete rule.actions.categoryId;
+            rule.enabled = false;
+          });
+        await db.categories.delete(id);
+      });
+      changed();
     },
 
     async listRules() {

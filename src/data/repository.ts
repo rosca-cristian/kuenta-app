@@ -3,7 +3,7 @@ import type { IsoDate, Month } from '../domain/dates';
 import type { Gap } from '../domain/chain';
 import type { ImportPlan } from '../domain/importPlan';
 import type { MonthSummary } from '../domain/stats';
-import type { Account, Category, Id, ImportBatch, Payee, Rule, RuleActions, RuleMatch, Transaction } from '../domain/model';
+import type { Account, Category, CategoryKind, Id, ImportBatch, Payee, Rule, RuleActions, RuleMatch, Transaction } from '../domain/model';
 import type { ReadError } from '../import/bbva/reader';
 
 export interface AccountView extends Account {
@@ -72,6 +72,33 @@ export interface PayeeView extends Payee {
  */
 export type PayeeRenameResult = { ok: true } | { ok: false; reason: 'empty' } | { ok: false; reason: 'exists'; existing: Payee };
 
+export interface CategoryDraft {
+  name: string;
+  kind: CategoryKind;
+  /** A name from the icon set. */
+  icon: string;
+  /** A palette token. */
+  color: string;
+}
+
+export type CategoryChanges = Partial<CategoryDraft>;
+
+/**
+ * The outcome of creating or editing a category. It's refused when the name is empty, or
+ * when another category (`existing`) already has it ignoring case and accents.
+ */
+export type CategorySaveResult =
+  | { ok: true; id: Id }
+  | { ok: false; reason: 'empty' }
+  | { ok: false; reason: 'exists'; existing: Category };
+
+export interface CategoryUsage {
+  /** Transactions with the category. */
+  transactions: number;
+  /** Rules whose action sets the category. */
+  rules: number;
+}
+
 export interface RuleDraft {
   name: string;
   /** Defaults to true. */
@@ -99,7 +126,21 @@ export interface DataRepository {
   completeOnboarding(input: { importAccountName: string }): Promise<void>;
 
   listAccounts(): Promise<AccountView[]>;
+  /** Categories in order; pickers show them in this order. */
   listCategories(): Promise<Category[]>;
+  /** Places the category after every existing one of its kind. */
+  createCategory(draft: CategoryDraft): Promise<CategorySaveResult>;
+  updateCategory(id: Id, changes: CategoryChanges): Promise<CategorySaveResult>;
+  /** Swaps the category with the previous or next one of the same kind. */
+  moveCategory(id: Id, direction: 'up' | 'down'): Promise<void>;
+  /** What deleting the category would affect. */
+  categoryUsage(id: Id): Promise<CategoryUsage>;
+  /**
+   * Deletes a category in one transaction: its transactions move to `moveTo` (null for
+   * "Sin categoría") without counting as the user's edits, and the rules that set it lose
+   * that action and are disabled, so the user can repoint them.
+   */
+  deleteCategory(id: Id, moveTo: Id | null): Promise<void>;
 
   /** Rules in order: the first enabled one that matches a row wins. */
   listRules(): Promise<Rule[]>;
