@@ -217,3 +217,26 @@ Subcategorías, etiquetas, plantillas o favoritos, objetivos de ahorro, importar
   Los componentes viven en el propio repositorio (MIT): sin estética impuesta, con poco peso y control total sobre el aspecto en el móvil. Radix aporta accesibilidad (foco, lectores de pantalla, teclado) y Vaul la hoja inferior arrastrable que es el corazón del registro rápido. Alternativas descartadas: **MUI** (pesada y con aspecto Material genérico), **Ionic React** (encaja con Capacitor, pero impone su router y su estética, y Capacitor funciona igual con cualquier app web) y **Mantine** (muy completa pero pensada antes para escritorio y más pesada).
 - **Gráficos: Recharts.** Componentes React declarativos en SVG, adaptables al tamaño de pantalla, con tema fácil de cambiar entre claro y oscuro, y suficientes para dónut, barras y líneas. Alternativas descartadas: **ECharts** (muy potente pero varias veces más pesada), **Chart.js** (canvas imperativo, peor integración con React y con el tema) y **visx** (demasiado bajo nivel para tres gráficos).
 - **Resto:** Dexie.js para IndexedDB detrás de una interfaz de repositorio (para cambiar a SQLite de Capacitor sin tocar pantallas), vite-plugin-pwa para el service worker, Vitest + fake-indexeddb para las pruebas y `Intl.NumberFormat`/`Intl.DateTimeFormat` con `es-ES` para formatos.
+
+---
+
+## 5. Cómo traer los movimientos de BBVA sin conectar la app al banco
+
+Investigación añadida tras la fase 2 (petición: "subir un Excel una vez a la semana; ¿hay algo mejor?").
+
+| Opción | Cómo funciona | Ventajas | Inconvenientes | Complejidad | Propuesta |
+|---|---|---|---|---|---|
+| **A. Excel de BBVA (.xlsx)** | En bbva.es (y en algunas versiones de la app) → cuenta → Movimientos → elegir fechas → descargar en Excel. El archivo trae una hoja "Informe BBVA" con unas filas de cabecera y luego las columnas *Fecha, F.Valor, Concepto, Movimiento, Importe, Divisa, Disponible, Divisa, Observaciones*. | Datos completos y estructurados; incluye el **saldo disponible**, que sirve para comprobar que la importación cuadra. | El formato puede cambiar sin aviso (se mitiga buscando la fila de cabecera por nombre). Las tarjetas de crédito se descargan aparte. Hay que confirmarlo con un archivo real. | Media | **Sí, v1** |
+| **B. "Compartir → Kuenta"** (Web Share Target) | Tras descargar el Excel, en Android se pulsa *Compartir* y se elige Kuenta, que abre directamente la vista previa de importación. Funciona sin servidor: lo recibe el service worker. | Ahorra pasos (no hay que buscar el archivo desde la app). | Solo funciona con la PWA instalada (Chrome en Android). | Baja-media | **Sí, v1** (complemento de A) |
+| C. Pegar texto | Seleccionar la tabla de movimientos en la web de BBVA, copiar y pegar en Kuenta. | No hace falta descargar nada. | Frágil: depende de cómo copie el navegador la tabla. | Media | Después, solo si A falla |
+| D. Extracto en PDF | Leer el PDF mensual con pdf.js. | Siempre disponible. | Muy frágil y pesado; mensual, no semanal. | Alta | Descartado |
+| E. Norma 43 (AEB 43) | Formato estándar español de extractos. | Estable y bien documentado. | En BBVA parece reservado a banca de empresas. | Media | Descartado salvo que aparezca en tu banca |
+| F. Leer las notificaciones de la app BBVA | Cada pago con tarjeta genera una notificación; una app nativa puede leerla y crear el movimiento al momento (Cashew lo hace). | Registro automático en tiempo real. | **Imposible en una PWA**: requiere la APK con Capacitor y el permiso de acceso a notificaciones. | Alta | Futuro, con la APK |
+| G. Open banking (PSD2) mediante agregadores | GoCardless (antes Nordigen), Enable Banking… | Automático. | Requiere servidor, claves y renovar el consentimiento cada pocos meses. GoCardless ha cerrado las altas nuevas. **Incumple el requisito de no usar servicios externos.** | Alta | Descartado |
+| H. Reenviar los correos de aviso del banco | Un servidor de correo procesa los avisos. | Automático. | Requiere servidor. | Alta | Descartado |
+
+**Conclusión:** la mejor combinación sin servidor es **A + B**: apuntar a mano lo que quieras durante la semana desde el móvil, y una vez a la semana *descargar Excel → Compartir → Kuenta → revisar la vista previa → Importar*. La importación empareja lo ya apuntado (lo marca como punteado), crea lo que falta y lo categoriza con reglas. Cuando exista la APK, la opción F permitiría además el registro automático de pagos con tarjeta.
+
+Librería propuesta para leer `.xlsx`: **read-excel-file** (MIT, ligera, solo lectura). Si BBVA entregara `.xls` antiguo en vez de `.xlsx`, se cambiaría a **SheetJS Community Edition** (Apache-2.0), más pesada.
+
+Fuentes: [hilo de Rankia sobre la descarga de movimientos en BBVA](https://www.rankia.com/foros/bancos-cajas/temas/5784374-extracto-movimientos-bancarios-bbva), [go-bbva (formato del Excel de BBVA)](https://pkg.go.dev/github.com/c032/go-bbva), [Web Share Target API (Chrome)](https://developer.chrome.com/docs/capabilities/web-apis/web-share-target), [Norma 43 (Quipu)](https://getquipu.com/blog/norma-43/), [alternativas tras el cierre de GoCardless (DEV)](https://dev.to/johnfrandsen/gocardless-bank-account-data-alternatives-what-to-use-when-signups-are-disabled-326d).
