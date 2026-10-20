@@ -116,6 +116,14 @@ export interface RulePreview {
   applicable: number;
 }
 
+/** A rule Kuenta proposes after the user categorizes a transaction by hand. */
+export interface RuleSuggestion {
+  /** The rule text: the bank concept cut at the first `-`, `*` or digit, normalized. */
+  text: string;
+  /** Other uncategorized, never-edited transactions with the same payee. */
+  others: number;
+}
+
 export interface RuleChanges {
   name?: string;
   enabled?: boolean;
@@ -163,6 +171,12 @@ export interface DataRepository {
    * changed. Applying doesn't mark them as edited, so a later rule can still apply.
    */
   applyRules(ruleId?: Id): Promise<number>;
+  /**
+   * The rule to propose after the user categorized this transaction: its suggested text
+   * and how many other uncategorized, never-edited transactions share its payee. Null when
+   * there's nothing to suggest: no such transactions, no category, a Bizum or no text left.
+   */
+  ruleSuggestion(transactionId: Id): Promise<RuleSuggestion | null>;
   /**
    * After an update that brought starter rules to an install with imported transactions:
    * how many never-edited transactions applying the rules would change. Null when there's
