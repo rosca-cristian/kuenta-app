@@ -132,3 +132,41 @@ describe('applying every rule to transactions already imported', () => {
     expect((await repo.home('2026-10')).uncategorized).toBe(1);
   });
 });
+
+describe('previewing a draft rule', () => {
+  it('counts every matching transaction, and the never-edited ones it would change', async () => {
+    const repo = await setup();
+    await importFile(repo, [
+      { valor: '01/09/2026', concepto: 'Panaderia Pepe', importe: -2 },
+      { valor: '02/09/2026', concepto: 'Panaderia Pepe', importe: -3 },
+      { valor: '03/09/2026', concepto: 'PANADERÍA pepe', importe: -4 },
+      { valor: '04/09/2026', concepto: 'Kfc', importe: -9 },
+    ]);
+    const supermercado = await categoryId(repo, 'Supermercado');
+    await repo.updateTransaction((await repo.listTransactions('2026-09')).find((t) => t.amount === 300)!.id, { note: 'pan' });
+
+    const preview = await repo.previewRule({ match: { value: 'panaderia' }, actions: { categoryId: supermercado } });
+    expect(preview).toEqual({ matching: 3, applicable: 2 });
+    // Nothing is written.
+    expect((await repo.listTransactions('2026-09')).every((t) => t.categoryId === null)).toBe(true);
+  });
+
+  it('respects the advanced options and finds nothing for an empty text', async () => {
+    const repo = await setup();
+    await importFile(repo, [
+      { valor: '01/09/2026', concepto: 'Bizum', movimiento: 'Recibido: alquiler', importe: 400 },
+      { valor: '02/09/2026', concepto: 'Bizum', movimiento: 'ENVIADO: alquiler', importe: -400 },
+    ]);
+    const otros = await categoryId(repo, 'Otros ingresos');
+    expect(await repo.previewRule({ match: { value: 'alquiler' }, actions: { categoryId: otros } })).toEqual({ matching: 2, applicable: 2 });
+    expect(await repo.previewRule({ match: { value: 'alquiler', direction: 'in' }, actions: { categoryId: otros } })).toEqual({
+      matching: 1,
+      applicable: 1,
+    });
+    expect(await repo.previewRule({ match: { value: 'alquiler', field: 'concept' }, actions: { categoryId: otros } })).toEqual({
+      matching: 0,
+      applicable: 0,
+    });
+    expect(await repo.previewRule({ match: { value: '  ' }, actions: { categoryId: otros } })).toEqual({ matching: 0, applicable: 0 });
+  });
+});

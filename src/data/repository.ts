@@ -108,6 +108,14 @@ export interface RuleDraft {
   actions: RuleActions;
 }
 
+/** What a rule, saved or not, would do on the imported transactions. */
+export interface RulePreview {
+  /** Imported transactions the rule's condition matches, edited or not. */
+  matching: number;
+  /** Never-edited transactions applying the rule would change. */
+  applicable: number;
+}
+
 export interface RuleChanges {
   name?: string;
   enabled?: boolean;
@@ -147,6 +155,8 @@ export interface DataRepository {
   /** Places the rule before every existing one, so it wins over starter rules. */
   createRule(draft: RuleDraft): Promise<Id>;
   updateRule(id: Id, changes: RuleChanges): Promise<void>;
+  /** Counts for a draft rule (condition with the usual defaults, and its actions), for live feedback while editing. */
+  previewRule(draft: Pick<RuleDraft, 'match' | 'actions'>): Promise<RulePreview>;
   /**
    * Applies one rule (`ruleId`, even if disabled) or every enabled rule in order, first
    * match wins, to the imported transactions the user never edited. Returns how many

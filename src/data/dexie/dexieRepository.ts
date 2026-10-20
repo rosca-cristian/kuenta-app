@@ -2,7 +2,7 @@ import { KuentaDb } from './db';
 import { STARTER_CATEGORIES, STARTER_DATA_VERSION, STARTER_RULES } from '../seed';
 import { bankOrder, findGaps, latestBalanceOf, openingBalanceOf, type ChainLink } from '../../domain/chain';
 import { planImport } from '../../domain/importPlan';
-import { applyRules as firstMatchActions } from '../../domain/rules';
+import { applyRules as firstMatchActions, ruleMatches } from '../../domain/rules';
 import { monthSummary } from '../../domain/stats';
 import { addMonths, daysBetween, today } from '../../domain/dates';
 import { normalizeText } from '../../domain/text';
@@ -430,6 +430,24 @@ export function createDexieRepository(options: DexieRepositoryOptions = {}): Dat
         await db.rules.put(updated);
       });
       changed();
+    },
+
+    async previewRule(draft) {
+      const rule: Rule = {
+        id: 'draft',
+        name: '',
+        order: 0,
+        enabled: true,
+        match: { field: 'conceptOrMovement', op: 'contains', direction: 'any', ...draft.match },
+        actions: draft.actions,
+      };
+      return db.transaction('r', db.transactions, db.payees, async () => {
+        const imported = await db.transactions.filter((tx) => tx.source === 'import' && tx.type !== 'transfer').toArray();
+        const matching = imported.filter((tx) =>
+          ruleMatches(rule.match, { concept: tx.bankConcept ?? '', movement: tx.bankMovement ?? '', amount: signedAmount(tx, tx.accountId) }),
+        ).length;
+        return { matching, applicable: (await ruleChanges([rule])).length };
+      });
     },
 
     async applyRules(ruleId) {
