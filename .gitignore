@@ -1,0 +1,11 @@
+node_modules
+dist
+dev-dist
+test-results
+playwright-report
+*.local
+.DS_Store
+# Real bank statements never go in the repo: it's public.
+*.xlsx
+*.xls
+*.tsbuildinfo

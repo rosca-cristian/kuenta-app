@@ -153,6 +153,7 @@ interface Transaction {
   bankConcept: string | null;// "Concepto", as in the file
   bankMovement: string | null;// "Movimiento", as in the file
   bankBalance: Cents | null; // "Disponible" right after this row
+  editedAt: string | null;   // when the user last changed category, payee or note
   createdAt: string; updatedAt: string;
 }
 
@@ -249,6 +250,7 @@ Format, confirmed with real exports (October 2026). The file is what Google Shee
 - **Gap**: two consecutive imported transactions in bank order whose balances don't chain (`prev.bankBalance + signed(cur) ≠ cur.bankBalance`).
 - **Balance check**: after an import, the import account's balance in Kuenta (all its transactions, adjustments included) is compared with the most recent Disponible on record.
 - **Transfers** don't count as income or expense in the summary, charts, budgets or savings rate. They do count in balances, and net worth doesn't change.
+- **Balance adjustments** count in balances but never as income or expense.
 - **Spending of a category in a month** = expenses in that category − income in that category. A Bizum received from a friend for a shared dinner, categorized as Restaurantes, reduces Restaurantes spending.
 - **Budget limit for month M** = the category's `BudgetLimit` with the most recent `fromMonth ≤ M`. Changing the limit in October doesn't rewrite September.
 - **Net worth at month end** = sum of the balances of all accounts, archived and non-imported included.
@@ -365,7 +367,7 @@ All checked at a 390×844 viewport. Items marked 🧪 have a unit test.
 - 🧪 Turning an expense of 200 € into a transfer to Revolut removes it from expenses and adds 200 € to Revolut's balance; net worth doesn't change.
 - 🧪 Turning an income into a transfer makes it an incoming transfer from the chosen account.
 - A transfer can't have the same account on both sides.
-- Single transactions can't be deleted; only a whole import can be undone.
+- Single imported transactions can't be deleted; only a whole import can be undone. Balance adjustments can be deleted from their edit sheet (e.g. after importing the period that was missing).
 
 ### 5.5 Accounts and balances
 - 🧪 A non-imported account with an opening balance of 500 € and an incoming transfer of 200 € has a balance of 700 €.

@@ -1,0 +1,96 @@
+import type { Cents } from './money';
+import type { IsoDate } from './dates';
+import { bankOrder, findGaps, type ChainLink, type Gap } from './chain';
+import { cleanPayeeName, normalizeText } from './text';
+import type { BankRow } from './bankRow';
+
+export interface PlannedRow {
+  /** Fingerprint of the bank row; identifies it across overlapping files. */
+  hash: string;
+  status: 'new' | 'already-imported';
+  type: 'expense' | 'income';
+  /** Positive. */
+  amount: Cents;
+  date: IsoDate;
+  bookingDate: IsoDate;
+  bankAmount: Cents;
+  bankBalance: Cents;
+  concept: string;
+  movement: string;
+  payeeName: string | null;
+  note: string;
+}
+
+export type ImportWarning =
+  | { kind: 'file-chain-broken'; gaps: Gap[] }
+  | { kind: 'gaps'; gaps: Gap[] }
+  | { kind: 'older-than-opening'; oldestExisting: IsoDate };
+
+export interface ImportPlan {
+  rows: PlannedRow[];
+  dateFrom: IsoDate;
+  dateTo: IsoDate;
+  warnings: ImportWarning[];
+}
+
+/** Fingerprint of a bank row. "Disponible" makes otherwise identical rows distinct. */
+export function rowHash(row: BankRow): string {
+  return [row.valueDate, row.bookingDate, row.amount, row.concept, row.movement, row.balance].join('|');
+}
+
+const isBizum = (row: BankRow) => normalizeText(row.concept) === 'bizum';
+
+/**
+ * Decides what an import would do: which rows are new, which were imported
+ * before, and what to warn about. `existing` are the import account's
+ * imported transactions as chain links, with their fingerprints.
+ */
+export function planImport(rows: BankRow[], existing: (ChainLink & { hash: string })[]): ImportPlan {
+  const known = new Set(existing.map((link) => link.hash));
+  const planned: PlannedRow[] = rows.map((row) => {
+    const hash = rowHash(row);
+    const status = known.has(hash) ? 'already-imported' : 'new';
+    known.add(hash);
+    return {
+      hash,
+      status,
+      type: row.amount < 0 ? 'expense' : 'income',
+      amount: Math.abs(row.amount),
+      date: row.valueDate,
+      bookingDate: row.bookingDate,
+      bankAmount: row.amount,
+      bankBalance: row.balance,
+      concept: row.concept,
+      movement: row.movement,
+      payeeName: isBizum(row) || row.concept === '' ? null : cleanPayeeName(row.concept),
+      note: isBizum(row) ? row.movement : '',
+    };
+  });
+
+  const bookingDates = rows.map((row) => row.bookingDate).sort();
+  const warnings: ImportWarning[] = [];
+
+  // The file's own rows should chain on their own.
+  const fileGaps = findGaps(bankOrder(rows.map(toLink)));
+  if (fileGaps.length > 0) warnings.push({ kind: 'file-chain-broken', gaps: fileGaps });
+
+  const fresh = planned.filter((row) => row.status === 'new');
+  if (existing.length > 0 && fresh.length > 0) {
+    const oldestExisting = existing.map((link) => link.bookingDate).sort()[0];
+    if (fresh.some((row) => row.bookingDate < oldestExisting)) {
+      warnings.push({ kind: 'older-than-opening', oldestExisting });
+    }
+  }
+
+  // Gaps that would remain once this file is imported, skipping the ones inside the file itself.
+  const after = bankOrder([...existing, ...fresh.map((row) => ({ bookingDate: row.bookingDate, amount: row.bankAmount, balance: row.bankBalance }))]);
+  const inFile = new Set(fileGaps.map((gap) => `${gap.after}|${gap.before}`));
+  const gaps = findGaps(after).filter((gap) => !inFile.has(`${gap.after}|${gap.before}`));
+  if (gaps.length > 0) warnings.push({ kind: 'gaps', gaps });
+
+  return { rows: planned, dateFrom: bookingDates[0], dateTo: bookingDates[bookingDates.length - 1], warnings };
+}
+
+function toLink(row: BankRow): ChainLink {
+  return { bookingDate: row.bookingDate, amount: row.amount, balance: row.balance };
+}

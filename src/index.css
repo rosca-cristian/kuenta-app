@@ -1,0 +1,37 @@
+@import "tailwindcss";
+
+/* Dark only. Colours are tokens so a light theme stays cheap later. */
+@theme {
+  --color-bg: #0b0d10;
+  --color-card: #15181d;
+  --color-card-2: #1d2128;
+  --color-line: #262b33;
+  --color-text: #e8eaed;
+  --color-muted: #8b929c;
+  --color-accent: #4f8cff;
+  --color-income: #3ecf8e;
+  --color-warn: #f5b041;
+  --color-danger: #f0605d;
+  --font-sans: system-ui, Roboto, "Segoe UI", sans-serif;
+}
+
+html, body, #root {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  background: var(--color-bg);
+  color: var(--color-text);
+  font-family: var(--font-sans);
+  font-variant-numeric: tabular-nums;
+  -webkit-tap-highlight-color: transparent;
+  overscroll-behavior-y: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
+}

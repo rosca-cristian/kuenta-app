@@ -1,0 +1,76 @@
+import type { ButtonHTMLAttributes, ReactNode } from 'react';
+import { ChevronLeft, ChevronRight } from 'lucide-react';
+import { addMonths, formatMonth, type Month } from '../domain/dates';
+import { formatMoney, type Cents } from '../domain/money';
+
+export function Button({
+  variant = 'primary',
+  className = '',
+  ...props
+}: ButtonHTMLAttributes<HTMLButtonElement> & { variant?: 'primary' | 'secondary' | 'danger' | 'ghost' }) {
+  const styles = {
+    primary: 'bg-accent text-white',
+    secondary: 'bg-card-2 text-text border border-line',
+    danger: 'bg-danger/15 text-danger',
+    ghost: 'text-accent',
+  }[variant];
+  return (
+    <button
+      className={`min-h-11 rounded-xl px-4 font-medium transition-opacity active:opacity-70 disabled:opacity-40 ${styles} ${className}`}
+      {...props}
+    />
+  );
+}
+
+export function Card({ children, className = '' }: { children: ReactNode; className?: string }) {
+  return <section className={`rounded-2xl border border-line bg-card p-4 ${className}`}>{children}</section>;
+}
+
+export function PageHeader({ title, action }: { title: string; action?: ReactNode }) {
+  return (
+    <header className="flex min-h-14 items-center justify-between px-4 pt-[env(safe-area-inset-top)]">
+      <h1 className="text-xl font-semibold">{title}</h1>
+      {action}
+    </header>
+  );
+}
+
+export function MonthSelector({ month, onChange }: { month: Month; onChange: (month: Month) => void }) {
+  return (
+    <div className="flex items-center justify-center gap-2">
+      <button aria-label="Mes anterior" className="flex size-11 items-center justify-center text-muted" onClick={() => onChange(addMonths(month, -1))}>
+        <ChevronLeft />
+      </button>
+      <span className="min-w-36 text-center font-medium capitalize">{formatMonth(month)}</span>
+      <button aria-label="Mes siguiente" className="flex size-11 items-center justify-center text-muted" onClick={() => onChange(addMonths(month, 1))}>
+        <ChevronRight />
+      </button>
+    </div>
+  );
+}
+
+/** An amount; income in green, expenses in the normal text colour. */
+export function Amount({ cents, kind, className = '' }: { cents: Cents; kind?: 'income' | 'expense' | 'neutral'; className?: string }) {
+  const colour = kind === 'income' ? 'text-income' : '';
+  const sign = kind === 'income' ? '+' : kind === 'expense' ? '−' : '';
+  return <span className={`tabular-nums ${colour} ${className}`}>{sign}{formatMoney(kind ? Math.abs(cents) : cents)}</span>;
+}
+
+export function EmptyState({ title, children }: { title: string; children?: ReactNode }) {
+  return (
+    <div className="flex flex-col items-center gap-2 px-8 py-16 text-center">
+      <p className="font-medium">{title}</p>
+      {children && <div className="text-sm text-muted">{children}</div>}
+    </div>
+  );
+}
+
+export function Alert({ tone = 'info', children, onClick }: { tone?: 'info' | 'warn'; children: ReactNode; onClick?: () => void }) {
+  const style = tone === 'warn' ? 'border-warn/40 bg-warn/10' : 'border-line bg-card-2';
+  const Tag = onClick ? 'button' : 'div';
+  return (
+    <Tag onClick={onClick} className={`w-full rounded-xl border px-4 py-3 text-left text-sm ${style}`}>
+      {children}
+    </Tag>
+  );
+}
