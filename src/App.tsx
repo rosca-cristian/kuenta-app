@@ -8,6 +8,7 @@ import { Transactions } from './features/transactions/Transactions';
 import { Import } from './features/import/Import';
 import { ComingSoon, More } from './features/more/More';
 import { Payees } from './features/payees/Payees';
+import { Categories } from './features/categories/Categories';
 
 export function App() {
   const settings = useRepoQuery((repo) => repo.getSettings());
@@ -24,6 +25,7 @@ export function App() {
               <Route path="/importar" element={<Import />} />
               <Route path="/analisis" element={<ComingSoon title="Análisis" />} />
               <Route path="/mas" element={<More />} />
+              <Route path="/mas/categorias" element={<Categories />} />
               <Route path="/mas/comercios" element={<Payees />} />
               <Route path="*" element={<Navigate to="/" replace />} />
             </Routes>

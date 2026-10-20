@@ -37,6 +37,27 @@ export const PALETTE: Record<string, string> = {
   slate: '#8796ab', lime: '#9ccf3e', gray: '#7d848f',
 };
 
+/** Every icon name a category or account can have, in the order pickers show them. */
+export const ICON_NAMES = Object.keys(ICONS);
+
+/** Every palette token, in the order pickers show them. */
+export const COLOR_NAMES = Object.keys(PALETTE);
+
+/** Spanish names of the icons, read out by the icon picker. */
+export const ICON_LABELS: Record<string, string> = {
+  'shopping-cart': 'Carrito', utensils: 'Cubiertos', car: 'Coche', home: 'Casa', plug: 'Enchufe', 'heart-pulse': 'Corazón',
+  gamepad: 'Mando', 'shopping-bag': 'Bolsa', repeat: 'Repetir', plane: 'Avión', 'graduation-cap': 'Birrete', gift: 'Regalo',
+  receipt: 'Recibo', banknote: 'Billete', ellipsis: 'Puntos', briefcase: 'Maletín', 'rotate-ccw': 'Devolución',
+  percent: 'Porcentaje', 'piggy-bank': 'Hucha', 'hand-coins': 'Monedas', landmark: 'Banco',
+};
+
+/** Spanish names of the palette colours, read out by the colour picker. */
+export const COLOR_LABELS: Record<string, string> = {
+  green: 'Verde', orange: 'Naranja', blue: 'Azul', brown: 'Marrón', yellow: 'Amarillo', red: 'Rojo', purple: 'Morado',
+  pink: 'Rosa', indigo: 'Índigo', cyan: 'Cian', teal: 'Verde azulado', rose: 'Rosa palo', slate: 'Pizarra', lime: 'Lima',
+  gray: 'Gris',
+};
+
 export function iconFor(name: string | undefined): LucideIcon {
   return (name && ICONS[name]) || CircleHelp;
 }
