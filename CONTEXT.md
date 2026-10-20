@@ -33,3 +33,7 @@ The amount in an account at a given date: its opening balance plus every transac
 
 **Balance adjustment**:
 An uncategorized transaction created to make an account's balance agree with the bank's after an import that doesn't add up (e.g. rows missing from the file).
+
+**Gap**:
+A stretch of time with transactions missing between two imports, detected because the bank's running balance doesn't chain from the last imported row to the first new one.
+_Avoid_: Hole, missing period
