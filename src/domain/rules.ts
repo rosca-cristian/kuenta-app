@@ -47,3 +47,14 @@ export function applyRules(rules: Rule[], subject: RuleSubject): RuleActions | n
   const winner = [...rules].sort((a, b) => a.order - b.order).find((rule) => rule.enabled && ruleMatches(rule.match, subject));
   return winner ? winner.actions : null;
 }
+
+/**
+ * The text Kuenta proposes for a rule learnt from a transaction: the bank concept cut at
+ * the first `-`, `*` or digit, normalized, so it covers every branch or order code
+ * ("Mercadona - crta del inge" → "mercadona", "Www.amazon*nv14y8j34" → "www.amazon").
+ * Empty for a Bizum, whose concept is just "Bizum": such a rule would match every Bizum.
+ */
+export function suggestedRuleText(concept: string): string {
+  if (normalizeText(concept) === 'bizum') return '';
+  return normalizeText(concept.split(/[-*\d]/)[0]);
+}

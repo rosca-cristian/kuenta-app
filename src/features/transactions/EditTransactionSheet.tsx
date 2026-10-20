@@ -5,19 +5,47 @@ import { IconBadge } from '../../ui/icons';
 import { useRepo, useRepoQuery } from '../../lib/repo';
 import { formatDate } from '../../domain/dates';
 import type { Category, Id } from '../../domain/model';
-import type { TransactionView } from '../../data/repository';
+import type { RuleSuggestion, TransactionView } from '../../data/repository';
+import { QuickRuleSheet } from '../rules/QuickRuleSheet';
 
-/** Edits the parts of a transaction that belong to the user: category, payee and note. */
+/** A rule to propose once the edit sheet closes: the suggestion plus what the question shows. */
+type Proposal = RuleSuggestion & { categoryId: Id; payeeName: string };
+
+/**
+ * Edits the parts of a transaction that belong to the user: category, payee and note.
+ * After the user sets a category, it may propose a rule for the payee's other transactions.
+ */
 export function EditTransactionSheet({ id, onClose }: { id: Id | null; onClose: () => void }) {
   const tx = useRepoQuery((r) => (id ? r.getTransaction(id) : Promise.resolve(null)), [id]);
+  // Kept after the proposal closes, so the sheet doesn't change while it slides away.
+  const [proposal, setProposal] = useState<Proposal | null>(null);
+  const [proposing, setProposing] = useState(false);
+
+  function done(next: Proposal | null) {
+    onClose();
+    if (next) {
+      setProposal(next);
+      setProposing(true);
+    }
+  }
+
   return (
-    <Sheet open={id !== null} onClose={onClose} title={tx?.source === 'adjustment' ? 'Ajuste de saldo' : 'Movimiento'}>
-      {tx && <EditForm key={tx.id} tx={tx} onDone={onClose} />}
-    </Sheet>
+    <>
+      <Sheet open={id !== null} onClose={onClose} title={tx?.source === 'adjustment' ? 'Ajuste de saldo' : 'Movimiento'}>
+        {tx && <EditForm key={tx.id} tx={tx} onDone={done} />}
+      </Sheet>
+      <QuickRuleSheet
+        open={proposing}
+        initialText={proposal?.text ?? ''}
+        categoryId={proposal?.categoryId ?? null}
+        question={proposal ? { payeeName: proposal.payeeName, others: proposal.others } : undefined}
+        onClose={() => setProposing(false)}
+      />
+    </>
   );
 }
 
-function EditForm({ tx, onDone }: { tx: TransactionView; onDone: () => void }) {
+function EditForm({ tx, onDone }: { tx: TransactionView; onDone: (proposal: Proposal | null) => void }) {
   const repo = useRepo();
   const categories = useRepoQuery((r) => r.listCategories());
   const usedThatDay = useRepoQuery((r) => r.expenseCategoriesUsedOn(tx.date), [tx.date]);
@@ -41,12 +69,15 @@ function EditForm({ tx, onDone }: { tx: TransactionView; onDone: () => void }) {
 
   async function save() {
     await repo.updateTransaction(tx.id, { categoryId, payeeName, note });
-    onDone();
+    // Only a newly set category is worth turning into a rule.
+    const suggestion = categoryId !== null && categoryId !== tx.categoryId ? await repo.ruleSuggestion(tx.id) : null;
+    const payee = suggestion && (await repo.getTransaction(tx.id))?.payee;
+    onDone(suggestion && payee ? { ...suggestion, categoryId: categoryId!, payeeName: payee.name } : null);
   }
 
   async function removeAdjustment() {
     await repo.deleteAdjustment(tx.id);
-    onDone();
+    onDone(null);
   }
 
   return (

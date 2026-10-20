@@ -2,7 +2,7 @@ import { KuentaDb } from './db';
 import { STARTER_CATEGORIES, STARTER_DATA_VERSION, STARTER_RULES } from '../seed';
 import { bankOrder, findGaps, latestBalanceOf, openingBalanceOf, type ChainLink } from '../../domain/chain';
 import { planImport } from '../../domain/importPlan';
-import { applyRules as firstMatchActions, ruleMatches } from '../../domain/rules';
+import { applyRules as firstMatchActions, ruleMatches, suggestedRuleText } from '../../domain/rules';
 import { monthSummary } from '../../domain/stats';
 import { addMonths, daysBetween, today } from '../../domain/dates';
 import { normalizeText } from '../../domain/text';
@@ -462,6 +462,24 @@ export function createDexieRepository(options: DexieRepositoryOptions = {}): Dat
       });
       if (count > 0) changed();
       return count;
+    },
+
+    async ruleSuggestion(transactionId) {
+      return db.transaction('r', db.transactions, async () => {
+        const tx = await db.transactions.get(transactionId);
+        if (!tx || tx.source !== 'import' || tx.type === 'transfer' || tx.categoryId === null || tx.payeeId === null) return null;
+        const text = suggestedRuleText(tx.bankConcept ?? '');
+        if (text === '') return null;
+        const others = await db.transactions
+          .where('payeeId')
+          .equals(tx.payeeId)
+          .filter(
+            (other) =>
+              other.id !== tx.id && other.source === 'import' && other.type !== 'transfer' && other.categoryId === null && other.editedAt === null,
+          )
+          .count();
+        return others > 0 ? { text, others } : null;
+      });
     },
 
     async starterRulesOffer() {
