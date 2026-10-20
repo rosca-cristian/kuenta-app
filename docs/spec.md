@@ -205,7 +205,7 @@ interface ImportBatch {
 }
 
 interface Setting { key: string; value: unknown }
-// keys: importAccountId, starterDataVersion, privacyMode, lastBackupAt, lastChangeAt,
+// keys: importAccountId, starterDataVersion, starterRulesOffer, privacyMode, lastBackupAt, lastChangeAt,
 //       onboardingDone, persistRequested, schemaVersion
 ```
 
@@ -272,6 +272,7 @@ Fixed bottom navigation: **Inicio · Movimientos · Importar · Análisis · Má
 ### 4.2 Inicio
 - Month card: **total balance**, income, expenses, savings (amount and rate) and "A este ritmo gastarás X € este mes" (current month only).
 - Alerts, only when they apply: "Han pasado N días desde la última importación" (from 8 days), "N movimientos sin categoría", "Hay un hueco entre el 07/10 y el 14/10", "N presupuestos superados", "Haz una copia de seguridad".
+- After an update that brought starter rules, when they would change transactions already imported: "Aplicar las reglas de serie a N movimientos ya importados" (only those never edited), with Aplicar, which reports how many changed, and Descartar. Either one hides it for good.
 - Accounts with their balance (archived ones hidden; non-imported ones labelled "no importada").
 - Budgets: the 3 with the highest percentage used, linking to the full screen.
 - Goals: a progress bar for each.

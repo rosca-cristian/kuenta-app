@@ -106,6 +106,22 @@ export interface DataRepository {
   /** Places the rule before every existing one, so it wins over starter rules. */
   createRule(draft: RuleDraft): Promise<Id>;
   updateRule(id: Id, changes: RuleChanges): Promise<void>;
+  /**
+   * Applies one rule (`ruleId`, even if disabled) or every enabled rule in order, first
+   * match wins, to the imported transactions the user never edited. Returns how many
+   * changed. Applying doesn't mark them as edited, so a later rule can still apply.
+   */
+  applyRules(ruleId?: Id): Promise<number>;
+  /**
+   * After an update that brought starter rules to an install with imported transactions:
+   * how many never-edited transactions applying the rules would change. Null when there's
+   * nothing to offer: a first run, an offer already accepted or dismissed, or nothing to change.
+   */
+  starterRulesOffer(): Promise<number | null>;
+  /** Applies every enabled rule as `applyRules()` does and closes the offer. Returns how many changed. */
+  acceptStarterRulesOffer(): Promise<number>;
+  /** Closes the offer for good, changing nothing. */
+  dismissStarterRulesOffer(): Promise<void>;
 
   /** Transactions of a month, newest first. */
   listTransactions(month: Month): Promise<TransactionView[]>;
