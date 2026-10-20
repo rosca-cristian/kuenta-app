@@ -1,5 +1,5 @@
 import { createElement } from 'react';
-import { COLOR_LABELS, COLOR_NAMES, ICON_LABELS, ICON_NAMES, colorFor, iconFor } from './icons';
+import { COLOR_NAMES, ICON_NAMES, colorFor, colorLabel, iconFor, iconLabel } from './icons';
 
 /** Picks one icon of the icon set, drawn in the chosen colour. */
 export function IconPicker({ value, color, onChange }: { value: string; color: string; onChange: (icon: string) => void }) {
@@ -12,7 +12,7 @@ export function IconPicker({ value, color, onChange }: { value: string; color: s
           <button
             key={name}
             type="button"
-            aria-label={ICON_LABELS[name] ?? name}
+            aria-label={iconLabel(name)}
             aria-pressed={value === name}
             onClick={() => onChange(name)}
             className={`flex aspect-square items-center justify-center rounded-xl ${value === name ? 'ring-2 ring-accent' : 'bg-card-2'}`}
@@ -36,7 +36,7 @@ export function ColorPicker({ value, onChange }: { value: string; onChange: (col
           <button
             key={name}
             type="button"
-            aria-label={COLOR_LABELS[name] ?? name}
+            aria-label={colorLabel(name)}
             aria-pressed={value === name}
             onClick={() => onChange(name)}
             className={`aspect-square rounded-full ${value === name ? 'ring-2 ring-text ring-offset-2 ring-offset-card' : ''}`}

@@ -15,7 +15,7 @@ const KINDS: { kind: CategoryKind; label: string; title: string }[] = [
 
 const countText = (n: number, one: string, many: string) => (n === 1 ? `1 ${one}` : `${n} ${many}`);
 
-/** The sheet shows either the editor of a category (new when `id` is null) or the confirmation to delete it. */
+/** The sheet shows either the editor of a category (a new one when `category` is null) or the confirmation to delete it. */
 type Editing = { mode: 'edit'; category: Category | null } | { mode: 'delete'; category: Category };
 
 /** Más → Categorías: categories by kind and in order, to create, edit, reorder and delete them. */
