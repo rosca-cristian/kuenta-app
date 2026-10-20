@@ -69,10 +69,15 @@ function EditForm({ tx, onDone }: { tx: TransactionView; onDone: (proposal: Prop
 
   async function save() {
     await repo.updateTransaction(tx.id, { categoryId, payeeName, note });
-    // Only a newly set category is worth turning into a rule.
-    const suggestion = categoryId !== null && categoryId !== tx.categoryId ? await repo.ruleSuggestion(tx.id) : null;
+    onDone(await proposalAfterSave());
+  }
+
+  /** A rule to propose for the payee's other transactions; only a newly set category is worth one. */
+  async function proposalAfterSave(): Promise<Proposal | null> {
+    if (categoryId === null || categoryId === tx.categoryId) return null;
+    const suggestion = await repo.ruleSuggestion(tx.id);
     const payee = suggestion && (await repo.getTransaction(tx.id))?.payee;
-    onDone(suggestion && payee ? { ...suggestion, categoryId: categoryId!, payeeName: payee.name } : null);
+    return suggestion && payee ? { ...suggestion, categoryId, payeeName: payee.name } : null;
   }
 
   async function removeAdjustment() {
