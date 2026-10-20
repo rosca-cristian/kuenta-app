@@ -123,10 +123,10 @@ export function createDexieRepository(options: DexieRepositoryOptions = {}): Dat
 
     const matchKey = (match: RuleMatch) => [match.field, match.op, normalizeText(match.value), match.direction].join('|');
     const rules = await db.rules.toArray();
-    const present = new Set(rules.map((rule) => matchKey(rule.match)));
+    const existingMatches = new Set(rules.map((rule) => matchKey(rule.match)));
     let ruleOrder = Math.max(-1, ...rules.map((rule) => rule.order));
     for (const starter of STARTER_RULES.filter((rule) => rule.since > fromVersion)) {
-      if (present.has(matchKey(starter.match))) continue;
+      if (existingMatches.has(matchKey(starter.match))) continue;
       const actions: RuleActions = { categoryId: categoryIds.get(normalizeText(starter.category))! };
       if (starter.payeeName) actions.payeeName = starter.payeeName;
       await db.rules.add({
@@ -142,13 +142,16 @@ export function createDexieRepository(options: DexieRepositoryOptions = {}): Dat
   }
 
   // On startup, an install made by an older version gets the starter data added since.
-  // The first run seeds the current version itself (completeOnboarding).
+  // The first run seeds the current version itself (completeOnboarding). If it fails,
+  // nothing is written, the app still opens and the next startup tries again.
   db.on('ready', () =>
-    db.transaction('rw', db.categories, db.rules, db.settings, async () => {
-      if (!(await setting('onboardingDone', false))) return;
-      const version = await setting('starterDataVersion', 1);
-      if (version < STARTER_DATA_VERSION) await addStarterData(version);
-    }),
+    db
+      .transaction('rw', db.categories, db.rules, db.settings, async () => {
+        if (!(await setting('onboardingDone', false))) return;
+        const version = await setting('starterDataVersion', 1);
+        if (version < STARTER_DATA_VERSION) await addStarterData(version);
+      })
+      .catch((error: unknown) => console.error('Could not add the starter data', error)),
   );
 
   async function toViews(txs: Transaction[]): Promise<TransactionView[]> {
@@ -257,10 +260,12 @@ export function createDexieRepository(options: DexieRepositoryOptions = {}): Dat
     },
 
     async updateRule(id, changes: RuleChanges) {
-      const rule = await db.rules.get(id);
-      if (!rule) throw new Error(`Rule ${id} not found`);
-      const updated: Rule = { ...rule, ...changes, match: { ...rule.match, ...changes.match } };
-      await db.rules.put(updated);
+      await db.transaction('rw', db.rules, async () => {
+        const rule = await db.rules.get(id);
+        if (!rule) throw new Error(`Rule ${id} not found`);
+        const updated: Rule = { ...rule, ...changes, match: { ...rule.match, ...changes.match } };
+        await db.rules.put(updated);
+      });
       changed();
     },
 
