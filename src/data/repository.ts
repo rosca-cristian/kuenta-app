@@ -152,9 +152,20 @@ export interface DataRepository {
 
   /** Rules in order: the first enabled one that matches a row wins. */
   listRules(): Promise<Rule[]>;
-  /** Places the rule before every existing one, so it wins over starter rules. */
+  /**
+   * Places the rule before every existing one, so it wins over starter rules. Throws when
+   * the rule has no text, or neither a category nor a payee name.
+   */
   createRule(draft: RuleDraft): Promise<Id>;
+  /**
+   * Throws, changing nothing, when the rule would be left without text, or enabled without
+   * a category or a payee name (a rule whose category was deleted stays disabled until it gets one).
+   */
   updateRule(id: Id, changes: RuleChanges): Promise<void>;
+  /** Swaps the rule with the previous or next one, changing which wins. */
+  moveRule(id: Id, direction: 'up' | 'down'): Promise<void>;
+  /** Deletes the rule only: the categories and payees it already set stay as they are. */
+  deleteRule(id: Id): Promise<void>;
   /** Counts for a draft rule (condition with the usual defaults, and its actions), for live feedback while editing. */
   previewRule(draft: Pick<RuleDraft, 'match' | 'actions'>): Promise<RulePreview>;
   /**
