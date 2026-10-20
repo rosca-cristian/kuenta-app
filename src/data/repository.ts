@@ -3,7 +3,7 @@ import type { IsoDate, Month } from '../domain/dates';
 import type { Gap } from '../domain/chain';
 import type { ImportPlan } from '../domain/importPlan';
 import type { MonthSummary } from '../domain/stats';
-import type { Account, Category, Id, ImportBatch, Payee, Transaction } from '../domain/model';
+import type { Account, Category, Id, ImportBatch, Payee, Rule, RuleActions, RuleMatch, Transaction } from '../domain/model';
 import type { ReadError } from '../import/bbva/reader';
 
 export interface AccountView extends Account {
@@ -72,6 +72,22 @@ export interface PayeeView extends Payee {
  */
 export type PayeeRenameResult = { ok: true } | { ok: false; reason: 'empty' } | { ok: false; reason: 'exists'; existing: Payee };
 
+export interface RuleDraft {
+  name: string;
+  /** Defaults to true. */
+  enabled?: boolean;
+  /** Defaults: concept or movement, contains, any direction. */
+  match: Partial<RuleMatch> & Pick<RuleMatch, 'value'>;
+  actions: RuleActions;
+}
+
+export interface RuleChanges {
+  name?: string;
+  enabled?: boolean;
+  match?: Partial<RuleMatch>;
+  actions?: RuleActions;
+}
+
 /** The only data interface screens use. */
 export interface DataRepository {
   /** Called after every write. Returns an unsubscribe function. */
@@ -84,6 +100,12 @@ export interface DataRepository {
 
   listAccounts(): Promise<AccountView[]>;
   listCategories(): Promise<Category[]>;
+
+  /** Rules in order: the first enabled one that matches a row wins. */
+  listRules(): Promise<Rule[]>;
+  /** Places the rule before every existing one, so it wins over starter rules. */
+  createRule(draft: RuleDraft): Promise<Id>;
+  updateRule(id: Id, changes: RuleChanges): Promise<void>;
 
   /** Transactions of a month, newest first. */
   listTransactions(month: Month): Promise<TransactionView[]>;

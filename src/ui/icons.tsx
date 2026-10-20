@@ -1,6 +1,6 @@
 import { createElement } from 'react';
 import {
-  Banknote, Briefcase, Car, CircleHelp, Ellipsis, Gamepad2, Gift, GraduationCap, HeartPulse, House, Landmark,
+  Banknote, Briefcase, Car, CircleHelp, Ellipsis, Gamepad2, Gift, GraduationCap, HandCoins, HeartPulse, House, Landmark,
   Percent, PiggyBank, Plane, Plug, Receipt, Repeat, RotateCcw, ShoppingBag, ShoppingCart, Utensils,
   type LucideIcon,
 } from 'lucide-react';
@@ -26,6 +26,7 @@ const ICONS: Record<string, LucideIcon> = {
   'rotate-ccw': RotateCcw,
   percent: Percent,
   'piggy-bank': PiggyBank,
+  'hand-coins': HandCoins,
   landmark: Landmark,
 };
 

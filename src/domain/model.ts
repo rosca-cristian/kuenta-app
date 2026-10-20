@@ -66,6 +66,31 @@ export interface Transaction {
   updatedAt: string;
 }
 
+export interface RuleMatch {
+  field: 'concept' | 'movement' | 'conceptOrMovement';
+  op: 'contains' | 'startsWith' | 'equals';
+  /** Compared ignoring case and accents. */
+  value: string;
+  /** Charges (negative bank amount), credits (positive) or both. */
+  direction: 'any' | 'out' | 'in';
+}
+
+export interface RuleActions {
+  categoryId?: Id;
+  /** Creates or reuses the payee with this normalized name. */
+  payeeName?: string;
+}
+
+export interface Rule {
+  id: Id;
+  name: string;
+  /** The first enabled rule that matches, by order, wins. */
+  order: number;
+  enabled: boolean;
+  match: RuleMatch;
+  actions: RuleActions;
+}
+
 export interface ImportBatch {
   id: Id;
   importedAt: string;

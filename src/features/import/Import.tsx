@@ -129,6 +129,8 @@ function Preview({
   onImported: (outcome: ImportOutcome) => void;
 }) {
   const { repo } = useServices();
+  const categories = useRepoQuery((r) => r.listCategories());
+  const categoryName = new Map(categories?.map((category) => [category.id, category.name]));
   const [excluded, setExcluded] = useState<Set<string>>(new Set());
   const [busy, setBusy] = useState(false);
   const fresh = preview.plan.rows.filter((row) => row.status === 'new');
@@ -181,7 +183,10 @@ function Preview({
                   <span className="min-w-0 flex-1">
                     <span className="block truncate">{row.payeeName || row.note || row.concept}</span>
                     <span className="block truncate text-xs text-muted">
-                      {formatDate(row.date)} · {row.movement || row.concept}
+                      <span className={row.categoryId ? '' : 'text-warn'} data-testid="preview-category">
+                        {(row.categoryId && categoryName.get(row.categoryId)) || 'Sin categoría'}
+                      </span>{' '}
+                      · {formatDate(row.date)} · {row.movement || row.concept}
                     </span>
                   </span>
                   <Amount cents={row.amount} kind={row.type} />

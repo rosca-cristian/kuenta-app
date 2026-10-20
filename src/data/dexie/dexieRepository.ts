@@ -1,11 +1,20 @@
 import { KuentaDb } from './db';
-import { STARTER_CATEGORIES } from '../seed';
+import { STARTER_CATEGORIES, STARTER_DATA_VERSION, STARTER_RULES } from '../seed';
 import { bankOrder, findGaps, latestBalanceOf, openingBalanceOf, type ChainLink } from '../../domain/chain';
 import { planImport } from '../../domain/importPlan';
 import { monthSummary } from '../../domain/stats';
 import { addMonths, daysBetween, today } from '../../domain/dates';
 import { normalizeText } from '../../domain/text';
-import { signedAmount, type Account, type Id, type ImportBatch, type Transaction } from '../../domain/model';
+import {
+  signedAmount,
+  type Account,
+  type Id,
+  type ImportBatch,
+  type Rule,
+  type RuleActions,
+  type RuleMatch,
+  type Transaction,
+} from '../../domain/model';
 import { readBbvaFile } from '../../import/bbva/reader';
 import type {
   AccountView,
@@ -17,6 +26,8 @@ import type {
   PayeeRenameResult,
   PayeeView,
   PreviewResult,
+  RuleChanges,
+  RuleDraft,
   Settings,
   TransactionChanges,
   TransactionView,
@@ -99,6 +110,55 @@ export function createDexieRepository(options: DexieRepositoryOptions = {}): Dat
     return id;
   }
 
+  /**
+   * Adds the starter categories missing by normalized name, and the starter rules
+   * newer than `fromVersion` that the install doesn't already have. Call it inside
+   * a transaction on categories, rules and settings.
+   */
+  async function addStarterData(fromVersion: number) {
+    const categories = await db.categories.toArray();
+    const categoryIds = new Map(categories.map((category) => [normalizeText(category.name), category.id]));
+    let categoryOrder = Math.max(-1, ...categories.map((category) => category.order));
+    for (const starter of STARTER_CATEGORIES) {
+      if (categoryIds.has(normalizeText(starter.name))) continue;
+      const id = crypto.randomUUID();
+      await db.categories.add({ ...starter, id, order: ++categoryOrder, archived: false });
+      categoryIds.set(normalizeText(starter.name), id);
+    }
+
+    const matchKey = (match: RuleMatch) => [match.field, match.op, normalizeText(match.value), match.direction].join('|');
+    const rules = await db.rules.toArray();
+    const existingMatches = new Set(rules.map((rule) => matchKey(rule.match)));
+    let ruleOrder = Math.max(-1, ...rules.map((rule) => rule.order));
+    for (const starter of STARTER_RULES.filter((rule) => rule.since > fromVersion)) {
+      if (existingMatches.has(matchKey(starter.match))) continue;
+      const actions: RuleActions = { categoryId: categoryIds.get(normalizeText(starter.category))! };
+      if (starter.payeeName) actions.payeeName = starter.payeeName;
+      await db.rules.add({
+        id: crypto.randomUUID(),
+        name: starter.name,
+        order: ++ruleOrder,
+        enabled: true,
+        match: { ...starter.match },
+        actions,
+      });
+    }
+    await db.settings.put({ key: 'starterDataVersion', value: STARTER_DATA_VERSION });
+  }
+
+  // On startup, an install made by an older version gets the starter data added since.
+  // The first run seeds the current version itself (completeOnboarding). If it fails,
+  // nothing is written, the app still opens and the next startup tries again.
+  db.on('ready', () =>
+    db
+      .transaction('rw', db.categories, db.rules, db.settings, async () => {
+        if (!(await setting('onboardingDone', false))) return;
+        const version = await setting('starterDataVersion', 1);
+        if (version < STARTER_DATA_VERSION) await addStarterData(version);
+      })
+      .catch((error: unknown) => console.error('Could not add the starter data', error)),
+  );
+
   async function toViews(txs: Transaction[]): Promise<TransactionView[]> {
     const [accounts, categories, payees] = await Promise.all([
       db.accounts.toArray(),
@@ -144,7 +204,7 @@ export function createDexieRepository(options: DexieRepositoryOptions = {}): Dat
     async completeOnboarding({ importAccountName }) {
       const createdAt = stamp();
       const accountId = crypto.randomUUID();
-      await db.transaction('rw', db.accounts, db.categories, db.settings, async () => {
+      await db.transaction('rw', [db.accounts, db.categories, db.rules, db.settings], async () => {
         await db.accounts.add({
           id: accountId,
           name: importAccountName.trim() || 'BBVA',
@@ -157,11 +217,7 @@ export function createDexieRepository(options: DexieRepositoryOptions = {}): Dat
           createdAt,
           updatedAt: createdAt,
         });
-        if ((await db.categories.count()) === 0) {
-          await db.categories.bulkAdd(
-            STARTER_CATEGORIES.map((category, order) => ({ ...category, id: crypto.randomUUID(), order, archived: false })),
-          );
-        }
+        await addStarterData(0);
         await db.settings.bulkPut([
           { key: 'importAccountId', value: accountId },
           { key: 'onboardingDone', value: true },
@@ -184,6 +240,38 @@ export function createDexieRepository(options: DexieRepositoryOptions = {}): Dat
 
     async listCategories() {
       return db.categories.orderBy('order').filter((category) => !category.archived).toArray();
+    },
+
+    async listRules() {
+      return db.rules.orderBy('order').toArray();
+    },
+
+    async createRule(draft: RuleDraft) {
+      const id = crypto.randomUUID();
+      await db.transaction('rw', db.rules, async () => {
+        // A user's rule goes before every other, starter rules included, so it wins.
+        const first = await db.rules.orderBy('order').first();
+        await db.rules.add({
+          id,
+          name: draft.name,
+          order: first ? first.order - 1 : 0,
+          enabled: draft.enabled ?? true,
+          match: { field: 'conceptOrMovement', op: 'contains', direction: 'any', ...draft.match },
+          actions: draft.actions,
+        });
+      });
+      changed();
+      return id;
+    },
+
+    async updateRule(id, changes: RuleChanges) {
+      await db.transaction('rw', db.rules, async () => {
+        const rule = await db.rules.get(id);
+        if (!rule) throw new Error(`Rule ${id} not found`);
+        const updated: Rule = { ...rule, ...changes, match: { ...rule.match, ...changes.match } };
+        await db.rules.put(updated);
+      });
+      changed();
     },
 
     async listTransactions(month) {
@@ -271,7 +359,8 @@ export function createDexieRepository(options: DexieRepositoryOptions = {}): Dat
         balance,
         hash: tx.importHash!,
       }));
-      return { ok: true, preview: { fileName, accountId, plan: planImport(result.rows, existing) } };
+      const rules = await db.rules.toArray();
+      return { ok: true, preview: { fileName, accountId, plan: planImport(result.rows, existing, rules) } };
     },
 
     async commitImport(preview: ImportPreview, { exclude = [] } = {}): Promise<ImportOutcome> {
@@ -295,7 +384,8 @@ export function createDexieRepository(options: DexieRepositoryOptions = {}): Dat
             date: row.date,
             accountId: preview.accountId,
             toAccountId: null,
-            categoryId: null,
+            // Rules applied on import don't count as the user's edits: editedAt stays null.
+            categoryId: row.categoryId,
             payeeId: await payeeIdFor(row.payeeName),
             note: row.note,
             source: 'import',

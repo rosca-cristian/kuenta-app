@@ -209,7 +209,9 @@ interface Setting { key: string; value: unknown }
 //       onboardingDone, persistRequested, schemaVersion
 ```
 
-### Dexie indexes (schema version 1)
+### Dexie indexes
+
+Version 1 (part 1) has every table below except `rules`, `budgetLimits` and `goals`; version 2 (part 2) adds `rules`.
 
 ```
 accounts:      id, order
