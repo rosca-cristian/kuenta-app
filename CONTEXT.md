@@ -41,3 +41,14 @@ _Avoid_: Hole, missing period
 **Expected charge**:
 An expense from a payee that was charged in each of the last two months and hasn't been charged yet this month. Used to forecast the month's spending.
 _Avoid_: Recurring transaction, subscription
+
+**Category**:
+The user's label for what an income or expense was for (Supermercado, Nómina…). One level, no subcategories. Transfers and balance adjustments never have one.
+_Avoid_: Tag, label
+
+**Rule**:
+A user-editable instruction that recognizes transactions by the bank's text (concept or movement) and sets their category or payee. Rules run on import and, when the user asks, on existing uncategorized transactions; they never override what the user set by hand.
+_Avoid_: Filter, automation
+
+**Starter rule**:
+A rule Kuenta ships with for common Spanish merchants (supermarkets, fuel, delivery, cash withdrawals). Once created it's an ordinary rule the user can edit or delete.
