@@ -4,7 +4,8 @@ import type { Gap } from '../domain/chain';
 import type { ImportPlan } from '../domain/importPlan';
 import type { MonthSummary } from '../domain/stats';
 import type { BudgetStatus, BudgetTotals } from '../domain/budgets';
-import type { Account, AccountType, Category, CategoryKind, Id, ImportBatch, Payee, Rule, RuleActions, RuleMatch, Transaction } from '../domain/model';
+import type { GoalProgress } from '../domain/goals';
+import type { Account, AccountType, Category, CategoryKind, Goal, Id, ImportBatch, Payee, Rule, RuleActions, RuleMatch, Transaction } from '../domain/model';
 import type { ReadError } from '../import/bbva/reader';
 
 export interface AccountView extends Account {
@@ -205,6 +206,33 @@ export interface BudgetsView {
   today: number | null;
 }
 
+/** A goal with its account and how far it is. */
+export interface GoalView extends Goal, GoalProgress {
+  /** The linked account with its balance today, archived or not: a goal keeps showing an archived account's balance. */
+  account: AccountView;
+}
+
+export interface GoalDraft {
+  name: string;
+  /** Above 0. */
+  target: Cents;
+  /** Not archived, and without another non-archived goal. */
+  accountId: Id;
+  /** A name from the icon set; the account's by default. */
+  icon: string;
+  /** A palette token; the account's by default. */
+  color: string;
+}
+
+/**
+ * The outcome of creating a goal. It's refused when the name is empty, or when its account
+ * already has a non-archived goal (`existing`): the same money would count twice.
+ */
+export type GoalSaveResult =
+  | { ok: true; id: Id }
+  | { ok: false; reason: 'empty' }
+  | { ok: false; reason: 'taken'; existing: Goal };
+
 /** The only data interface screens use. */
 export interface DataRepository {
   /** Called after every write. Returns an unsubscribe function. */
@@ -372,4 +400,18 @@ export interface DataRepository {
    * that has one that month is allowed whatever its kind, for one later made an income one.
    */
   setBudgetLimit(categoryId: Id, amount: Cents, fromMonth?: Month): Promise<void>;
+
+  /**
+   * Every goal, archived ones included, in the order of their accounts (then active before
+   * archived, then by name), each with its account's balance today as progress.
+   */
+  listGoals(): Promise<GoalView[]>;
+  /** The non-archived accounts without a non-archived goal, in order: those the goal editor offers. */
+  goalAccounts(): Promise<AccountView[]>;
+  /**
+   * Creates a goal without a target month. Refused for an empty name or an account that
+   * already has a non-archived goal; throws, changing nothing, for a target that isn't whole
+   * cents above 0 and for an unknown or archived account.
+   */
+  createGoal(draft: GoalDraft): Promise<GoalSaveResult>;
 }

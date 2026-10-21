@@ -5,6 +5,7 @@ import { planImport, reapplyRules } from '../../domain/importPlan';
 import { applyRules as firstMatchActions, hasAction, ruleMatches, suggestedRuleText, type RuleSubject } from '../../domain/rules';
 import { monthSummary } from '../../domain/stats';
 import { budgetMonth, limitFor } from '../../domain/budgets';
+import { goalProgress } from '../../domain/goals';
 import { addMonths, daysBetween, monthOf, today, type Month } from '../../domain/dates';
 import { normalizeText } from '../../domain/text';
 import { shapeByBankSign, transferAccountOf } from '../../domain/transfers';
@@ -32,6 +33,9 @@ import type {
   CategoryUsage,
   CommitImportOptions,
   DataRepository,
+  GoalDraft,
+  GoalSaveResult,
+  GoalView,
   HomeData,
   ImportOutcome,
   ImportPreview,
@@ -330,6 +334,21 @@ export function createDexieRepository(options: DexieRepositoryOptions = {}): Dat
 
   function checkWholeCents(cents: number, what: string) {
     if (!Number.isSafeInteger(cents)) throw new Error(`${what} must be whole cents, not ${cents}`);
+  }
+
+  function checkGoalTarget(target: number) {
+    checkWholeCents(target, 'A goal target');
+    if (target <= 0) throw new Error(`A goal target must be above 0, not ${target}`);
+  }
+
+  /** Why a goal can't be on this account: another non-archived goal (`existing`) already is, so its money would count twice. */
+  async function refuseGoalAccount(accountId: Id, ownId: Id): Promise<GoalSaveResult | null> {
+    const existing = await db.goals
+      .where('accountId')
+      .equals(accountId)
+      .filter((goal) => goal.id !== ownId && !goal.archived)
+      .first();
+    return existing ? { ok: false, reason: 'taken', existing } : null;
   }
 
   /** The account, unless it's missing or the import account (which `action` doesn't apply to). */
@@ -1002,6 +1021,43 @@ export function createDexieRepository(options: DexieRepositoryOptions = {}): Dat
         await db.budgetLimits.put({ id, categoryId, fromMonth, amount });
       });
       changed();
+    },
+
+    async listGoals(): Promise<GoalView[]> {
+      const [accounts, goals] = await Promise.all([repository.listAccounts(), db.goals.toArray()]);
+      const byId = new Map(accounts.map((account) => [account.id, account]));
+      return goals
+        .flatMap((goal) => {
+          const account = byId.get(goal.accountId);
+          // A goal outlives an account deleted before account deletion took its goals along.
+          return account ? [{ ...goal, account, ...goalProgress(goal.target, account.balance) }] : [];
+        })
+        .sort((a, b) => a.account.order - b.account.order || Number(a.archived) - Number(b.archived) || a.name.localeCompare(b.name, 'es'));
+    },
+
+    async goalAccounts() {
+      const [accounts, goals] = await Promise.all([repository.listAccounts(), db.goals.filter((goal) => !goal.archived).toArray()]);
+      const taken = new Set(goals.map((goal) => goal.accountId));
+      return accounts.filter((account) => !account.archived && !taken.has(account.id));
+    },
+
+    async createGoal(draft: GoalDraft): Promise<GoalSaveResult> {
+      const id = crypto.randomUUID();
+      const name = tidyName(draft.name);
+      checkGoalTarget(draft.target);
+      const result = await db.transaction('rw', db.accounts, db.goals, async (): Promise<GoalSaveResult> => {
+        const account = await db.accounts.get(draft.accountId);
+        if (!account) throw new Error(`Account ${draft.accountId} not found`);
+        if (account.archived) throw new Error(`Account ${account.name} is archived: it can't get a goal`);
+        if (name === '') return { ok: false, reason: 'empty' };
+        const refused = await refuseGoalAccount(draft.accountId, id);
+        if (refused) return refused;
+        const { target, accountId, icon, color } = draft;
+        await db.goals.add({ id, name, target, targetMonth: null, accountId, icon, color, archived: false });
+        return { ok: true, id };
+      });
+      if (result.ok) changed();
+      return result;
     },
   };
 
