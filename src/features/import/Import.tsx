@@ -3,12 +3,12 @@ import { useNavigate, useSearchParams } from 'react-router-dom';
 import { CircleCheck, FileUp, TriangleAlert } from 'lucide-react';
 import { Alert, Amount, Button, Card, PageHeader } from '../../ui/components';
 import { Sheet } from '../../ui/Sheet';
-import { IconBadge } from '../../ui/icons';
+import { CategoryGrid } from '../../ui/pickers';
 import { useServices, useRepoQuery } from '../../lib/repo';
 import { formatDate } from '../../domain/dates';
 import { formatMoney } from '../../domain/money';
 import { suggestedRuleText } from '../../domain/rules';
-import type { ImportWarning, PlannedRow } from '../../domain/importPlan';
+import { ruleSubjectOf, type ImportWarning, type PlannedRow } from '../../domain/importPlan';
 import type { Category, Id, ImportBatch } from '../../domain/model';
 import { QuickRuleSheet } from '../rules/QuickRuleSheet';
 import type { ImportOutcome, ImportPreview } from '../../data/repository';
@@ -150,9 +150,7 @@ function Preview({
   const count = fresh.length - excluded.size;
   const categoryOf = (row: PlannedRow) => (row.hash in chosen ? chosen[row.hash] : row.categoryId);
   // The rows a new rule would categorize: those to import whose category the user didn't choose.
-  const ruleCanChange = fresh
-    .filter((row) => !excluded.has(row.hash) && !(row.hash in chosen))
-    .map((row) => ({ concept: row.concept, movement: row.movement, amount: row.bankAmount }));
+  const ruleCanChange = fresh.filter((row) => !excluded.has(row.hash) && !(row.hash in chosen)).map(ruleSubjectOf);
 
   function toggle(hash: string) {
     const next = new Set(excluded);
@@ -300,27 +298,7 @@ function PreviewRowForm({
         <p className="mt-1 text-sm text-muted">{formatDate(row.date)}</p>
       </div>
 
-      <fieldset>
-        <legend className="mb-2 text-sm text-muted">Categoría</legend>
-        <div className="grid grid-cols-4 gap-2">
-          {[...ordered, null].map((category) => {
-            const id = category?.id ?? null;
-            return (
-              <button
-                key={id ?? 'none'}
-                onClick={() => onChoose(id)}
-                aria-pressed={categoryId === id}
-                className={`flex flex-col items-center gap-1 rounded-xl p-2 text-[11px] leading-tight ${
-                  categoryId === id ? 'bg-accent/20 ring-1 ring-accent' : 'bg-card-2'
-                }`}
-              >
-                <IconBadge icon={category?.icon} color={category?.color} size={32} />
-                <span className="line-clamp-2 text-center">{category?.name ?? 'Sin categoría'}</span>
-              </button>
-            );
-          })}
-        </div>
-      </fieldset>
+      <CategoryGrid categories={ordered} value={categoryId} onPick={onChoose} withNone />
 
       <div className="rounded-xl bg-card-2 p-3 text-xs text-muted">
         <p>Concepto del banco: {row.concept}</p>

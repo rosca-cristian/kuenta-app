@@ -1,5 +1,6 @@
 import { createElement } from 'react';
-import { COLOR_NAMES, ICON_NAMES, colorFor, colorLabel, iconFor, iconLabel } from './icons';
+import { COLOR_NAMES, ICON_NAMES, IconBadge, colorFor, colorLabel, iconFor, iconLabel } from './icons';
+import type { Category, Id } from '../domain/model';
 
 /** Picks one icon of the icon set, drawn in the chosen colour. */
 export function IconPicker({ value, color, onChange }: { value: string; color: string; onChange: (icon: string) => void }) {
@@ -43,6 +44,48 @@ export function ColorPicker({ value, onChange }: { value: string; onChange: (col
             style={{ background: colorFor(name) }}
           />
         ))}
+      </div>
+    </fieldset>
+  );
+}
+
+/**
+ * Picks a category from a grid, in the order given. `withNone` adds "Sin categoría" at the
+ * end; otherwise the caller decides what tapping the chosen category again means.
+ */
+export function CategoryGrid({
+  categories,
+  value,
+  onPick,
+  withNone = false,
+}: {
+  categories: Category[];
+  value: Id | null;
+  onPick: (id: Id | null) => void;
+  withNone?: boolean;
+}) {
+  const options: (Category | null)[] = withNone ? [...categories, null] : categories;
+  return (
+    <fieldset>
+      <legend className="mb-2 text-sm text-muted">Categoría</legend>
+      <div className="grid grid-cols-4 gap-2">
+        {options.map((category) => {
+          const id = category?.id ?? null;
+          return (
+            <button
+              key={id ?? 'none'}
+              type="button"
+              onClick={() => onPick(id)}
+              aria-pressed={value === id}
+              className={`flex flex-col items-center gap-1 rounded-xl p-2 text-[11px] leading-tight ${
+                value === id ? 'bg-accent/20 ring-1 ring-accent' : 'bg-card-2'
+              }`}
+            >
+              <IconBadge icon={category?.icon} color={category?.color} size={32} />
+              <span className="line-clamp-2 text-center">{category?.name ?? 'Sin categoría'}</span>
+            </button>
+          );
+        })}
       </div>
     </fieldset>
   );

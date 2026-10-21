@@ -105,13 +105,16 @@ export function planImport(rows: BankRow[], existing: (ChainLink & { hash: strin
   return { rows: planned, dateFrom: bookingDates[0], dateTo: bookingDates[bookingDates.length - 1], warnings };
 }
 
+/** The bank data rules look at in a planned row. */
+export function ruleSubjectOf(row: PlannedRow): RuleSubject {
+  return { concept: row.concept, movement: row.movement, amount: row.bankAmount };
+}
+
 /** The plan with `rules` run again on its new rows; rows imported before and warnings stay as they are. */
 export function reapplyRules(plan: ImportPlan, rules: Rule[]): ImportPlan {
   return {
     ...plan,
-    rows: plan.rows.map((row) =>
-      row.status === 'new' ? { ...row, ...ruleOutcome({ concept: row.concept, movement: row.movement, amount: row.bankAmount }, rules) } : row,
-    ),
+    rows: plan.rows.map((row) => (row.status === 'new' ? { ...row, ...ruleOutcome(ruleSubjectOf(row), rules) } : row)),
   };
 }
 
