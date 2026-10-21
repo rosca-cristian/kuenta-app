@@ -293,11 +293,16 @@ function BalanceForm({ account, onDone }: { account: AccountView; onDone: () => 
   );
 }
 
-/** Deleting is only for accounts with no transactions; the others are offered archiving instead. */
+/**
+ * Deleting is only for accounts with no transactions; the others are offered archiving
+ * instead. Deleting disables the rules that transfer to the account, which it warns about.
+ */
 function DeleteForm({ account, onCancel, onDone }: { account: AccountView; onCancel: () => void; onDone: () => void }) {
   const repo = useRepo();
+  const rules = useRepoQuery((r) => r.listRules());
   const [busy, setBusy] = useState(false);
   const deletable = account.transactionCount === 0;
+  const transferRules = rules?.filter((rule) => rule.actions.transferAccountId === account.id).length ?? 0;
 
   async function confirm() {
     setBusy(true);
@@ -323,7 +328,16 @@ function DeleteForm({ account, onCancel, onDone }: { account: AccountView; onCan
   return (
     <div className="flex flex-col gap-4">
       {deletable ? (
-        <p className="text-sm">¿Borrar «{account.name}»? No tiene movimientos.</p>
+        <>
+          <p className="text-sm">¿Borrar «{account.name}»? No tiene movimientos.</p>
+          {transferRules > 0 && (
+            <Alert tone="warn">
+              {transferRules === 1
+                ? 'La regla que transfiere a esta cuenta se desactivará, para que puedas elegir otra cuenta después.'
+                : `Las ${transferRules} reglas que transfieren a esta cuenta se desactivarán, para que puedas elegir otra cuenta después.`}
+            </Alert>
+          )}
+        </>
       ) : (
         <Alert tone="warn">
           «{account.name}» tiene {countText(account.transactionCount)} y no se puede borrar. Puedes archivarla: dejará de aparecer en

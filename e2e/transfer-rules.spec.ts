@@ -66,3 +66,37 @@ test('create a transfer rule to Revolut and see the next import make the top-up 
   await expect(homeAccount(page, 'Revolut')).toContainText('200,00 €');
   await expect(page.getByTestId('month-expenses')).toHaveText('20,00 €');
 });
+
+test('create a transfer rule and apply it to the top-up already imported', async ({ page }) => {
+  await page.goto('./');
+  await page.getByRole('button', { name: 'Empezar' }).click();
+  await page.getByRole('button', { name: 'Continuar' }).click();
+  await page.getByTestId('file-input').setInputFiles(bbvaXlsxFile(movements, { startBalance: 1000 }));
+  await page.getByRole('button', { name: 'Importar 3' }).click();
+  await expect(page.getByTestId('balance-check')).toHaveText('✓ Cuadra');
+
+  await page.getByRole('link', { name: 'Más' }).click();
+  await page.getByRole('link', { name: 'Cuentas' }).click();
+  await page.getByRole('button', { name: 'Nueva' }).click();
+  await sheet(page).getByLabel('Nombre').fill('Revolut');
+  await sheet(page).getByRole('button', { name: 'Crear cuenta' }).click();
+  await expect(sheet(page)).toHaveCount(0);
+
+  await page.getByRole('link', { name: 'Más' }).click();
+  await page.getByRole('link', { name: 'Reglas' }).click();
+  await page.getByRole('button', { name: 'Nueva' }).click();
+  await sheet(page).getByLabel('Concepto o movimiento contiene').fill('revolut');
+  await expect(sheet(page).getByTestId('rule-matches')).toHaveText('Coincide con 1 movimiento');
+  await sheet(page).getByRole('radio', { name: 'Transferencia a cuenta' }).check();
+  await sheet(page).getByRole('combobox', { name: 'Cuenta' }).selectOption({ label: 'Revolut' });
+  await sheet(page).getByRole('button', { name: 'Crear regla' }).click();
+
+  // Saving offers to convert the top-up already imported.
+  await sheet(page).getByRole('button', { name: 'Aplicar también a 1 movimiento' }).click();
+  await expect(sheet(page).getByRole('status')).toHaveText('Regla aplicada: 1 movimiento cambiado.');
+  await sheet(page).getByRole('button', { name: 'Hecho' }).click();
+
+  await page.getByRole('link', { name: 'Inicio' }).click();
+  await expect(homeAccount(page, 'Revolut')).toContainText('200,00 €');
+  await expect(page.getByTestId('month-expenses')).toHaveText('20,00 €');
+});

@@ -105,7 +105,8 @@ export function RuleEditor({
     <form onSubmit={save} className="flex flex-col gap-4">
       {rule && !hasAction(rule.actions) && (
         <Alert tone="warn">
-          Esta regla está desactivada porque se borró su categoría. Elige una categoría o un comercio para poder activarla.
+          Esta regla está desactivada porque se borró su categoría o la cuenta a la que transfería. Elige una categoría, una cuenta o
+          un comercio para poder activarla.
         </Alert>
       )}
 

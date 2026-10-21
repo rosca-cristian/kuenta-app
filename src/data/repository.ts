@@ -157,9 +157,9 @@ export interface RuleDraft {
 
 /** What a rule, saved or not, would do on the imported transactions. */
 export interface RulePreview {
-  /** Imported transactions the rule's condition matches, edited or not. */
+  /** Imported transactions the rule's condition matches, edited or not, transfers included. */
   matching: number;
-  /** Never-edited transactions applying the rule would change. */
+  /** Never-edited transactions applying the rule would change, conversions to or from a transfer included. */
   applicable: number;
 }
 
@@ -214,8 +214,9 @@ export interface DataRepository {
    */
   setAccountArchived(id: Id, archived: boolean): Promise<void>;
   /**
-   * Deletes an account with no transactions. Throws, changing nothing, while it has any
-   * (it can be archived instead) and for the import account.
+   * Deletes an account with no transactions. The rules that transfer to it lose that action
+   * and are disabled, so the user can repoint them. Throws, changing nothing, while it has
+   * any (it can be archived instead) and for the import account.
    */
   deleteAccount(id: Id): Promise<void>;
   /** Categories in order; pickers show them in this order. */
@@ -256,8 +257,11 @@ export interface DataRepository {
   previewRule(draft: Pick<RuleDraft, 'match' | 'actions'>): Promise<RulePreview>;
   /**
    * Applies one rule (`ruleId`, even if disabled) or every enabled rule in order, first
-   * match wins, to the imported transactions the user never edited. Returns how many
-   * changed. Applying doesn't mark them as edited, so a later rule can still apply.
+   * match wins, to the imported transactions the user never edited, transfers included.
+   * Only what differs changes: a transfer rule makes the transaction a transfer with its
+   * account, a category rule makes a transfer an expense or income again with its category
+   * (both by the bank's sign), and a rule with only a payee name leaves the type alone.
+   * Returns how many changed. Applying doesn't mark them as edited, so a later rule can still apply.
    */
   applyRules(ruleId?: Id): Promise<number>;
   /**

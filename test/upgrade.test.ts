@@ -188,6 +188,21 @@ describe('the offer to apply the starter rules to what was already imported', ()
     expect(await open(name).starterRulesOffer()).toBeNull();
   });
 
+  it('counts and applies the transfer rules the user made before accepting', async () => {
+    const { name } = await createPartOneDatabase();
+    const repo = open(name);
+    const { id: revolutId } = (await repo.createAccount({ name: 'Revolut', type: 'bank', icon: 'banknote', color: 'cyan' })) as { id: string };
+    // The user's rule goes first, so it wins over the starter Mercadona rule.
+    await repo.createRule({ name: 'Mercadona', match: { value: 'mercadona' }, actions: { transferAccountId: revolutId } });
+
+    expect(await repo.starterRulesOffer()).toBe(2);
+    expect(await repo.acceptStarterRulesOffer()).toBe(2);
+    const october = await repo.listTransactions('2026-10');
+    expect(october.find((tx) => tx.id === 'tx-3')).toMatchObject({ type: 'transfer', accountId: 'acc-bbva', toAccountId: revolutId, editedAt: null });
+    expect((await repo.listAccounts()).find((account) => account.id === revolutId)!.balance).toBe(5000);
+    expect((await repo.balanceCheck())?.difference).toBe(0);
+  });
+
   it('changes nothing when dismissed, and is gone for good', async () => {
     const { name } = await createPartOneDatabase();
     const repo = open(name);
