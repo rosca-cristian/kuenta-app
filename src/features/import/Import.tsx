@@ -3,11 +3,14 @@ import { useNavigate, useSearchParams } from 'react-router-dom';
 import { CircleCheck, FileUp, TriangleAlert } from 'lucide-react';
 import { Alert, Amount, Button, Card, PageHeader } from '../../ui/components';
 import { Sheet } from '../../ui/Sheet';
+import { IconBadge } from '../../ui/icons';
 import { useServices, useRepoQuery } from '../../lib/repo';
 import { formatDate } from '../../domain/dates';
 import { formatMoney } from '../../domain/money';
-import type { ImportWarning } from '../../domain/importPlan';
-import type { ImportBatch } from '../../domain/model';
+import { suggestedRuleText } from '../../domain/rules';
+import type { ImportWarning, PlannedRow } from '../../domain/importPlan';
+import type { Category, Id, ImportBatch } from '../../domain/model';
+import { QuickRuleSheet } from '../rules/QuickRuleSheet';
 import type { ImportOutcome, ImportPreview } from '../../data/repository';
 
 type State =
@@ -131,11 +134,25 @@ function Preview({
   const { repo } = useServices();
   const categories = useRepoQuery((r) => r.listCategories());
   const categoryName = new Map(categories?.map((category) => [category.id, category.name]));
+  // Re-planned after each rule created from a row.
+  const [current, setCurrent] = useState(preview);
   const [excluded, setExcluded] = useState<Set<string>>(new Set());
+  // Categories the user chose in the preview, by fingerprint; they win over the rules'.
+  const [chosen, setChosen] = useState<Record<string, Id | null>>({});
+  // Both kept after their sheet closes, so it doesn't change while it slides away.
+  const [editing, setEditing] = useState<PlannedRow | null>(null);
+  const [editingOpen, setEditingOpen] = useState(false);
+  const [ruleFrom, setRuleFrom] = useState<{ text: string; categoryId: Id | null } | null>(null);
+  const [creatingRule, setCreatingRule] = useState(false);
   const [busy, setBusy] = useState(false);
-  const fresh = preview.plan.rows.filter((row) => row.status === 'new');
-  const already = preview.plan.rows.length - fresh.length;
+  const fresh = current.plan.rows.filter((row) => row.status === 'new');
+  const already = current.plan.rows.length - fresh.length;
   const count = fresh.length - excluded.size;
+  const categoryOf = (row: PlannedRow) => (row.hash in chosen ? chosen[row.hash] : row.categoryId);
+  // The rows a new rule would categorize: those to import whose category the user didn't choose.
+  const ruleCanChange = fresh
+    .filter((row) => !excluded.has(row.hash) && !(row.hash in chosen))
+    .map((row) => ({ concept: row.concept, movement: row.movement, amount: row.bankAmount }));
 
   function toggle(hash: string) {
     const next = new Set(excluded);
@@ -144,9 +161,26 @@ function Preview({
     setExcluded(next);
   }
 
+  function edit(row: PlannedRow) {
+    setEditing(row);
+    setEditingOpen(true);
+  }
+
+  function choose(row: PlannedRow, categoryId: Id | null) {
+    // Picking the category a rule already gave the row isn't a change: later rules may still change it.
+    if (categoryId !== categoryOf(row) || row.hash in chosen) setChosen({ ...chosen, [row.hash]: categoryId });
+    setEditingOpen(false);
+  }
+
+  function createRule(row: PlannedRow) {
+    setEditingOpen(false);
+    setRuleFrom({ text: suggestedRuleText(row.concept), categoryId: categoryOf(row) });
+    setCreatingRule(true);
+  }
+
   async function commit() {
     setBusy(true);
-    onImported(await repo.commitImport(preview, { exclude: [...excluded] }));
+    onImported(await repo.commitImport(current, { exclude: [...excluded], categories: chosen }));
   }
 
   return (
@@ -171,29 +205,34 @@ function Preview({
         <section>
           <h2 className="px-1 pb-1 text-sm font-medium">Nuevos ({fresh.length})</h2>
           <ul className="overflow-hidden rounded-2xl border border-line bg-card">
-            {fresh.map((row) => (
-              <li key={row.hash} className="border-b border-line last:border-b-0">
-                <label className="flex min-h-14 items-center gap-3 px-3 py-2">
+            {fresh.map((row) => {
+              const categoryId = categoryOf(row);
+              return (
+                <li key={row.hash} className="flex min-h-14 items-center border-b border-line last:border-b-0">
                   <input
                     type="checkbox"
+                    aria-label={`Importar ${rowName(row)}`}
                     checked={!excluded.has(row.hash)}
                     onChange={() => toggle(row.hash)}
-                    className="size-5 accent-[var(--color-accent)]"
+                    className="ml-3 size-5 shrink-0 accent-[var(--color-accent)]"
                   />
-                  <span className="min-w-0 flex-1">
-                    <span className="block truncate">{row.payeeName || row.note || row.concept}</span>
-                    <span className="block truncate text-xs text-muted">
-                      <span className={row.categoryId ? '' : 'text-warn'} data-testid="preview-category">
-                        {(row.categoryId && categoryName.get(row.categoryId)) || 'Sin categoría'}
-                      </span>{' '}
-                      · {formatDate(row.date)} · {row.movement || row.concept}
+                  <button onClick={() => edit(row)} className="flex min-w-0 flex-1 items-center gap-3 self-stretch px-3 py-2 text-left">
+                    <span className="min-w-0 flex-1">
+                      <span className="block truncate">{rowName(row)}</span>
+                      <span className="block truncate text-xs text-muted">
+                        <span className={categoryId ? '' : 'text-warn'} data-testid="preview-category">
+                          {(categoryId && categoryName.get(categoryId)) || 'Sin categoría'}
+                        </span>{' '}
+                        · {formatDate(row.date)} · {row.movement || row.concept}
+                      </span>
                     </span>
-                  </span>
-                  <Amount cents={row.amount} kind={row.type} />
-                </label>
-              </li>
-            ))}
+                    <Amount cents={row.amount} kind={row.type} />
+                  </button>
+                </li>
+              );
+            })}
           </ul>
+          <p className="px-1 pt-1 text-xs text-muted">Toca una fila para cambiar su categoría o crear una regla.</p>
         </section>
       ) : (
         <Alert>Todo lo de este archivo ya estaba importado.</Alert>
@@ -209,7 +248,91 @@ function Preview({
           Importar {count > 0 ? count : ''}
         </Button>
       </div>
+
+      <Sheet open={editingOpen} onClose={() => setEditingOpen(false)} title={editing ? rowName(editing) : ''}>
+        {editing && (
+          <PreviewRowForm
+            row={editing}
+            categories={categories ?? []}
+            categoryId={categoryOf(editing)}
+            onChoose={(categoryId) => choose(editing, categoryId)}
+            onCreateRule={() => createRule(editing)}
+          />
+        )}
+      </Sheet>
+      <QuickRuleSheet
+        open={creatingRule}
+        initialText={ruleFrom?.text ?? ''}
+        categoryId={ruleFrom?.categoryId ?? null}
+        pendingRows={ruleCanChange}
+        onSaved={async () => setCurrent(await repo.replanImport(current))}
+        onClose={() => setCreatingRule(false)}
+      />
     </>
+  );
+}
+
+const rowName = (row: PlannedRow) => row.payeeName || row.note || row.concept;
+
+/** A new row of the preview: pick its category, or create a rule from its concept. */
+function PreviewRowForm({
+  row,
+  categories,
+  categoryId,
+  onChoose,
+  onCreateRule,
+}: {
+  row: PlannedRow;
+  categories: Category[];
+  categoryId: Id | null;
+  onChoose: (categoryId: Id | null) => void;
+  onCreateRule: () => void;
+}) {
+  // Categories of the row's kind first, as in the edit sheet.
+  const ordered = [...categories].sort((a, b) => Number(a.kind !== row.type) - Number(b.kind !== row.type) || a.order - b.order);
+  // No rule for a Bizum: it would match every Bizum.
+  const canCreateRule = suggestedRuleText(row.concept) !== '';
+
+  return (
+    <div className="flex flex-col gap-4">
+      <div className="text-center">
+        <Amount cents={row.amount} kind={row.type} className="text-3xl font-semibold" />
+        <p className="mt-1 text-sm text-muted">{formatDate(row.date)}</p>
+      </div>
+
+      <fieldset>
+        <legend className="mb-2 text-sm text-muted">Categoría</legend>
+        <div className="grid grid-cols-4 gap-2">
+          {[...ordered, null].map((category) => {
+            const id = category?.id ?? null;
+            return (
+              <button
+                key={id ?? 'none'}
+                onClick={() => onChoose(id)}
+                aria-pressed={categoryId === id}
+                className={`flex flex-col items-center gap-1 rounded-xl p-2 text-[11px] leading-tight ${
+                  categoryId === id ? 'bg-accent/20 ring-1 ring-accent' : 'bg-card-2'
+                }`}
+              >
+                <IconBadge icon={category?.icon} color={category?.color} size={32} />
+                <span className="line-clamp-2 text-center">{category?.name ?? 'Sin categoría'}</span>
+              </button>
+            );
+          })}
+        </div>
+      </fieldset>
+
+      <div className="rounded-xl bg-card-2 p-3 text-xs text-muted">
+        <p>Concepto del banco: {row.concept}</p>
+        {row.movement && <p>Movimiento: {row.movement}</p>}
+      </div>
+
+      {canCreateRule && (
+        <Button variant="secondary" onClick={onCreateRule}>
+          Crear regla con este concepto
+        </Button>
+      )}
+    </div>
   );
 }
 
