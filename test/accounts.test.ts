@@ -1,16 +1,14 @@
 import { describe, expect, it } from 'vitest';
 import { createDexieRepository } from '../src/data/dexie/dexieRepository';
-import { KuentaDb } from '../src/data/dexie/db';
 import type { DataRepository } from '../src/data/repository';
 import { bbvaXlsx, type SampleMovement } from './support/bbvaXlsx';
 
 let dbCount = 0;
 
 async function setup() {
-  const name = `kuenta-accounts-test-${++dbCount}`;
-  const repo = createDexieRepository({ name, now: () => new Date('2026-10-20T10:00:00') });
+  const repo = createDexieRepository({ name: `kuenta-accounts-test-${++dbCount}`, now: () => new Date('2026-10-20T10:00:00') });
   await repo.completeOnboarding({ importAccountName: 'BBVA' });
-  return { repo, name };
+  return { repo };
 }
 
 async function importFile(repo: DataRepository, movements: SampleMovement[], startBalance = 1000) {
@@ -315,17 +313,15 @@ describe('deleting an account', () => {
   });
 
   it('is refused while the account has transactions, on either side', async () => {
-    const { repo, name } = await setup();
+    const { repo } = await setup();
     const { id: revolutId } = (await repo.createAccount({ ...revolut, openingBalance: 70000 })) as { id: string };
     const { id: huchaId } = (await repo.createAccount({ name: 'Hucha', type: 'savings', icon: 'piggy-bank', color: 'pink' })) as {
       id: string;
     };
     await repo.updateAccountBalance(revolutId, 65000);
     await importFile(repo, [{ valor: '02/10/2026', concepto: 'Traspaso a hucha', movimiento: 'Transferencia', importe: -10 }], 1000);
-    // Converting into a transfer comes with its own ticket; until then, convert it in the database directly.
-    const db = new KuentaDb(name);
-    await db.transactions.filter((tx) => tx.source === 'import').modify({ type: 'transfer', toAccountId: huchaId, categoryId: null });
-    db.close();
+    const imported = (await repo.listTransactions('2026-10')).find((tx) => tx.source === 'import')!;
+    await repo.updateTransaction(imported.id, { transferAccountId: huchaId });
     expect(await accountNamed(repo, 'Hucha')).toMatchObject({ transactionCount: 1, balance: 1000 });
     const before = await repo.listAccounts();
 

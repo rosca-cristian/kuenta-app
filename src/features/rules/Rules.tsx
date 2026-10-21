@@ -146,7 +146,7 @@ function RuleRow({
   onEdit: () => void;
 }) {
   const repo = useRepo();
-  // A rule left without an action (its category was deleted) can't be enabled until it gets one.
+  // A rule left without an action (its category or transfer account was deleted) can't be enabled until it gets one.
   const actionable = hasAction(rule.actions);
 
   return (
@@ -174,7 +174,7 @@ function RuleRow({
             {actionText(rule.actions, categories, accounts)}
           </span>
         ) : (
-          <span className="block text-xs text-warn">Necesita una categoría o un comercio</span>
+          <span className="block text-xs text-warn">Necesita una categoría, una cuenta o un comercio</span>
         )}
       </button>
       {position && (

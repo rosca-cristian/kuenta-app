@@ -2,7 +2,7 @@ import { KuentaDb } from './db';
 import { STARTER_CATEGORIES, STARTER_DATA_VERSION, STARTER_RULES } from '../seed';
 import { bankOrder, findGaps, latestBalanceOf, openingBalanceOf, type ChainLink } from '../../domain/chain';
 import { planImport, reapplyRules } from '../../domain/importPlan';
-import { applyRules as firstMatchActions, hasAction, ruleMatches, suggestedRuleText } from '../../domain/rules';
+import { applyRules as firstMatchActions, hasAction, ruleMatches, suggestedRuleText, type RuleSubject } from '../../domain/rules';
 import { monthSummary } from '../../domain/stats';
 import { addMonths, daysBetween, today } from '../../domain/dates';
 import { normalizeText } from '../../domain/text';
@@ -52,8 +52,8 @@ export interface DexieRepositoryOptions {
 
 type Link = ChainLink & { tx: Transaction };
 
-/** What applying rules changes on one transaction. */
-type RuleChange = { id: Id; categoryId?: Id; payeeName?: string };
+/** What applying rules changes on one transaction: its type, accounts and category, and its payee. */
+type RuleChange = { id: Id; fields: Partial<Pick<Transaction, 'type' | 'accountId' | 'toAccountId' | 'categoryId'>>; payeeName?: string };
 
 /** A payee name as stored: single spaces, no leading or trailing ones. */
 const tidyName = (name: string) => name.replace(/\s+/g, ' ').trim();
@@ -217,41 +217,64 @@ export function createDexieRepository(options: DexieRepositoryOptions = {}): Dat
   }
 
   /**
+   * What rules look at in an imported transaction. The amount is the bank's, as seen from
+   * the import account, so a transfer coming back from Revolut is still a credit.
+   */
+  const subjectOf = (tx: Transaction, importId: Id): RuleSubject => ({
+    concept: tx.bankConcept ?? '',
+    movement: tx.bankMovement ?? '',
+    amount: signedAmount(tx, importId),
+  });
+
+  /**
    * What the rules (first enabled match wins, by order) would change on the imported
-   * transactions the user never edited: only what differs from what they have.
+   * transactions the user never edited, transfers included: only what differs from what
+   * they have. A transfer rule makes the transaction a transfer with its account; a
+   * category rule makes a transfer an expense or income again, both by the bank's sign; a
+   * rule with only a payee name leaves the type alone. Call it inside a transaction on
+   * settings, transactions and payees.
    */
   async function ruleChanges(rules: Rule[]): Promise<RuleChange[]> {
+    const importId = await setting<Id | null>('importAccountId', null);
+    if (importId === null) return [];
     const [txs, payees] = await Promise.all([
-      db.transactions.filter((tx) => tx.source === 'import' && tx.type !== 'transfer' && tx.editedAt === null).toArray(),
+      db.transactions.filter((tx) => tx.source === 'import' && tx.editedAt === null).toArray(),
       db.payees.toArray(),
     ]);
     const payeeNames = new Map(payees.map((payee) => [payee.id, payee.normalized]));
     const changes: RuleChange[] = [];
     for (const tx of txs) {
-      const actions = firstMatchActions(rules, {
-        concept: tx.bankConcept ?? '',
-        movement: tx.bankMovement ?? '',
-        amount: signedAmount(tx, tx.accountId),
-      });
+      const subject = subjectOf(tx, importId);
+      const actions = firstMatchActions(rules, subject);
       if (!actions) continue;
-      const change: RuleChange = { id: tx.id };
-      if (actions.categoryId !== undefined && actions.categoryId !== tx.categoryId) change.categoryId = actions.categoryId;
+      const change: RuleChange = { id: tx.id, fields: {} };
+      const transferAccountId = transferAccountOf(tx, importId);
+      if (actions.transferAccountId !== undefined) {
+        if (actions.transferAccountId !== transferAccountId) {
+          change.fields = { ...shapeByBankSign(subject.amount, importId, actions.transferAccountId), categoryId: null };
+        }
+      } else if (actions.categoryId !== undefined) {
+        if (transferAccountId !== null) {
+          change.fields = { ...shapeByBankSign(subject.amount, importId, null), categoryId: actions.categoryId };
+        } else if (actions.categoryId !== tx.categoryId) {
+          change.fields = { categoryId: actions.categoryId };
+        }
+      }
       const payeeName = tidyName(actions.payeeName ?? '');
       if (payeeName !== '' && normalizeText(payeeName) !== (tx.payeeId && payeeNames.get(tx.payeeId))) change.payeeName = payeeName;
-      if (change.categoryId !== undefined || change.payeeName !== undefined) changes.push(change);
+      if (Object.keys(change.fields).length > 0 || change.payeeName !== undefined) changes.push(change);
     }
     return changes;
   }
 
   /**
    * Applies the rules to the transactions the user never edited, leaving them never
-   * edited. Returns how many changed. Call it inside a transaction on rules, transactions and payees.
+   * edited. Returns how many changed. Call it inside a transaction on settings, rules, transactions and payees.
    */
   async function applyToNeverEdited(rules: Rule[]): Promise<number> {
     const changes = await ruleChanges(rules);
     for (const change of changes) {
-      const update: Partial<Transaction> = { updatedAt: stamp() };
-      if (change.categoryId !== undefined) update.categoryId = change.categoryId;
+      const update: Partial<Transaction> = { ...change.fields, updatedAt: stamp() };
       if (change.payeeName !== undefined) update.payeeId = await payeeIdFor(change.payeeName);
       await db.transactions.update(change.id, update);
     }
@@ -491,10 +514,17 @@ export function createDexieRepository(options: DexieRepositoryOptions = {}): Dat
     },
 
     async deleteAccount(id) {
-      await db.transaction('rw', db.accounts, db.transactions, db.settings, async () => {
+      await db.transaction('rw', db.accounts, db.transactions, db.settings, db.rules, async () => {
         await nonImportedAccount(id, 'be deleted');
         const count = (await accountTransactions(id)).length;
         if (count > 0) throw new Error(`Account ${id} has ${count} transactions: archive it instead`);
+        // Disabled rather than deleted, so the user can repoint them; any payee action stays.
+        await db.rules
+          .filter((rule) => rule.actions.transferAccountId === id)
+          .modify((rule) => {
+            delete rule.actions.transferAccountId;
+            rule.enabled = false;
+          });
         await db.accounts.delete(id);
       });
       changed();
@@ -644,17 +674,17 @@ export function createDexieRepository(options: DexieRepositoryOptions = {}): Dat
         match: { field: 'conceptOrMovement', op: 'contains', direction: 'any', ...draft.match },
         actions: draft.actions,
       };
-      return db.transaction('r', db.transactions, db.payees, async () => {
-        const imported = await db.transactions.filter((tx) => tx.source === 'import' && tx.type !== 'transfer').toArray();
-        const matching = imported.filter((tx) =>
-          ruleMatches(rule.match, { concept: tx.bankConcept ?? '', movement: tx.bankMovement ?? '', amount: signedAmount(tx, tx.accountId) }),
-        ).length;
+      return db.transaction('r', db.settings, db.transactions, db.payees, async () => {
+        const importId = await setting<Id | null>('importAccountId', null);
+        if (importId === null) return { matching: 0, applicable: 0 };
+        const imported = await db.transactions.filter((tx) => tx.source === 'import').toArray();
+        const matching = imported.filter((tx) => ruleMatches(rule.match, subjectOf(tx, importId))).length;
         return { matching, applicable: (await ruleChanges([rule])).length };
       });
     },
 
     async applyRules(ruleId) {
-      const count = await db.transaction('rw', db.rules, db.transactions, db.payees, async () => {
+      const count = await db.transaction('rw', db.settings, db.rules, db.transactions, db.payees, async () => {
         let rules = await db.rules.toArray();
         if (ruleId !== undefined) {
           const rule = rules.find((r) => r.id === ruleId);
