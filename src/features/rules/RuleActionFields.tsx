@@ -1,3 +1,4 @@
+import { Choice } from '../../ui/components';
 import type { Category, Id } from '../../domain/model';
 import type { AccountView } from '../../data/repository';
 
@@ -89,46 +90,5 @@ export function RuleActionFields({
         </label>
       )}
     </>
-  );
-}
-
-/** A row of mutually exclusive options, as segmented buttons. */
-export function Choice<T extends string>({
-  legend,
-  name,
-  value,
-  options,
-  onChange,
-}: {
-  legend: string;
-  name: string;
-  value: T;
-  options: Record<T, string>;
-  onChange: (value: T) => void;
-}) {
-  const entries = Object.entries(options) as [T, string][];
-  return (
-    <fieldset>
-      <legend className="mb-1 text-sm text-muted">{legend}</legend>
-      <div className="grid gap-2" style={{ gridTemplateColumns: `repeat(${entries.length}, minmax(0, 1fr))` }}>
-        {entries.map(([option, label]) => (
-          <label
-            key={option}
-            className={`relative flex min-h-11 items-center justify-center rounded-xl px-1 text-center text-xs leading-tight ${
-              value === option ? 'bg-accent/20 ring-1 ring-accent' : 'bg-card-2'
-            }`}
-          >
-            <input
-              type="radio"
-              name={name}
-              checked={value === option}
-              onChange={() => onChange(option)}
-              className="absolute inset-0 cursor-pointer appearance-none rounded-xl focus-visible:ring-2 focus-visible:ring-accent"
-            />
-            {label}
-          </label>
-        ))}
-      </div>
-    </fieldset>
   );
 }

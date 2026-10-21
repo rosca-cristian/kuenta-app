@@ -113,6 +113,55 @@ describe('limits over time', () => {
     expect((await repo.budgetableCategories('2026-10')).map((c) => c.name)).toContain('Restaurantes');
   });
 
+  it('changes a limit from the selected month on, leaving the month before as it was', async () => {
+    const repo = await setup();
+    const restaurantes = await categoryId(repo, 'Restaurantes');
+    await repo.setBudgetLimit(restaurantes, 30000, '2026-09');
+
+    // Editing the October card "a partir de octubre 2026".
+    await repo.setBudgetLimit(restaurantes, 35000, '2026-10');
+
+    const september = await repo.budgets('2026-09');
+    expect(september.budgets.map((budget) => budget.limit)).toEqual([30000]);
+    expect(september.today).toBeNull();
+    expect(await limitsIn(repo, '2026-10')).toEqual({ Restaurantes: 35000 });
+    expect(await limitsIn(repo, '2027-01')).toEqual({ Restaurantes: 35000 });
+  });
+
+  it('adds a budget in a past month from that month on, replacing the later limits', async () => {
+    const repo = await setup();
+    const restaurantes = await categoryId(repo, 'Restaurantes');
+    await repo.setBudgetLimit(restaurantes, 30000, '2026-10');
+    // In August Restaurantes had no budget, so "Añadir presupuesto" offers it there.
+    expect((await repo.budgetableCategories('2026-08')).map((c) => c.name)).toContain('Restaurantes');
+
+    await repo.setBudgetLimit(restaurantes, 20000, '2026-08');
+
+    expect(await limitsIn(repo, '2026-07')).toEqual({});
+    for (const month of ['2026-08', '2026-09', '2026-10', '2026-11']) expect(await limitsIn(repo, month)).toEqual({ Restaurantes: 20000 });
+    expect((await repo.budgetableCategories('2026-08')).map((c) => c.name)).not.toContain('Restaurantes');
+  });
+
+  it('removes the budget of a category later made an income one, but sets no new limit on it', async () => {
+    const repo = await setup();
+    const regalos = await categoryId(repo, 'Regalos');
+    await repo.setBudgetLimit(regalos, 10000, '2026-09');
+    await repo.updateCategory(regalos, { kind: 'income' });
+
+    // Still shown, as it has a limit, and it can't be raised or set again…
+    expect(await limitsIn(repo, '2026-10')).toEqual({ Regalos: 10000 });
+    await expect(repo.setBudgetLimit(regalos, 20000, '2026-10')).rejects.toThrow();
+    expect(await limitsIn(repo, '2026-10')).toEqual({ Regalos: 10000 });
+
+    // …but "Quitar presupuesto" still works.
+    await repo.setBudgetLimit(regalos, 0, '2026-10');
+    expect(await limitsIn(repo, '2026-09')).toEqual({ Regalos: 10000 });
+    expect(await limitsIn(repo, '2026-10')).toEqual({});
+    // With no budget left from October there is nothing to remove there.
+    await expect(repo.setBudgetLimit(regalos, 0, '2026-11')).rejects.toThrow();
+    await expect(repo.setBudgetLimit(await categoryId(repo, 'Nómina'), 0)).rejects.toThrow();
+  });
+
   it('lists the budgets of a month in category order', async () => {
     const repo = await setup();
     await repo.setBudgetLimit(await categoryId(repo, 'Ocio'), 5000);

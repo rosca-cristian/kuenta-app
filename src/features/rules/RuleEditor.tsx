@@ -1,13 +1,13 @@
 import { useEffect, useState, type FormEvent } from 'react';
 import { ChevronDown } from 'lucide-react';
-import { Alert, Button } from '../../ui/components';
+import { Alert, Button, Choice } from '../../ui/components';
 import { useRepo } from '../../lib/repo';
 import { hasAction } from '../../domain/rules';
 import { normalizeText } from '../../domain/text';
 import type { Category, Id, Rule, RuleActions, RuleMatch } from '../../domain/model';
 import type { AccountView, RulePreview } from '../../data/repository';
 import { DIRECTION_LABELS, FIELD_LABELS, OP_LABELS, conditionText, movementsText } from './ruleText';
-import { Choice, RuleActionFields, type ActionKind } from './RuleActionFields';
+import { RuleActionFields, type ActionKind } from './RuleActionFields';
 
 const DEFAULT_MATCH: RuleMatch = { field: 'conceptOrMovement', op: 'contains', value: '', direction: 'any' };
 

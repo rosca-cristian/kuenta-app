@@ -363,7 +363,8 @@ export interface DataRepository {
    * on, in one transaction: it replaces the limit starting that month and deletes the
    * category's later ones, so earlier months keep theirs. A 0 limit removes the budget from
    * that month. Throws, changing nothing, for an income or unknown category and for a
-   * negative amount or one that isn't whole cents.
+   * negative amount or one that isn't whole cents; only removing the budget of a category
+   * that has one that month is allowed whatever its kind, for one later made an income one.
    */
   setBudgetLimit(categoryId: Id, amount: Cents, fromMonth?: Month): Promise<void>;
 }
