@@ -87,3 +87,99 @@ test('create a goal on Revolut and see it rise when an imported top-up becomes a
   await expect(japan.getByTestId('goal-percent')).toHaveText('25 %');
   await expect(japan.getByRole('progressbar', { name: 'Progreso de Viaje Japón' })).toHaveAttribute('aria-valuenow', '25');
 });
+
+const MONTHS = ['enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio', 'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre'];
+
+/** "enero 2027", `count` months from the current one. */
+function monthFromNow(count: number): string {
+  const now = new Date();
+  const month = new Date(now.getFullYear(), now.getMonth() + count, 1);
+  return `${MONTHS[month.getMonth()]} ${month.getFullYear()}`;
+}
+
+test('give a goal a target month, see how much to save per month, archive it and delete it', async ({ page }) => {
+  await page.goto('./');
+  await page.getByRole('button', { name: 'Empezar' }).click();
+  await page.getByRole('button', { name: 'Continuar' }).click();
+  await page.getByTestId('file-input').setInputFiles(
+    bbvaXlsxFile([{ valor: thisMonth(1), concepto: 'Abono de nómina', movimiento: 'Empresa ejemplo', importe: 1500 }], { startBalance: 1000 }),
+  );
+  await page.getByRole('button', { name: 'Importar 1' }).click();
+  await expect(page.getByTestId('balance-check')).toHaveText('✓ Cuadra');
+
+  await page.getByRole('link', { name: 'Más' }).click();
+  await page.getByRole('link', { name: 'Cuentas' }).click();
+  await page.getByRole('button', { name: 'Nueva' }).click();
+  await sheet(page).getByLabel('Nombre').fill('Revolut');
+  await sheet(page).getByRole('button', { name: 'Crear cuenta' }).click();
+  await expect(sheet(page)).toHaveCount(0);
+
+  // 1.000 € three months from now: 333,333… € a month, rounded up to the cent.
+  await openGoals(page);
+  await page.getByRole('button', { name: 'Nuevo objetivo' }).click();
+  await sheet(page).getByLabel('Nombre').fill('Viaje Japón');
+  await sheet(page).getByLabel('Objetivo').fill('1.000');
+  await expect(sheet(page).getByLabel('Sin fecha')).toBeChecked();
+  await sheet(page).getByText('Con fecha', { exact: true }).click();
+  await expect(sheet(page).getByText(monthFromNow(0), { exact: true })).toBeVisible();
+  for (let i = 0; i < 3; i++) await sheet(page).getByRole('button', { name: 'Mes siguiente' }).click();
+  await expect(sheet(page).getByText(monthFromNow(3), { exact: true })).toBeVisible();
+  await sheet(page).getByRole('button', { name: /^Revolut/ }).click();
+  await sheet(page).getByRole('button', { name: 'Crear objetivo' }).click();
+  await expect(sheet(page)).toHaveCount(0);
+
+  const japan = goalCard(page, 'Viaje Japón');
+  await expect(japan).toContainText(`Revolut · para ${monthFromNow(3)}`);
+  await expect(japan.getByTestId('goal-plan')).toHaveText('ahorra 333,34 €/mes');
+
+  // Moved to last month, the date has passed.
+  await japan.getByRole('button').click();
+  await expect(sheet(page).getByRole('heading', { name: 'Editar objetivo' })).toBeVisible();
+  await expect(sheet(page).getByLabel('Objetivo')).toHaveValue('1.000,00');
+  for (let i = 0; i < 4; i++) await sheet(page).getByRole('button', { name: 'Mes anterior' }).click();
+  await expect(sheet(page).getByText(monthFromNow(-1), { exact: true })).toBeVisible();
+  await sheet(page).getByRole('button', { name: 'Guardar' }).click();
+  await expect(sheet(page)).toHaveCount(0);
+  await expect(japan.getByTestId('goal-plan')).toHaveText('Fecha superada · faltan 1.000,00 €');
+
+  // Archived, it goes to the collapsed Archivados section and frees Revolut.
+  await japan.getByRole('button').click();
+  await sheet(page).getByRole('button', { name: 'Archivar objetivo' }).click();
+  await expect(sheet(page)).toHaveCount(0);
+  await expect(page.getByRole('list', { name: 'Objetivos' })).toHaveCount(0);
+  await expect(page.getByText('No hay objetivos activos')).toBeVisible();
+  const archivedToggle = page.getByRole('button', { name: 'Archivados (1)' });
+  await expect(archivedToggle).toHaveAttribute('aria-expanded', 'false');
+  await expect(page.getByRole('list', { name: 'Archivados' })).toHaveCount(0);
+  await archivedToggle.click();
+  const archivedJapan = page.getByRole('list', { name: 'Archivados' }).getByRole('listitem').filter({ hasText: 'Viaje Japón' });
+  await expect(archivedJapan.getByTestId('goal-progress')).toHaveText('0,00 € / 1.000,00 €');
+  await page.getByRole('button', { name: 'Nuevo objetivo' }).click();
+  await expect(sheet(page).getByRole('group', { name: 'Cuenta' }).getByRole('button')).toHaveText([/^BBVA/, /^Revolut/]);
+  await page.keyboard.press('Escape');
+  await expect(sheet(page)).toHaveCount(0);
+
+  // Deleting Revolut would take the goal along, and says so.
+  await page.getByRole('link', { name: 'Más' }).click();
+  await page.getByRole('link', { name: 'Cuentas' }).click();
+  await page.getByRole('list', { name: 'Cuentas' }).getByRole('button', { name: /Revolut/ }).click();
+  await sheet(page).getByRole('button', { name: 'Borrar cuenta' }).click();
+  await expect(sheet(page)).toContainText('Su objetivo «Viaje Japón» también se borrará.');
+  await page.keyboard.press('Escape');
+  await expect(sheet(page)).toHaveCount(0);
+
+  // Deleting the goal asks first, and leaves Revolut as it was.
+  await openGoals(page);
+  await page.getByRole('button', { name: 'Archivados (1)' }).click();
+  await archivedJapan.getByRole('button').click();
+  await sheet(page).getByRole('button', { name: 'Borrar objetivo' }).click();
+  await expect(sheet(page).getByRole('heading', { name: 'Borrar objetivo' })).toBeVisible();
+  await expect(sheet(page)).toContainText('¿Borrar «Viaje Japón»?');
+  await sheet(page).getByRole('button', { name: 'Borrar', exact: true }).click();
+  await expect(sheet(page)).toHaveCount(0);
+  await expect(page.getByText('Aún no hay objetivos')).toBeVisible();
+  await expect(page.getByRole('button', { name: /^Archivados/ })).toHaveCount(0);
+  await page.getByRole('link', { name: 'Más' }).click();
+  await page.getByRole('link', { name: 'Cuentas' }).click();
+  await expect(page.getByRole('list', { name: 'Cuentas' }).getByRole('listitem').filter({ hasText: 'Revolut' })).toContainText('0,00 €');
+});

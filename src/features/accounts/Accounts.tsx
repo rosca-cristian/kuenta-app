@@ -292,14 +292,17 @@ function BalanceForm({ account, onDone }: { account: AccountView; onDone: () => 
 
 /**
  * Deleting is only for accounts with no transactions; the others are offered archiving
- * instead. Deleting disables the rules that transfer to the account, which it warns about.
+ * instead. Deleting disables the rules that transfer to the account and deletes its goals,
+ * which it warns about.
  */
 function DeleteForm({ account, onCancel, onDone }: { account: AccountView; onCancel: () => void; onDone: () => void }) {
   const repo = useRepo();
   const rules = useRepoQuery((r) => r.listRules());
+  const goals = useRepoQuery((r) => r.listGoals());
   const [busy, setBusy] = useState(false);
   const deletable = account.transactionCount === 0;
   const transferRules = rules?.filter((rule) => rule.actions.transferAccountId === account.id).length ?? 0;
+  const accountGoals = goals?.filter((goal) => goal.accountId === account.id) ?? [];
 
   async function confirm() {
     setBusy(true);
@@ -332,6 +335,13 @@ function DeleteForm({ account, onCancel, onDone }: { account: AccountView; onCan
               {transferRules === 1
                 ? 'La regla que transfiere a esta cuenta se desactivará, para que puedas elegir otra cuenta después.'
                 : `Las ${transferRules} reglas que transfieren a esta cuenta se desactivarán, para que puedas elegir otra cuenta después.`}
+            </Alert>
+          )}
+          {accountGoals.length > 0 && (
+            <Alert tone="warn">
+              {accountGoals.length === 1
+                ? `Su objetivo «${accountGoals[0].name}» también se borrará.`
+                : `Sus ${accountGoals.length} objetivos también se borrarán.`}
             </Alert>
           )}
         </>
