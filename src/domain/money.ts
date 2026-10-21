@@ -55,6 +55,11 @@ export function formatMoney(cents: Cents): string {
   return `${cents < 0 ? MINUS : ''}${euros},${rest} €`;
 }
 
+/** Cents as the user would type them back, to prefill an input: −123456 → "−1.234,56" (no currency sign). */
+export function formatTypedAmount(cents: Cents): string {
+  return formatMoney(cents).replace(/\s*€$/, '');
+}
+
 /** Like formatMoney, but always shows the sign: "+12,50 €" or "−12,50 €". */
 export function formatSignedMoney(cents: Cents): string {
   return cents > 0 ? `+${formatMoney(cents)}` : formatMoney(cents);

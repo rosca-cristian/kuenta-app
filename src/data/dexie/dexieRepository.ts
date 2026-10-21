@@ -983,8 +983,10 @@ export function createDexieRepository(options: DexieRepositoryOptions = {}): Dat
       await db.transaction('rw', db.categories, db.budgetLimits, async () => {
         const category = await db.categories.get(categoryId);
         if (!category) throw new Error(`Category ${categoryId} not found`);
-        if (category.kind !== 'expense') throw new Error(`Only expense categories can have a budget, not ${category.name}`);
         const limits = await db.budgetLimits.where('[categoryId+fromMonth]').between([categoryId, ''], [categoryId, '￿']).toArray();
+        // A category made an income one after it got a budget can still have it removed.
+        const removing = amount === 0 && limitFor(limits, categoryId, fromMonth) > 0;
+        if (category.kind !== 'expense' && !removing) throw new Error(`Only expense categories can have a budget, not ${category.name}`);
         // "A partir de este mes": this month's limit is replaced and every later one goes.
         await db.budgetLimits.bulkDelete(limits.filter((limit) => limit.fromMonth > fromMonth).map((limit) => limit.id));
         const id = limits.find((limit) => limit.fromMonth === fromMonth)?.id ?? crypto.randomUUID();

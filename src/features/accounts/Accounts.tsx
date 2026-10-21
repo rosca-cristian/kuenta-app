@@ -4,7 +4,7 @@ import { Sheet } from '../../ui/Sheet';
 import { IconBadge } from '../../ui/icons';
 import { ColorPicker, IconPicker } from '../../ui/pickers';
 import { useRepo, useRepoQuery } from '../../lib/repo';
-import { formatMoney, formatSignedMoney, parseTypedAmount } from '../../domain/money';
+import { formatMoney, formatSignedMoney, formatTypedAmount, parseTypedAmount } from '../../domain/money';
 import type { AccountType } from '../../domain/model';
 import type { AccountDraft, AccountSaveResult, AccountView } from '../../data/repository';
 
@@ -16,9 +16,6 @@ const ACCOUNT_TYPES: { type: AccountType; label: string }[] = [
 ];
 
 const typeLabel = (type: AccountType) => ACCOUNT_TYPES.find((option) => option.type === type)?.label ?? type;
-
-/** Cents as the user would type them back: "−1.234,56" (no currency sign). */
-const typedAmount = (cents: number) => formatMoney(cents).replace(/\s*€$/, '');
 
 const countText = (n: number) => (n === 1 ? '1 movimiento' : `${n} movimientos`);
 
@@ -132,7 +129,7 @@ function AccountForm({
     () => account ?? { name: '', type: 'bank', icon: 'landmark', color: 'blue' },
   );
   // Typed text; empty means 0.
-  const [opening, setOpening] = useState(() => (account && account.openingBalance !== 0 ? typedAmount(account.openingBalance) : ''));
+  const [opening, setOpening] = useState(() => (account && account.openingBalance !== 0 ? formatTypedAmount(account.openingBalance) : ''));
   const [error, setError] = useState<string | null>(null);
   const isImportAccount = account?.isImportAccount ?? false;
   const change = (changes: Partial<AccountDraft>) => {
@@ -243,7 +240,7 @@ function AccountForm({
 /** "Actualizar saldo": the user types the real balance and Kuenta adds an adjustment for the difference. */
 function BalanceForm({ account, onDone }: { account: AccountView; onDone: () => void }) {
   const repo = useRepo();
-  const [text, setText] = useState(() => typedAmount(account.balance));
+  const [text, setText] = useState(() => formatTypedAmount(account.balance));
   const [error, setError] = useState<string | null>(null);
   const typed = parseTypedAmount(text);
   const difference = typed === null ? null : typed - account.balance;

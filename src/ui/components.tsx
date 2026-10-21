@@ -44,14 +44,20 @@ export function PageHeader({ title, action, back }: { title: string; action?: Re
   );
 }
 
-export function MonthSelector({ month, onChange }: { month: Month; onChange: (month: Month) => void }) {
+/** `‹ octubre 2026 ›`; with `max`, it can't go past that month. */
+export function MonthSelector({ month, onChange, max }: { month: Month; onChange: (month: Month) => void; max?: Month }) {
   return (
     <div className="flex items-center justify-center gap-2">
       <button aria-label="Mes anterior" className="flex size-11 items-center justify-center text-muted" onClick={() => onChange(addMonths(month, -1))}>
         <ChevronLeft />
       </button>
       <span className="min-w-36 text-center font-medium capitalize">{formatMonth(month)}</span>
-      <button aria-label="Mes siguiente" className="flex size-11 items-center justify-center text-muted" onClick={() => onChange(addMonths(month, 1))}>
+      <button
+        aria-label="Mes siguiente"
+        disabled={max !== undefined && month >= max}
+        className="flex size-11 items-center justify-center text-muted disabled:opacity-30"
+        onClick={() => onChange(addMonths(month, 1))}
+      >
         <ChevronRight />
       </button>
     </div>
@@ -81,5 +87,49 @@ export function Alert({ tone = 'info', children, onClick }: { tone?: 'info' | 'w
     <Tag onClick={onClick} className={`w-full rounded-xl border px-4 py-3 text-left text-sm ${style}`}>
       {children}
     </Tag>
+  );
+}
+
+/** A row of mutually exclusive options, as segmented buttons. */
+export function Choice<T extends string>({
+  legend,
+  legendHidden = false,
+  name,
+  value,
+  options,
+  onChange,
+}: {
+  legend: string;
+  /** Keeps the legend for screen readers only, where the options speak for themselves. */
+  legendHidden?: boolean;
+  name: string;
+  value: T;
+  options: Record<T, string>;
+  onChange: (value: T) => void;
+}) {
+  const entries = Object.entries(options) as [T, string][];
+  return (
+    <fieldset>
+      <legend className={legendHidden ? 'sr-only' : 'mb-1 text-sm text-muted'}>{legend}</legend>
+      <div className="grid gap-2" style={{ gridTemplateColumns: `repeat(${entries.length}, minmax(0, 1fr))` }}>
+        {entries.map(([option, label]) => (
+          <label
+            key={option}
+            className={`relative flex min-h-11 items-center justify-center rounded-xl px-1 text-center text-xs leading-tight ${
+              value === option ? 'bg-accent/20 ring-1 ring-accent' : 'bg-card-2'
+            }`}
+          >
+            <input
+              type="radio"
+              name={name}
+              checked={value === option}
+              onChange={() => onChange(option)}
+              className="absolute inset-0 cursor-pointer appearance-none rounded-xl focus-visible:ring-2 focus-visible:ring-accent"
+            />
+            {label}
+          </label>
+        ))}
+      </div>
+    </fieldset>
   );
 }
