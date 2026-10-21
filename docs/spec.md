@@ -463,6 +463,7 @@ All checked at a 390×844 viewport. Items marked 🧪 have a unit test.
 | Templates, autocomplete, calculator, cleared status | Only made sense with manual entry. |
 | Multi-currency | Complicates the whole model; EUR only. |
 | Split transactions | Complicate balances, budgets, CSV and import. |
+| Reimbursements (a received Bizum linked to the expenses it pays back) | Parked idea, see rosca-cristian/kuenta-app#10. Today a refund gets the expense's category and subtracts from it (§3.2). |
 | Subcategories and tags | Not chosen. The model allows adding them later. |
 | Other banks, Norma 43, PDF, the BBVA "Informe de gastos" export | The BBVA reader is isolated in `import/bbva` so other formats can be added. |
 | Importing non-imported accounts (Revolut, investments) | Later; they would get their own reader. |
