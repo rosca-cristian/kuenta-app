@@ -18,6 +18,9 @@ import {
 } from '../../domain/model';
 import { readBbvaFile } from '../../import/bbva/reader';
 import type {
+  AccountChanges,
+  AccountDraft,
+  AccountSaveResult,
   AccountView,
   BalanceCheck,
   CategoryChanges,
@@ -265,6 +268,18 @@ export function createDexieRepository(options: DexieRepositoryOptions = {}): Dat
     return existing ? { ok: false, reason: 'exists', existing } : null;
   }
 
+  /** Why an account can't take this name: it's empty, or another account has it ignoring case and accents. */
+  async function refuseAccountName(name: string, ownId: Id): Promise<AccountSaveResult | null> {
+    if (name === '') return { ok: false, reason: 'empty' };
+    const normalized = normalizeText(name);
+    const existing = await db.accounts.filter((account) => account.id !== ownId && normalizeText(account.name) === normalized).first();
+    return existing ? { ok: false, reason: 'exists', existing } : null;
+  }
+
+  function checkOpeningBalance(cents: number) {
+    if (!Number.isSafeInteger(cents)) throw new Error(`An opening balance must be whole cents, not ${cents}`);
+  }
+
   async function toViews(txs: Transaction[]): Promise<TransactionView[]> {
     const [accounts, categories, payees] = await Promise.all([
       db.accounts.toArray(),
@@ -342,6 +357,52 @@ export function createDexieRepository(options: DexieRepositoryOptions = {}): Dat
           isImportAccount: account.id === importId,
         })),
       );
+    },
+
+    async createAccount(draft: AccountDraft): Promise<AccountSaveResult> {
+      const id = crypto.randomUUID();
+      const name = tidyName(draft.name);
+      const openingBalance = draft.openingBalance ?? 0;
+      checkOpeningBalance(openingBalance);
+      const result = await db.transaction('rw', db.accounts, async (): Promise<AccountSaveResult> => {
+        const refused = await refuseAccountName(name, id);
+        if (refused) return refused;
+        const last = await db.accounts.orderBy('order').last();
+        const createdAt = stamp();
+        await db.accounts.add({
+          id,
+          name,
+          type: draft.type,
+          icon: draft.icon,
+          color: draft.color,
+          openingBalance,
+          archived: false,
+          order: last ? last.order + 1 : 0,
+          createdAt,
+          updatedAt: createdAt,
+        });
+        return { ok: true, id };
+      });
+      if (result.ok) changed();
+      return result;
+    },
+
+    async updateAccount(id, changes: AccountChanges): Promise<AccountSaveResult> {
+      const update = changes.name === undefined ? { ...changes } : { ...changes, name: tidyName(changes.name) };
+      if (update.openingBalance !== undefined) {
+        checkOpeningBalance(update.openingBalance);
+        // The import account's opening balance follows its imports (see refreshOpeningBalance).
+        if (id === (await importAccountId())) throw new Error("The import account's opening balance comes from its imports");
+      }
+      const result = await db.transaction('rw', db.accounts, async (): Promise<AccountSaveResult> => {
+        if (!(await db.accounts.get(id))) throw new Error(`Account ${id} not found`);
+        const refused = update.name === undefined ? null : await refuseAccountName(update.name, id);
+        if (refused) return refused;
+        await db.accounts.update(id, { ...update, updatedAt: stamp() });
+        return { ok: true, id };
+      });
+      if (result.ok) changed();
+      return result;
     },
 
     async listCategories() {
@@ -760,7 +821,7 @@ export function createDexieRepository(options: DexieRepositoryOptions = {}): Dat
     },
 
     async home(month): Promise<HomeData> {
-      const accounts = (await repository.listAccounts()).filter((account) => !account.archived);
+      const allAccounts = await repository.listAccounts();
       const accountId = await importAccountId();
       const [monthTxs, lastImport, uncategorized, chain] = await Promise.all([
         db.transactions.where('date').between(`${month}-01`, `${addMonths(month, 1)}-01`).toArray(),
@@ -769,9 +830,10 @@ export function createDexieRepository(options: DexieRepositoryOptions = {}): Dat
         chainOf(accountId),
       ]);
       return {
-        totalBalance: accounts.reduce((sum, account) => sum + account.balance, 0),
+        // Archived accounts still hold money: they count in the total, but aren't listed.
+        totalBalance: allAccounts.reduce((sum, account) => sum + account.balance, 0),
         summary: monthSummary(monthTxs, month),
-        accounts,
+        accounts: allAccounts.filter((account) => !account.archived),
         daysSinceLastImport: lastImport ? daysBetween(today(new Date(lastImport.importedAt)), today(now())) : null,
         uncategorized,
         gaps: findGaps(chain),

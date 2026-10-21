@@ -1,11 +1,12 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { ChevronRight, ListOrdered, Shapes, Store, type LucideIcon } from 'lucide-react';
+import { ChevronRight, ListOrdered, Shapes, Store, Wallet, type LucideIcon } from 'lucide-react';
 import { Card, EmptyState, PageHeader } from '../../ui/components';
 import { useRepoQuery, useServices } from '../../lib/repo';
 
 /** Management screens reachable from Más, in the order of the spec (§4.8). */
 const SECTIONS: { to: string; label: string; icon: LucideIcon }[] = [
+  { to: '/mas/cuentas', label: 'Cuentas', icon: Wallet },
   { to: '/mas/categorias', label: 'Categorías', icon: Shapes },
   { to: '/mas/comercios', label: 'Comercios', icon: Store },
   { to: '/mas/reglas', label: 'Reglas', icon: ListOrdered },
@@ -49,7 +50,7 @@ export function More() {
         <Card>
           <h2 className="mb-1 font-medium">Próximamente</h2>
           <p className="text-sm text-muted">
-            Cuentas, presupuestos, objetivos y copias de seguridad.
+            Presupuestos, objetivos y copias de seguridad.
           </p>
         </Card>
       </div>

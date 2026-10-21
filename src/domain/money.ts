@@ -4,7 +4,7 @@ export type Cents = number;
 const MINUS = '−';
 
 /**
- * Converts an amount from the bank file into cents without going through floats.
+ * Converts an amount from the bank file, or typed by the user, into cents without going through floats.
  * Accepts the raw cell text written by spreadsheets ("-207.33"), Spanish text
  * ("1.234,56", "-0,5") and plain numbers. Returns null when it isn't an amount.
  */
