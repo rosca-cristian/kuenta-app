@@ -2,7 +2,7 @@ import { KuentaDb } from './db';
 import { STARTER_CATEGORIES, STARTER_DATA_VERSION, STARTER_RULES } from '../seed';
 import { bankOrder, findGaps, latestBalanceOf, openingBalanceOf, type ChainLink } from '../../domain/chain';
 import { planImport } from '../../domain/importPlan';
-import { applyRules as firstMatchActions, ruleMatches, suggestedRuleText } from '../../domain/rules';
+import { applyRules as firstMatchActions, hasAction, ruleMatches, suggestedRuleText } from '../../domain/rules';
 import { monthSummary } from '../../domain/stats';
 import { addMonths, daysBetween, today } from '../../domain/dates';
 import { normalizeText } from '../../domain/text';
@@ -52,6 +52,24 @@ type RuleChange = { id: Id; categoryId?: Id; payeeName?: string };
 
 /** A payee name as stored: single spaces, no leading or trailing ones. */
 const tidyName = (name: string) => name.replace(/\s+/g, ' ').trim();
+
+/** A rule's actions as stored: a blank payee name is no action. */
+function tidyActions(actions: RuleActions): RuleActions {
+  const tidy: RuleActions = {};
+  if (actions.categoryId !== undefined) tidy.categoryId = actions.categoryId;
+  const payeeName = tidyName(actions.payeeName ?? '');
+  if (payeeName !== '') tidy.payeeName = payeeName;
+  return tidy;
+}
+
+/**
+ * Throws unless the rule can be saved: it needs a text, and an action unless it's disabled
+ * (deleting a category can leave a disabled rule without one, to be repointed).
+ */
+function checkRule(rule: Rule) {
+  if (normalizeText(rule.match.value) === '') throw new Error('A rule needs a text to match');
+  if (rule.enabled && !hasAction(rule.actions)) throw new Error('An enabled rule needs a category or a payee name');
+}
 
 /**
  * Setting for Inicio's offer to apply the starter rules to the transactions imported
@@ -409,14 +427,17 @@ export function createDexieRepository(options: DexieRepositoryOptions = {}): Dat
       await db.transaction('rw', db.rules, async () => {
         // A user's rule goes before every other, starter rules included, so it wins.
         const first = await db.rules.orderBy('order').first();
-        await db.rules.add({
+        const rule: Rule = {
           id,
           name: draft.name,
           order: first ? first.order - 1 : 0,
           enabled: draft.enabled ?? true,
           match: { field: 'conceptOrMovement', op: 'contains', direction: 'any', ...draft.match },
-          actions: draft.actions,
-        });
+          actions: tidyActions(draft.actions),
+        };
+        // A new rule needs an action even when it starts disabled.
+        checkRule({ ...rule, enabled: true });
+        await db.rules.add(rule);
       });
       changed();
       return id;
@@ -426,9 +447,34 @@ export function createDexieRepository(options: DexieRepositoryOptions = {}): Dat
       await db.transaction('rw', db.rules, async () => {
         const rule = await db.rules.get(id);
         if (!rule) throw new Error(`Rule ${id} not found`);
-        const updated: Rule = { ...rule, ...changes, match: { ...rule.match, ...changes.match } };
+        const updated: Rule = {
+          ...rule,
+          ...changes,
+          match: { ...rule.match, ...changes.match },
+          actions: tidyActions(changes.actions ?? rule.actions),
+        };
+        checkRule(updated);
         await db.rules.put(updated);
       });
+      changed();
+    },
+
+    async moveRule(id, direction) {
+      await db.transaction('rw', db.rules, async () => {
+        const rules = await db.rules.orderBy('order').toArray();
+        const index = rules.findIndex((rule) => rule.id === id);
+        if (index < 0) throw new Error(`Rule ${id} not found`);
+        const neighbour = rules[index + (direction === 'up' ? -1 : 1)];
+        if (!neighbour) return;
+        await db.rules.update(id, { order: neighbour.order });
+        await db.rules.update(neighbour.id, { order: rules[index].order });
+      });
+      changed();
+    },
+
+    async deleteRule(id) {
+      // Transactions don't remember which rule set them, so nothing else changes.
+      await db.rules.delete(id);
       changed();
     },
 
