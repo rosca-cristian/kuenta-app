@@ -60,7 +60,7 @@ export interface Transaction {
   bankMovement: string | null;
   /** The bank's running balance ("Disponible") right after this row. */
   bankBalance: Cents | null;
-  /** When the user last changed category, payee or note. */
+  /** When the user last changed category, payee or note, or made it a transfer or undid one. */
   editedAt: string | null;
   createdAt: string;
   updatedAt: string;

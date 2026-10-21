@@ -100,6 +100,12 @@ export interface TransactionChanges {
   /** Empty clears the payee; otherwise an existing payee with the same normalized name is reused. */
   payeeName?: string;
   note?: string;
+  /**
+   * An account makes an imported transaction a transfer with it, in the direction of the
+   * bank's sign ("Convertir en transferencia"); null makes a transfer an expense or income
+   * again by that sign, uncategorized unless `categoryId` comes too ("Quitar transferencia").
+   */
+  transferAccountId?: Id | null;
 }
 
 export interface PayeeView extends Payee {
@@ -271,7 +277,12 @@ export interface DataRepository {
   /** Transactions of a month, newest first. */
   listTransactions(month: Month): Promise<TransactionView[]>;
   getTransaction(id: Id): Promise<TransactionView | null>;
-  /** Only category, payee and note can change; amount, date and account come from the bank. */
+  /**
+   * Only category, payee, note and whether it's a transfer can change; amount, date and the
+   * bank's account come from the bank. Every change counts as the user's edit. Making it a
+   * transfer is refused for a balance adjustment, the import account itself, and an
+   * archived or unknown account; a transfer never has a category.
+   */
   updateTransaction(id: Id, changes: TransactionChanges): Promise<void>;
   /** Balance adjustments can be deleted; imported transactions can't. */
   deleteAdjustment(id: Id): Promise<void>;

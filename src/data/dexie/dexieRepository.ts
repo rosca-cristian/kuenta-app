@@ -6,6 +6,7 @@ import { applyRules as firstMatchActions, hasAction, ruleMatches, suggestedRuleT
 import { monthSummary } from '../../domain/stats';
 import { addMonths, daysBetween, today } from '../../domain/dates';
 import { normalizeText } from '../../domain/text';
+import { shapeByBankSign, transferAccountOf } from '../../domain/transfers';
 import {
   signedAmount,
   type Account,
@@ -137,6 +138,23 @@ export function createDexieRepository(options: DexieRepositoryOptions = {}): Dat
     const account = (await db.accounts.get(accountId))!;
     const appBalance = await balanceOf(account, await accountTransactions(accountId));
     return { bankBalance, appBalance, difference: bankBalance - appBalance };
+  }
+
+  /**
+   * What an imported transaction changes to with this transfer account, or with none
+   * (null): type and accounts by the bank's sign, and no category. Nothing when it already
+   * is that. Throws for a balance adjustment, the import account, or an archived or unknown account.
+   */
+  async function transferChange(tx: Transaction, transferAccountId: Id | null): Promise<Partial<Transaction>> {
+    const importId = await importAccountId();
+    if (transferAccountId === transferAccountOf(tx, importId)) return {};
+    if (tx.source !== 'import') throw new Error('Only imported transactions can be transfers');
+    if (transferAccountId !== null) {
+      const account = await db.accounts.get(transferAccountId);
+      if (!account) throw new Error(`Account ${transferAccountId} not found`);
+      if (account.archived) throw new Error(`Can't transfer to the archived account ${account.name}`);
+    }
+    return { ...shapeByBankSign(signedAmount(tx, importId), importId, transferAccountId), categoryId: null };
   }
 
   async function payeeIdFor(name: string | null): Promise<Id | null> {
@@ -691,11 +709,14 @@ export function createDexieRepository(options: DexieRepositoryOptions = {}): Dat
     },
 
     async updateTransaction(id, changes: TransactionChanges) {
-      await db.transaction('rw', db.transactions, db.payees, async () => {
+      await db.transaction('rw', [db.transactions, db.payees, db.accounts, db.settings], async () => {
         const tx = await db.transactions.get(id);
         if (!tx) throw new Error(`Transaction ${id} not found`);
         const update: Partial<Transaction> = { updatedAt: stamp(), editedAt: stamp() };
-        if (changes.categoryId !== undefined) update.categoryId = tx.type === 'transfer' ? null : changes.categoryId;
+        if (changes.transferAccountId !== undefined) Object.assign(update, await transferChange(tx, changes.transferAccountId));
+        // A transfer never has a category; one that stops being a transfer may get one in the same change.
+        if ((update.type ?? tx.type) === 'transfer') update.categoryId = null;
+        else if (changes.categoryId !== undefined) update.categoryId = changes.categoryId;
         if (changes.note !== undefined) update.note = changes.note;
         if (changes.payeeName !== undefined) update.payeeId = await payeeIdFor(changes.payeeName);
         await db.transactions.update(id, update);

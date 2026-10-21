@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react';
 import { Check } from 'lucide-react';
 import { Amount, EmptyState, MonthSelector, PageHeader } from '../../ui/components';
-import { IconBadge } from '../../ui/icons';
+import { IconBadge, TransferBadge } from '../../ui/icons';
 import { useRepoQuery } from '../../lib/repo';
 import { formatDayHeader, monthOf, today } from '../../domain/dates';
 import { formatSignedMoney } from '../../domain/money';
@@ -11,6 +11,12 @@ import { EditTransactionSheet } from './EditTransactionSheet';
 
 function title(tx: TransactionView): string {
   return tx.payee?.name || tx.note || tx.bankConcept || 'Movimiento';
+}
+
+/** The grey line under the title: category and account, or the accounts a transfer moves money between. */
+function subtitle(tx: TransactionView): string {
+  if (tx.type === 'transfer') return `${tx.account.name} → ${tx.toAccount?.name ?? ''}`;
+  return `${tx.source === 'adjustment' ? 'Ajuste de saldo' : tx.category?.name ?? 'Sin categoría'} · ${tx.account.name}`;
 }
 
 export function Transactions() {
@@ -48,14 +54,18 @@ export function Transactions() {
                 {txs.map((tx) => (
                   <li key={tx.id} className="border-b border-line last:border-b-0">
                     <button className="flex min-h-16 w-full items-center gap-3 px-3 py-2 text-left active:bg-card-2" onClick={() => setEditing(tx.id)}>
-                      <IconBadge icon={tx.category?.icon} color={tx.category?.color} />
+                      {tx.type === 'transfer' ? <TransferBadge /> : <IconBadge icon={tx.category?.icon} color={tx.category?.color} />}
                       <span className="min-w-0 flex-1">
                         <span className="block truncate">{title(tx)}</span>
-                        <span className={`block truncate text-xs ${tx.category ? 'text-muted' : 'text-warn'}`}>
-                          {tx.source === 'adjustment' ? 'Ajuste de saldo' : tx.category?.name ?? 'Sin categoría'} · {tx.account.name}
+                        <span className={`block truncate text-xs ${tx.category || tx.type === 'transfer' ? 'text-muted' : 'text-warn'}`}>
+                          {subtitle(tx)}
                         </span>
                       </span>
-                      <Amount cents={tx.amount} kind={tx.type === 'income' ? 'income' : 'expense'} />
+                      {tx.type === 'transfer' ? (
+                        <Amount cents={tx.amount} kind="neutral" className="text-muted" />
+                      ) : (
+                        <Amount cents={tx.amount} kind={tx.type === 'income' ? 'income' : 'expense'} />
+                      )}
                       {tx.editedAt && <Check size={14} className="text-muted" aria-label="Revisado" />}
                     </button>
                   </li>
