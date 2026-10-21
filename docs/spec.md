@@ -182,14 +182,15 @@ interface BudgetLimit {      // limit in force from a month onwards
   fromMonth: string;         // 'YYYY-MM'
   amount: Cents;             // 0 = no budget from that month
 }
+// Setting a limit from month M replaces the one starting at M and deletes the category's later ones.
 
 interface Goal {
   id: Id;
   name: string;
   target: Cents;
-  targetDate: string | null;
-  accountId: Id;             // progress = balance of this account
-  icon: string; color: string;
+  targetMonth: string | null; // 'YYYY-MM'
+  accountId: Id;             // progress = balance of this account; at most one non-archived goal per account
+  icon: string; color: string; // default to the account's
   archived: boolean;
 }
 
@@ -212,7 +213,7 @@ interface Setting { key: string; value: unknown }
 
 ### Dexie indexes
 
-Version 1 (part 1) has every table below except `rules`, `budgetLimits` and `goals`; version 2 (part 2) adds `rules`.
+Version 1 (part 1) has every table below except `rules`, `budgetLimits` and `goals`; version 2 (part 2) adds `rules`; version 3 (part 4) adds `budgetLimits` and `goals`.
 
 ```
 accounts:      id, order
@@ -303,14 +304,15 @@ Tabs:
 - **Suscripciones**: one row per subscription (payee): name, last amount, frequency (mensual / anual, deduced from the dates of its charges), monthly equivalent, last charge and expected next charge. Totals per month and per year at the top. Notices: "Ha subido de precio" (last charge higher than the previous one) and "No ha llegado el cargo de este mes" (an expected charge that hasn't arrived). Nothing is entered by hand: a subscription is any payee with expenses in the "Suscripciones" category. Tapping a row opens Movimientos filtered by that payee.
 
 ### 4.6 Presupuestos
-- Month selector. Total budgeted, spent and remaining.
-- One card per budgeted category: spent / limit, a progress bar with a **"today" marker** (the month's pace) and a status of *En camino*, *Cerca* (≥ 85 %) or *Superado*.
+- Month selector, up to the current month (no future months). Total budgeted, spent (budgeted categories only) and remaining; when spending exceeds the total, "X € por encima".
+- One card per budgeted category: spent / limit, a progress bar with a **"today" marker** (the month's pace, current month only) and a status of *En camino*, *Cerca* (≥ 85 %) or *Superado*, by percentage alone.
 - Filter Todos · Superados · En camino.
-- Edit the limit "a partir de este mes" and add a budget to another category.
+- Tapping a card edits its limit "a partir de este mes" (this month and every later one) or removes it ("Quitar presupuesto", a 0 limit from this month). "Añadir presupuesto" offers the non-archived expense categories without a budget that month.
 
 ### 4.7 Objetivos
-- List with name, current / target, percentage and, when there is a target date, how much to save per month to get there.
-- Each goal shows its linked account's balance as progress.
+- List with name, current / target, percentage and, when there is a target month, how much to save per month to get there ("ahorra X €/mes"), or "Fecha superada · faltan X €" once that month has passed unreached. At 100 % it shows "Conseguido".
+- Each goal shows its linked account's balance as progress (any account, the import account included). An account has at most one non-archived goal, so the account picker hides accounts that already have one.
+- Create and edit: name, target amount, optional target month, account, icon and colour (defaulting to the account's). Archive (archived goals in a collapsed section) and delete.
 
 ### 4.8 Más
 Cuentas · Categorías · Comercios · Reglas · Presupuestos · Objetivos · Copias de seguridad · Ajustes (import account, persistent storage status, space used, version, library licences).
@@ -385,6 +387,7 @@ All checked at a 390×844 viewport. Items marked 🧪 have a unit test.
 - 🧪 The balance at a date ignores later transactions.
 - 🧪 "Actualizar saldo" to 650 € on that account creates a −50 € adjustment.
 - An account with transactions can't be deleted, only archived. An archived account doesn't appear in pickers or on Inicio, but its transactions stay in the history and count in net worth. Goals linked to it keep showing its balance.
+- 🧪 Deleting an account deletes its goals, in the same transaction; the confirmation says so.
 - The import account can't be archived.
 
 ### 5.6 Categories and payees
@@ -438,12 +441,18 @@ All checked at a 390×844 viewport. Items marked 🧪 have a unit test.
 
 ### 5.11 Budgets
 - 🧪 With a 300 € limit on "Restaurantes" from 2026-09 and a change to 250 € from 2026-11, October uses 300 € and November and December 250 €.
-- 🧪 The "today" marker sits at (current day / days in month) of the width; status is *Cerca* from 85 % and *Superado* above 100 %.
-- 🧪 Uncategorized expenses don't count in any budget.
+- 🧪 Setting 280 € "a partir de" 2026-09 on that budget deletes the 2026-11 limit: every month from September uses 280 €. Removing the budget from 2026-10 leaves September at 280 € and no budget from October.
+- 🧪 The "today" marker sits at (current day / days in month) of the width, in the current month only; status is *Cerca* from 85 % and *Superado* above 100 %.
+- 🧪 Uncategorized expenses and transfers don't count in any budget; income in the category reduces its spending, and a card with negative spending shows 0 %.
+- 🧪 Remaining = total budgeted − total spent, negative when overspent.
+- 🧪 Only expense categories can get a budget.
+- 🧪 Inicio shows "N presupuestos superados" when, in the current month, N budgets are above 100 %.
 
 ### 5.12 Goals
-- 🧪 A goal linked to the "Ahorro viaje" account shows that account's current balance as progress.
-- 🧪 With a target date: "ahorra X €/mes" = (target − current) / months left (at least 1), rounded up to the cent.
+- 🧪 A goal linked to the "Ahorro viaje" account shows that account's current balance as progress; a transfer into the account raises it, and a negative balance shows 0 %.
+- 🧪 With a target month: "ahorra X €/mes" = (target − current) / months left, where months left = target month − current month (at least 1), rounded up to the cent. In October 2026 a goal for 2027-06 has 8 months left.
+- 🧪 Once the target month has passed unreached it shows "Fecha superada · faltan X €"; reached goals show "Conseguido" and no monthly amount.
+- 🧪 Creating a second non-archived goal on the same account is refused; an archived goal doesn't block it.
 
 ### 5.13 Backups and CSV
 - 🧪 **Round trip**: exporting, wiping everything and restoring leaves the data identical, table by table and field by field.
@@ -477,6 +486,8 @@ All checked at a 390×844 viewport. Items marked 🧪 have a unit test.
 | Reimbursements (a received Bizum linked to the expenses it pays back) | Parked idea, see rosca-cristian/kuenta-app#10. Today a refund gets the expense's category and subtracts from it (§3.2). |
 | Subcategories and tags | Not chosen. The model allows adding them later. |
 | Other banks, Norma 43, PDF, the BBVA "Informe de gastos" export | The BBVA reader is isolated in `import/bbva` so other formats can be added. |
+| Overall monthly budget, monthly savings target | Not chosen: the budgets screen totals the budgeted categories, and a goal with a target month gives "ahorra X €/mes". |
+| Goals inside an account (BBVA "apartados") | Parked idea, see rosca-cristian/kuenta-app#18. Apartados are internal to BBVA and invisible in the export. |
 | Changing the import account | Only the BBVA reader exists; the import account is fixed at first run. |
 | Importing non-imported accounts (Revolut, investments) | Later; they would get their own reader. |
 | Reading BBVA notifications | Requires a Capacitor APK. |
@@ -509,7 +520,7 @@ Each part ends with green tests, a commit, a summary and your go-ahead before th
    - GitHub Actions → GitHub Pages on push to `main`, and a README (run, install on Android, weekly import).
 2. **Rules and categories**: rules engine and screen, applying rules to existing transactions, rule suggestion when categorizing, categories in the preview with "Crear regla con este concepto", starter rules and categories (also added to existing installs), category management with delete-and-reassign, payee management with rename and merge.
 3. **Transfers and non-imported accounts**: "Convertir en transferencia", rule transfers, Cuentas screen, "Actualizar saldo", archiving.
-4. **Goals and budgets.**
+4. **Goals and budgets**: Presupuestos and Objetivos screens in Más, the "N presupuestos superados" alert on Inicio, deleting a category's budgets and an account's goals.
 5. **Charts and full Inicio**: category, monthly and net worth analysis, forecast with expected charges, budget and goal widgets, and the Suscripciones tab (§4.5, §5.10b).
 6. **Search and filters**, CSV export.
 7. **Backups**: export, share and restore JSON, reminder.
