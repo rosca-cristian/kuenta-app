@@ -85,8 +85,10 @@ test('create, edit, reorder and delete categories from Más → Categorías', as
   await expect(page.getByRole('button', { name: /^Mercadona/ })).toContainText('Animales');
   await expect(page.getByRole('button', { name: /^Lidl/ })).toContainText('Animales');
   await page.getByRole('button', { name: /^Fruteria Pepa/ }).click();
-  const picker = await sheet(page).getByRole('group', { name: 'Categoría' }).getByRole('button').allTextContents();
-  expect(picker[0]).toBe('Restaurantes');
+  const pickerButtons = sheet(page).getByRole('group', { name: 'Categoría' }).getByRole('button');
+  // The picker fills in once the categories load: wait for it before reading the order.
+  await expect(pickerButtons.first()).toHaveText('Restaurantes');
+  const picker = await pickerButtons.allTextContents();
   expect(picker.indexOf('Animales')).toBe(picker.indexOf('Otros gastos') - 1);
   expect(picker).not.toContain('Supermercado');
   expect(picker).not.toContain('Viajes');
