@@ -182,3 +182,59 @@ test('change a limit "a partir de este mes" while the previous month keeps its o
   await page.getByRole('button', { name: 'Añadir presupuesto' }).click();
   await expect(sheet(page).getByRole('button', { name: 'Supermercado' })).toBeVisible();
 });
+
+test('Inicio warns about budgets an import exceeds and opens them; deleting a category takes its budget', async ({ page }) => {
+  await page.goto('./');
+  await page.getByRole('button', { name: 'Empezar' }).click();
+  await page.getByRole('button', { name: 'Continuar' }).click();
+  await openBudgets(page);
+  for (const name of ['Restaurantes', 'Supermercado']) {
+    await page.getByRole('button', { name: 'Añadir presupuesto' }).click();
+    await sheet(page).getByRole('button', { name }).click();
+    await sheet(page).getByLabel('Límite mensual').fill('50');
+    await sheet(page).getByRole('button', { name: 'Añadir presupuesto' }).click();
+    await expect(sheet(page)).toHaveCount(0);
+  }
+
+  // Nothing is over yet.
+  await page.getByRole('link', { name: 'Inicio' }).click();
+  await expect(page.getByTestId('total-balance')).toBeVisible();
+  await expect(page.getByText(/superado/)).toHaveCount(0);
+
+  // 60 € at Glovo (Restaurantes) and 80 € at Mercadona (Supermercado): both over their 50 €.
+  await page.getByRole('link', { name: 'Importar' }).click();
+  await page.getByTestId('file-input').setInputFiles(
+    bbvaXlsxFile(
+      [
+        { valor: thisMonth(1), concepto: 'Glovo', movimiento: 'Pago con tarjeta', importe: -60 },
+        { valor: thisMonth(1), concepto: 'Mercadona', movimiento: 'Pago con tarjeta', importe: -80 },
+      ],
+      { startBalance: 1000 },
+    ),
+  );
+  await page.getByRole('button', { name: 'Importar 2' }).click();
+  await expect(page.getByTestId('balance-check')).toHaveText('✓ Cuadra');
+
+  // Tapping the alert opens Presupuestos showing the budgets over.
+  await page.getByRole('link', { name: 'Inicio' }).click();
+  await page.getByRole('button', { name: '2 presupuestos superados' }).click();
+  await expect(page.getByRole('heading', { name: 'Presupuestos' })).toBeVisible();
+  await expect(page.getByRole('radio', { name: 'Superados' })).toBeChecked();
+  await expect(page.getByRole('list', { name: 'Presupuestos' }).getByRole('listitem')).toHaveCount(2);
+
+  // Deleting Restaurantes says its budget goes too; one budget over is left.
+  await page.getByRole('link', { name: 'Más' }).click();
+  await page.getByRole('link', { name: 'Categorías' }).click();
+  await page.getByRole('button', { name: 'Restaurantes', exact: true }).click();
+  await sheet(page).getByRole('button', { name: 'Borrar categoría' }).click();
+  await expect(sheet(page)).toContainText('También se borrará su presupuesto');
+  await sheet(page).getByRole('button', { name: 'Borrar', exact: true }).click();
+  await expect(page.getByRole('button', { name: 'Restaurantes', exact: true })).toHaveCount(0);
+
+  await page.getByRole('link', { name: 'Inicio' }).click();
+  await expect(page.getByRole('button', { name: '1 presupuesto superado' })).toBeVisible();
+  await openBudgets(page);
+  await expect(page.getByRole('radio', { name: 'Todos' })).toBeChecked();
+  await expect(budgetCard(page, 'Restaurantes')).toHaveCount(0);
+  await expect(budgetCard(page, 'Supermercado').getByTestId('budget-status')).toHaveText('Superado');
+});

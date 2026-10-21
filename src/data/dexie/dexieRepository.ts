@@ -389,6 +389,9 @@ export function createDexieRepository(options: DexieRepositoryOptions = {}): Dat
   /** A month's transactions, by their date. */
   const transactionsIn = (month: Month) => db.transactions.where('date').between(`${month}-01`, `${addMonths(month, 1)}-01`).toArray();
 
+  /** A category's budget limits, of every month. */
+  const limitsOf = (categoryId: Id) => db.budgetLimits.where('[categoryId+fromMonth]').between([categoryId, ''], [categoryId, '￿']);
+
   const newestFirst = (a: Transaction, b: Transaction) =>
     b.date.localeCompare(a.date) || (b.bookingDate ?? '').localeCompare(a.bookingDate ?? '') || b.createdAt.localeCompare(a.createdAt);
 
@@ -583,15 +586,16 @@ export function createDexieRepository(options: DexieRepositoryOptions = {}): Dat
     },
 
     async categoryUsage(id): Promise<CategoryUsage> {
-      const [transactions, rules] = await Promise.all([
+      const [transactions, rules, budgets] = await Promise.all([
         db.transactions.where('categoryId').equals(id).count(),
         db.rules.filter((rule) => rule.actions.categoryId === id).count(),
+        limitsOf(id).filter((limit) => limit.amount > 0).count(),
       ]);
-      return { transactions, rules };
+      return { transactions, rules, budget: budgets > 0 };
     },
 
     async deleteCategory(id, moveTo) {
-      await db.transaction('rw', db.categories, db.transactions, db.rules, async () => {
+      await db.transaction('rw', [db.categories, db.transactions, db.rules, db.budgetLimits], async () => {
         if (!(await db.categories.get(id))) throw new Error(`Category ${id} not found`);
         if (moveTo === id || (moveTo !== null && !(await db.categories.get(moveTo)))) {
           throw new Error(`Can't move the transactions of category ${id} to ${moveTo}`);
@@ -605,6 +609,8 @@ export function createDexieRepository(options: DexieRepositoryOptions = {}): Dat
             delete rule.actions.categoryId;
             rule.enabled = false;
           });
+        // No orphan budget remains, in any month.
+        await limitsOf(id).delete();
         await db.categories.delete(id);
       });
       changed();
@@ -937,11 +943,13 @@ export function createDexieRepository(options: DexieRepositoryOptions = {}): Dat
     async home(month): Promise<HomeData> {
       const allAccounts = await repository.listAccounts();
       const accountId = await importAccountId();
-      const [monthTxs, lastImport, uncategorized, chain] = await Promise.all([
+      const [monthTxs, lastImport, uncategorized, chain, currentBudgets] = await Promise.all([
         transactionsIn(month),
         db.importBatches.orderBy('importedAt').reverse().filter((batch) => !batch.undone).first(),
         db.transactions.filter((tx) => tx.source === 'import' && tx.type !== 'transfer' && tx.categoryId === null).count(),
         chainOf(accountId),
+        // Overspending can only be acted on in the current month, whichever month Inicio shows.
+        repository.budgets(monthOf(today(now()))),
       ]);
       return {
         // Archived accounts still hold money: they count in the total, but aren't listed.
@@ -951,6 +959,7 @@ export function createDexieRepository(options: DexieRepositoryOptions = {}): Dat
         daysSinceLastImport: lastImport ? daysBetween(today(new Date(lastImport.importedAt)), today(now())) : null,
         uncategorized,
         gaps: findGaps(chain),
+        budgetsOver: currentBudgets.budgets.filter((budget) => budget.status === 'over').length,
       };
     },
 
@@ -983,7 +992,7 @@ export function createDexieRepository(options: DexieRepositoryOptions = {}): Dat
       await db.transaction('rw', db.categories, db.budgetLimits, async () => {
         const category = await db.categories.get(categoryId);
         if (!category) throw new Error(`Category ${categoryId} not found`);
-        const limits = await db.budgetLimits.where('[categoryId+fromMonth]').between([categoryId, ''], [categoryId, '￿']).toArray();
+        const limits = await limitsOf(categoryId).toArray();
         // A category made an income one after it got a budget can still have it removed.
         const removing = amount === 0 && limitFor(limits, categoryId, fromMonth) > 0;
         if (category.kind !== 'expense' && !removing) throw new Error(`Only expense categories can have a budget, not ${category.name}`);
