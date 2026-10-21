@@ -1,6 +1,6 @@
 import { createElement } from 'react';
 import {
-  Banknote, Briefcase, Car, CircleHelp, Ellipsis, Gamepad2, Gift, GraduationCap, HandCoins, HeartPulse, House, Landmark,
+  ArrowLeftRight, Banknote, Briefcase, Car, CircleHelp, Ellipsis, Gamepad2, Gift, GraduationCap, HandCoins, HeartPulse, House, Landmark,
   Percent, PiggyBank, Plane, Plug, Receipt, Repeat, RotateCcw, ShoppingBag, ShoppingCart, Utensils,
   type LucideIcon,
 } from 'lucide-react';
@@ -71,15 +71,23 @@ export function colorFor(token: string | undefined): string {
   return (token && PALETTE[token]?.hex) || PALETTE.gray.hex;
 }
 
-/** A coloured circle with an icon, as used for categories in lists. */
-export function IconBadge({ icon, color, size = 40 }: { icon?: string; color?: string; size?: number }) {
-  const hex = colorFor(color);
+function Badge({ icon, hex, size, label }: { icon: LucideIcon; hex: string; size: number; label?: string }) {
   return (
     <span
       className="inline-flex shrink-0 items-center justify-center rounded-full"
       style={{ width: size, height: size, background: `${hex}26`, color: hex }}
     >
-      {createElement(iconFor(icon), { size: size * 0.5, 'aria-hidden': true })}
+      {createElement(icon, label ? { size: size * 0.5, 'aria-label': label } : { size: size * 0.5, 'aria-hidden': true })}
     </span>
   );
+}
+
+/** A coloured circle with an icon, as used for categories in lists. */
+export function IconBadge({ icon, color, size = 40 }: { icon?: string; color?: string; size?: number }) {
+  return <Badge icon={iconFor(icon)} hex={colorFor(color)} size={size} />;
+}
+
+/** The circle a transfer shows in lists instead of a category's: transfers never have one. */
+export function TransferBadge({ size = 40 }: { size?: number }) {
+  return <Badge icon={ArrowLeftRight} hex={PALETTE.slate.hex} size={size} label="Transferencia" />;
 }

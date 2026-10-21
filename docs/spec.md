@@ -154,7 +154,7 @@ interface Transaction {
   bankConcept: string | null;// "Concepto", as in the file
   bankMovement: string | null;// "Movimiento", as in the file
   bankBalance: Cents | null; // "Disponible" right after this row
-  editedAt: string | null;   // when the user last changed category, payee or note
+  editedAt: string | null;   // when the user last changed category, payee or note, or made it a transfer or undid one
   createdAt: string; updatedAt: string;
 }
 
