@@ -315,7 +315,7 @@ Tabs:
 Cuentas · Categorías · Comercios · Reglas · Presupuestos · Objetivos · Copias de seguridad · Ajustes (import account, persistent storage status, space used, version, library licences).
 
 ### 4.9 Reglas, Categorías y Comercios
-- **Reglas**: list in order, with enable/disable, move up/down, edit and delete. The editor shows "Concepto o movimiento contiene ___" and the action (category and/or payee name), with field, operator and direction under "Opciones avanzadas", plus a live count of matching transactions. Saving offers "Aplicar también a N movimientos" (those never edited by the user). Deleting explains that already categorized transactions keep their category.
+- **Reglas**: list in order, with enable/disable, move up/down, edit and delete. A search box filters the list by the rule's text or name, or the category or payee name it sets (ignoring case and accents); while searching, rules can't be moved. The editor shows "Concepto o movimiento contiene ___" and the action (category and/or payee name), with field, operator and direction under "Opciones avanzadas", plus a live count of matching transactions. Saving offers "Aplicar también a N movimientos" (those never edited by the user). Deleting explains that already categorized transactions keep their category.
 - **Categorías**: create, rename, change icon, colour and order; delete with reassignment (§5.6).
 - **Comercios**: list with the number of transactions each; rename; merge several into one. Renaming to an existing name offers to merge.
 

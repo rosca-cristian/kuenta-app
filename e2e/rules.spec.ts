@@ -96,3 +96,63 @@ test('create, apply, edit, reorder, disable and delete rules from Más → Regla
   await expect(page.getByRole('button', { name: /^Yelmo/ })).toHaveCount(2);
   await expect(page.getByRole('button', { name: /^Yelmo/ }).first()).toContainText('Ocio');
 });
+
+test('search the rules by text, category and payee from Más → Reglas', async ({ page }) => {
+  await page.goto('./');
+  await page.getByRole('button', { name: 'Empezar' }).click();
+  await page.getByRole('button', { name: 'Continuar' }).click();
+  await page.getByRole('link', { name: 'Más' }).click();
+  await page.getByRole('link', { name: 'Reglas' }).click();
+  await expect(rules(page)).toHaveCount(17);
+
+  // By the text the rule looks for, ignoring case, accents and extra spaces.
+  const search = page.getByRole('searchbox', { name: 'Buscar reglas' });
+  await search.fill('  MERCADÓNA ');
+  await expect(rules(page)).toHaveCount(1);
+  await expect(rules(page)).toContainText(['«mercadona»']);
+
+  // By the rule's name ("Uber Eats" looks for «uber *eats»).
+  await search.fill('uber eats');
+  await expect(rules(page)).toContainText(['«uber *eats»']);
+  await expect(rules(page)).toHaveCount(1);
+
+  // By the category it sets, in the rules' order.
+  await search.fill('efectivo');
+  await expect(rules(page)).toContainText(['«retirada»', '«cajero»']);
+  await expect(rules(page)).toHaveCount(2);
+
+  // By the payee name it sets.
+  await page.getByRole('button', { name: 'Nueva' }).click();
+  await sheet(page).getByLabel('Concepto o movimiento contiene').fill("pc's");
+  await sheet(page).getByLabel('Categoría').selectOption({ label: 'Compras' });
+  await sheet(page).getByLabel('Nombre del comercio').fill('PcComponentes');
+  await sheet(page).getByRole('button', { name: 'Crear regla' }).click();
+  await expect(sheet(page)).toHaveCount(0);
+  await search.fill('pccomponentes');
+  await expect(rules(page)).toContainText(["«pc's»"]);
+  await expect(rules(page)).toHaveCount(1);
+
+  // While searching, rules can't be moved (their neighbours may be hidden), but they can be
+  // disabled and edited, and the search is still there after editing.
+  await expect(page.getByRole('button', { name: /^(Subir|Bajar) / })).toHaveCount(0);
+  await page.getByRole('switch', { name: "pc's activa" }).click();
+  await expect(page.getByRole('switch', { name: "pc's activa" })).not.toBeChecked();
+  await page.getByRole('button', { name: /«pc's»/ }).click();
+  await sheet(page).getByLabel('Categoría').selectOption({ label: 'Ocio' });
+  await sheet(page).getByRole('button', { name: 'Guardar' }).click();
+  await expect(sheet(page)).toHaveCount(0);
+  await expect(search).toHaveValue('pccomponentes');
+  await expect(rules(page)).toContainText(['Ocio · Comercio «PcComponentes»']);
+  await expect(rules(page)).toHaveCount(1);
+
+  // No results, then clearing the search shows every rule again, in order and movable.
+  await search.fill('zzz  ');
+  await expect(rules(page)).toHaveCount(0);
+  await expect(page.getByText('Ninguna regla coincide con «zzz»')).toBeVisible();
+  await page.getByRole('button', { name: 'Ver todas las reglas' }).click();
+  await expect(search).toHaveValue('');
+  await expect(rules(page)).toHaveCount(18);
+  await expect(rules(page).first()).toContainText("«pc's»");
+  await expect(rules(page).nth(1)).toContainText('«mercadona»');
+  await expect(page.getByRole('button', { name: 'Bajar Mercadona' })).toBeEnabled();
+});
