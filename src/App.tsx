@@ -11,6 +11,7 @@ import { Payees } from './features/payees/Payees';
 import { Categories } from './features/categories/Categories';
 import { Accounts } from './features/accounts/Accounts';
 import { Rules } from './features/rules/Rules';
+import { Budgets } from './features/budgets/Budgets';
 
 export function App() {
   const settings = useRepoQuery((repo) => repo.getSettings());
@@ -31,6 +32,7 @@ export function App() {
               <Route path="/mas/categorias" element={<Categories />} />
               <Route path="/mas/comercios" element={<Payees />} />
               <Route path="/mas/reglas" element={<Rules />} />
+              <Route path="/mas/presupuestos" element={<Budgets />} />
               <Route path="*" element={<Navigate to="/" replace />} />
             </Routes>
           </main>

@@ -1,5 +1,5 @@
 import type { Cents } from './money';
-import type { IsoDate } from './dates';
+import type { IsoDate, Month } from './dates';
 
 export type Id = string;
 
@@ -95,6 +95,32 @@ export interface Rule {
   enabled: boolean;
   match: RuleMatch;
   actions: RuleActions;
+}
+
+/**
+ * A category's monthly limit in force from a month onwards, until the category's next one.
+ * Setting a limit from a month replaces the one starting then and deletes the later ones.
+ */
+export interface BudgetLimit {
+  id: Id;
+  categoryId: Id;
+  fromMonth: Month;
+  /** 0 means no budget from that month. */
+  amount: Cents;
+}
+
+/** An amount to save in one account; its progress is the account's balance. */
+export interface Goal {
+  id: Id;
+  name: string;
+  /** Above 0. */
+  target: Cents;
+  targetMonth: Month | null;
+  /** At most one non-archived goal per account. */
+  accountId: Id;
+  icon: string;
+  color: string;
+  archived: boolean;
 }
 
 export interface ImportBatch {
