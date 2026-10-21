@@ -4,7 +4,7 @@ import { Sheet } from '../../ui/Sheet';
 import { IconBadge } from '../../ui/icons';
 import { ColorPicker, IconPicker } from '../../ui/pickers';
 import { useRepo, useRepoQuery } from '../../lib/repo';
-import { formatMoney, parseBankAmount } from '../../domain/money';
+import { formatMoney, parseTypedAmount } from '../../domain/money';
 import type { AccountType } from '../../domain/model';
 import type { AccountDraft, AccountSaveResult, AccountView } from '../../data/repository';
 
@@ -105,7 +105,7 @@ function AccountForm({ account, onDone }: { account: AccountView | null; onDone:
     event.preventDefault();
     const fields: AccountDraft = { name: draft.name, type: draft.type, icon: draft.icon, color: draft.color };
     if (!isImportAccount) {
-      const openingBalance = opening.trim() === '' ? 0 : parseBankAmount(opening);
+      const openingBalance = opening.trim() === '' ? 0 : parseTypedAmount(opening);
       if (openingBalance === null) {
         setError('Escribe el saldo inicial como un importe, por ejemplo 1.250,50 o -30.');
         return;

@@ -4,7 +4,7 @@ export type Cents = number;
 const MINUS = '−';
 
 /**
- * Converts an amount from the bank file, or typed by the user, into cents without going through floats.
+ * Converts an amount from the bank file into cents without going through floats.
  * Accepts the raw cell text written by spreadsheets ("-207.33"), Spanish text
  * ("1.234,56", "-0,5") and plain numbers. Returns null when it isn't an amount.
  */
@@ -30,6 +30,17 @@ export function parseBankAmount(value: unknown): Cents | null {
   // Round half away from zero on the third decimal, if any.
   if (fraction.length > 2 && Number(fraction[2]) >= 5) cents += 1;
   return sign === '-' ? -cents : cents;
+}
+
+/**
+ * Converts an amount the user typed, Spanish style, into cents: "-20,50", "1.234,56 €".
+ * Unlike a bank cell, dots grouping thousands without a decimal comma ("1.500") still
+ * read as thousands. Returns null when it isn't an amount.
+ */
+export function parseTypedAmount(text: string): Cents | null {
+  const compact = text.replace(/\s|€/g, '');
+  if (!compact.includes(',') && /^[+\-−]?\d{1,3}(\.\d{3})+$/.test(compact)) return parseBankAmount(compact.replace(/\./g, ''));
+  return parseBankAmount(compact);
 }
 
 function groupThousands(digits: string): string {
