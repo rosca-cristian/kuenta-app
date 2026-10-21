@@ -4,7 +4,8 @@ import { bankOrder, findGaps, latestBalanceOf, openingBalanceOf, type ChainLink 
 import { planImport, reapplyRules } from '../../domain/importPlan';
 import { applyRules as firstMatchActions, hasAction, ruleMatches, suggestedRuleText, type RuleSubject } from '../../domain/rules';
 import { monthSummary } from '../../domain/stats';
-import { addMonths, daysBetween, today } from '../../domain/dates';
+import { budgetMonth, limitFor } from '../../domain/budgets';
+import { addMonths, daysBetween, monthOf, today, type Month } from '../../domain/dates';
 import { normalizeText } from '../../domain/text';
 import { shapeByBankSign, transferAccountOf } from '../../domain/transfers';
 import {
@@ -24,6 +25,7 @@ import type {
   AccountSaveResult,
   AccountView,
   BalanceCheck,
+  BudgetsView,
   CategoryChanges,
   CategoryDraft,
   CategorySaveResult,
@@ -383,6 +385,9 @@ export function createDexieRepository(options: DexieRepositoryOptions = {}): Dat
       payee: tx.payeeId ? payeeMap.get(tx.payeeId) ?? null : null,
     }));
   }
+
+  /** A month's transactions, by their date. */
+  const transactionsIn = (month: Month) => db.transactions.where('date').between(`${month}-01`, `${addMonths(month, 1)}-01`).toArray();
 
   const newestFirst = (a: Transaction, b: Transaction) =>
     b.date.localeCompare(a.date) || (b.bookingDate ?? '').localeCompare(a.bookingDate ?? '') || b.createdAt.localeCompare(a.createdAt);
@@ -933,7 +938,7 @@ export function createDexieRepository(options: DexieRepositoryOptions = {}): Dat
       const allAccounts = await repository.listAccounts();
       const accountId = await importAccountId();
       const [monthTxs, lastImport, uncategorized, chain] = await Promise.all([
-        db.transactions.where('date').between(`${month}-01`, `${addMonths(month, 1)}-01`).toArray(),
+        transactionsIn(month),
         db.importBatches.orderBy('importedAt').reverse().filter((batch) => !batch.undone).first(),
         db.transactions.filter((tx) => tx.source === 'import' && tx.type !== 'transfer' && tx.categoryId === null).count(),
         chainOf(accountId),
@@ -947,6 +952,45 @@ export function createDexieRepository(options: DexieRepositoryOptions = {}): Dat
         uncategorized,
         gaps: findGaps(chain),
       };
+    },
+
+    async budgets(month): Promise<BudgetsView> {
+      return db.transaction('r', db.categories, db.budgetLimits, db.transactions, async () => {
+        const [categories, limits, txs] = await Promise.all([db.categories.orderBy('order').toArray(), db.budgetLimits.toArray(), transactionsIn(month)]);
+        const byId = new Map(categories.map((category) => [category.id, category]));
+        const { budgets, totals, today: marker } = budgetMonth({
+          month,
+          categoryIds: categories.map((category) => category.id),
+          limits,
+          transactions: txs,
+          today: today(now()),
+        });
+        return { budgets: budgets.map(({ categoryId, ...budget }) => ({ category: byId.get(categoryId)!, ...budget })), totals, today: marker };
+      });
+    },
+
+    async budgetableCategories(month) {
+      return db.transaction('r', db.categories, db.budgetLimits, async () => {
+        const [categories, limits] = await Promise.all([db.categories.orderBy('order').toArray(), db.budgetLimits.toArray()]);
+        return categories.filter((category) => category.kind === 'expense' && !category.archived && limitFor(limits, category.id, month) <= 0);
+      });
+    },
+
+    async setBudgetLimit(categoryId, amount, fromMonth = monthOf(today(now()))) {
+      checkWholeCents(amount, 'A budget limit');
+      if (amount < 0) throw new Error(`A budget limit can't be negative: ${amount}`);
+      if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(fromMonth)) throw new Error(`Not a month: ${fromMonth}`);
+      await db.transaction('rw', db.categories, db.budgetLimits, async () => {
+        const category = await db.categories.get(categoryId);
+        if (!category) throw new Error(`Category ${categoryId} not found`);
+        if (category.kind !== 'expense') throw new Error(`Only expense categories can have a budget, not ${category.name}`);
+        const limits = await db.budgetLimits.where('[categoryId+fromMonth]').between([categoryId, ''], [categoryId, '￿']).toArray();
+        // "A partir de este mes": this month's limit is replaced and every later one goes.
+        await db.budgetLimits.bulkDelete(limits.filter((limit) => limit.fromMonth > fromMonth).map((limit) => limit.id));
+        const id = limits.find((limit) => limit.fromMonth === fromMonth)?.id ?? crypto.randomUUID();
+        await db.budgetLimits.put({ id, categoryId, fromMonth, amount });
+      });
+      changed();
     },
   };
 

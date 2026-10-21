@@ -1,7 +1,8 @@
 import Dexie from 'dexie';
 import { describe, expect, it } from 'vitest';
 import { createDexieRepository } from '../src/data/dexie/dexieRepository';
-import type { Account, Category, Payee, Transaction } from '../src/domain/model';
+import { STARTER_DATA_VERSION } from '../src/data/seed';
+import type { Account, Category, Payee, Rule, Transaction } from '../src/domain/model';
 import { bbvaXlsx } from './support/bbvaXlsx';
 
 /**
@@ -253,5 +254,68 @@ describe('a starter data upgrade already done', () => {
     const again = open(name);
     const rules = await again.listRules();
     expect(rules.filter((rule) => rule.name === 'Mercadona')).toEqual([{ ...mercadona, enabled: false }]);
+  });
+});
+
+/**
+ * An install made by Parts 2 and 3: schema version 2, with rules, the starter data up to
+ * date, a Revolut account and a top-up made a transfer to it.
+ */
+async function createPartThreeDatabase() {
+  const name = `kuenta-upgrade-${++dbCount}`;
+  const data = partOneData();
+  const revolut: Account = { ...data.account, id: 'acc-revolut', name: 'Revolut', openingBalance: 0, order: 1 };
+  const topUp: Transaction = {
+    ...data.transactions[2], id: 'tx-4', type: 'transfer', amount: 5000, date: '2026-10-02', toAccountId: revolut.id, payeeId: null,
+    importHash: 'hash-tx-4', bookingDate: '2026-10-02', bankConcept: 'Revolut**5625*', bankBalance: 86000,
+  };
+  const rule: Rule = {
+    id: 'rule-revolut', name: 'Revolut', order: 0, enabled: true,
+    match: { field: 'conceptOrMovement', op: 'contains', value: 'revolut', direction: 'any' }, actions: { transferAccountId: revolut.id },
+  };
+  const db = new Dexie(name);
+  db.version(1).stores({
+    accounts: 'id, order',
+    categories: 'id, kind, order',
+    payees: 'id, &normalized',
+    transactions: 'id, date, [accountId+date], [toAccountId+date], categoryId, payeeId, &importHash, importBatchId, bookingDate',
+    importBatches: 'id, importedAt',
+    settings: 'key',
+  });
+  db.version(2).stores({ rules: 'id, order' });
+  await db.table('accounts').bulkAdd([data.account, revolut]);
+  await db.table('categories').bulkAdd(data.categories);
+  await db.table('payees').bulkAdd(data.payees);
+  await db.table('transactions').bulkAdd([...data.transactions, topUp]);
+  await db.table('rules').add(rule);
+  await db.table('settings').bulkPut([
+    { key: 'importAccountId', value: data.account.id },
+    { key: 'onboardingDone', value: true },
+    { key: 'starterDataVersion', value: STARTER_DATA_VERSION },
+  ]);
+  db.close();
+  return { name, data: { ...data, revolut, topUp, rule } };
+}
+
+describe('updating a Part 3 install to the schema with budgets and goals', () => {
+  it('keeps every account, category, rule and transaction, and starts with no budgets', async () => {
+    const { name, data } = await createPartThreeDatabase();
+    const repo = open(name);
+
+    const accounts = await repo.listAccounts();
+    expect(accounts.map((account) => [account.id, account.balance])).toEqual([
+      ['acc-bbva', 86000],
+      ['acc-revolut', 5000],
+    ]);
+    expect(await repo.listCategories()).toEqual(data.categories);
+    expect(await repo.listRules()).toEqual([data.rule]);
+    const txs = [...(await repo.listTransactions('2026-09')), ...(await repo.listTransactions('2026-10'))];
+    expect(txs).toHaveLength(4);
+    for (const original of [...data.transactions, data.topUp]) expect(txs.find((tx) => tx.id === original.id)).toMatchObject(original);
+    expect((await repo.budgets('2026-10')).budgets).toEqual([]);
+
+    // The new table takes budgets, kept across startups.
+    await repo.setBudgetLimit('cat-1', 30000);
+    expect((await open(name).budgets('2026-10')).budgets).toMatchObject([{ category: { name: 'Restaurantes' }, limit: 30000, spent: 0 }]);
   });
 });

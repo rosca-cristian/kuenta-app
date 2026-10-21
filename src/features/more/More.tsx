@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { ChevronRight, ListOrdered, Shapes, Store, Wallet, type LucideIcon } from 'lucide-react';
+import { ChevronRight, Gauge, ListOrdered, Shapes, Store, Wallet, type LucideIcon } from 'lucide-react';
 import { Card, EmptyState, PageHeader } from '../../ui/components';
 import { useRepoQuery, useServices } from '../../lib/repo';
 
@@ -10,6 +10,7 @@ const SECTIONS: { to: string; label: string; icon: LucideIcon }[] = [
   { to: '/mas/categorias', label: 'Categorías', icon: Shapes },
   { to: '/mas/comercios', label: 'Comercios', icon: Store },
   { to: '/mas/reglas', label: 'Reglas', icon: ListOrdered },
+  { to: '/mas/presupuestos', label: 'Presupuestos', icon: Gauge },
 ];
 
 export function More() {
@@ -50,7 +51,7 @@ export function More() {
         <Card>
           <h2 className="mb-1 font-medium">Próximamente</h2>
           <p className="text-sm text-muted">
-            Presupuestos, objetivos y copias de seguridad.
+            Objetivos y copias de seguridad.
           </p>
         </Card>
       </div>

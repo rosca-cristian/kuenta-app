@@ -3,6 +3,7 @@ import type { IsoDate, Month } from '../domain/dates';
 import type { Gap } from '../domain/chain';
 import type { ImportPlan } from '../domain/importPlan';
 import type { MonthSummary } from '../domain/stats';
+import type { BudgetStatus, BudgetTotals } from '../domain/budgets';
 import type { Account, AccountType, Category, CategoryKind, Id, ImportBatch, Payee, Rule, RuleActions, RuleMatch, Transaction } from '../domain/model';
 import type { ReadError } from '../import/bbva/reader';
 
@@ -178,6 +179,28 @@ export interface RuleChanges {
   actions?: RuleActions;
 }
 
+/** One budgeted category in a month. */
+export interface BudgetView {
+  category: Category;
+  /** The limit in force that month: the category's latest one starting up to it. Above 0. */
+  limit: Cents;
+  /** Expenses − income in the category that month: negative when more came back than was spent. */
+  spent: Cents;
+  /** spent / limit × 100, unrounded; 0 when the spending is negative. */
+  percent: number;
+  /** By the percentage alone: *En camino* below 85 %, *Cerca* up to 100 %, *Superado* above. */
+  status: BudgetStatus;
+}
+
+/** Presupuestos for one month. */
+export interface BudgetsView {
+  /** The categories with a limit above 0 that month, in category order. */
+  budgets: BudgetView[];
+  totals: BudgetTotals;
+  /** In the current month, today's share of it (day / days in month), where the "today" marker sits; null otherwise. */
+  today: number | null;
+}
+
 /** The only data interface screens use. */
 export interface DataRepository {
   /** Called after every write. Returns an unsubscribe function. */
@@ -327,4 +350,20 @@ export interface DataRepository {
   undoImport(batchId: Id): Promise<void>;
 
   home(month: Month): Promise<HomeData>;
+
+  /**
+   * The budgets of a month with their spending by transaction date. Transfers, balance
+   * adjustments and uncategorized transactions never count.
+   */
+  budgets(month: Month): Promise<BudgetsView>;
+  /** The non-archived expense categories without a budget in the month, in order: those "Añadir presupuesto" offers. */
+  budgetableCategories(month: Month): Promise<Category[]>;
+  /**
+   * Sets an expense category's monthly limit from `fromMonth` (the current month by default)
+   * on, in one transaction: it replaces the limit starting that month and deletes the
+   * category's later ones, so earlier months keep theirs. A 0 limit removes the budget from
+   * that month. Throws, changing nothing, for an income or unknown category and for a
+   * negative amount or one that isn't whole cents.
+   */
+  setBudgetLimit(categoryId: Id, amount: Cents, fromMonth?: Month): Promise<void>;
 }
