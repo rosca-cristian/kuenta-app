@@ -55,7 +55,7 @@ The user's label for what an income or expense was for (Supermercado, Nómina…
 _Avoid_: Tag, label
 
 **Rule**:
-A user-editable instruction that recognizes transactions by the bank's text (concept or movement) and sets their category or payee. Rules run on import and, when the user asks, on existing transactions the user never edited; they never override what the user set by hand.
+A user-editable instruction that recognizes transactions by the bank's text (concept or movement) and sets their category or makes them a transfer with another account (never both), and optionally their payee. Rules run on import and, when the user asks, on existing transactions the user never edited; they never override what the user set by hand.
 _Avoid_: Filter, automation
 
 **Starter rule**:

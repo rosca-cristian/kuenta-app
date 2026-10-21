@@ -55,7 +55,7 @@ test('create, apply, edit, reorder, disable and delete rules from Más → Regla
   await sheet(page).getByRole('radio', { name: 'Cargos' }).check();
   await expect(sheet(page).getByTestId('rule-matches')).toHaveText('Coincide con 2 movimientos');
 
-  await sheet(page).getByLabel('Categoría').selectOption({ label: 'Ocio' });
+  await sheet(page).getByRole('combobox', { name: 'Categoría' }).selectOption({ label: 'Ocio' });
   await sheet(page).getByRole('button', { name: 'Crear regla' }).click();
 
   // Saving offers to apply it to the transactions already imported, and says how many changed.
@@ -124,7 +124,7 @@ test('search the rules by text, category and payee from Más → Reglas', async 
   // By the payee name it sets.
   await page.getByRole('button', { name: 'Nueva' }).click();
   await sheet(page).getByLabel('Concepto o movimiento contiene').fill("pc's");
-  await sheet(page).getByLabel('Categoría').selectOption({ label: 'Compras' });
+  await sheet(page).getByRole('combobox', { name: 'Categoría' }).selectOption({ label: 'Compras' });
   await sheet(page).getByLabel('Nombre del comercio').fill('PcComponentes');
   await sheet(page).getByRole('button', { name: 'Crear regla' }).click();
   await expect(sheet(page)).toHaveCount(0);
@@ -138,7 +138,7 @@ test('search the rules by text, category and payee from Más → Reglas', async 
   await page.getByRole('switch', { name: "pc's activa" }).click();
   await expect(page.getByRole('switch', { name: "pc's activa" })).not.toBeChecked();
   await page.getByRole('button', { name: /«pc's»/ }).click();
-  await sheet(page).getByLabel('Categoría').selectOption({ label: 'Ocio' });
+  await sheet(page).getByRole('combobox', { name: 'Categoría' }).selectOption({ label: 'Ocio' });
   await sheet(page).getByRole('button', { name: 'Guardar' }).click();
   await expect(sheet(page)).toHaveCount(0);
   await expect(search).toHaveValue('pccomponentes');

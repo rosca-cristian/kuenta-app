@@ -42,9 +42,9 @@ export function ruleMatches(match: RuleMatch, subject: RuleSubject): boolean {
   return texts.some((text) => textMatches(match.op, text, value));
 }
 
-/** Whether a rule would set anything: a category, or a payee name that isn't blank. */
+/** Whether a rule would set anything: a category, a transfer account, or a payee name that isn't blank. */
 export function hasAction(actions: RuleActions): boolean {
-  return actions.categoryId !== undefined || (actions.payeeName ?? '').trim() !== '';
+  return actions.categoryId !== undefined || actions.transferAccountId !== undefined || (actions.payeeName ?? '').trim() !== '';
 }
 
 /** The actions of the first enabled rule, by order, that matches; null when none does. */

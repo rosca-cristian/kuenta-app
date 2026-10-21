@@ -75,8 +75,14 @@ export interface RuleMatch {
   direction: 'any' | 'out' | 'in';
 }
 
+/** What a rule sets: a category or a transfer account, never both, and optionally a payee name. */
 export interface RuleActions {
   categoryId?: Id;
+  /**
+   * Makes the transaction a transfer with this account, in the direction of the bank's sign:
+   * a charge goes from the import account to it, a credit comes from it to the import account.
+   */
+  transferAccountId?: Id;
   /** Creates or reuses the payee with this normalized name. */
   payeeName?: string;
 }

@@ -290,7 +290,7 @@ Fixed bottom navigation: **Inicio · Movimientos · Importar · Análisis · Má
 - **Entry**: the export steps (BBVA → Descargar → Hojas de cálculo → ⋮ → Compartir y exportar → Enviar una copia → Kuenta), an "Elegir archivo" button and the import history (date, period, created, "Deshacer").
 - **Preview** (opens by itself when a file is shared):
   - **Nuevos** (will be created): with the category set by a rule or "Sin categoría", editable in the row; a checkbox to exclude the row; the action "Crear regla con este concepto", which applies the new rule to the remaining new rows of this preview.
-  - A new row a transfer rule matches shows "Transferencia → Revolut" instead of a category; choosing a category in the row makes it an expense or income again.
+  - A new row a transfer rule matches shows "Transferencia → Revolut" (a credit: "Transferencia desde Revolut") instead of a category; choosing a category in the row, "Sin categoría" included, makes it an expense or income again, counted as the user's edit. A rule created from a row can be a transfer rule.
   - **Ya importados** (ignored): count only.
   - Warnings: gap before or after the file, rows older than the current opening balance (it will be recomputed), wrong currency.
 - **Importar** button. Result screen: "Creados N · Saldo BBVA 1.234,56 € · Saldo en Kuenta 1.234,56 € ✓ Cuadra", or the difference with "Crear ajuste de saldo".
@@ -316,7 +316,7 @@ Tabs:
 Cuentas · Categorías · Comercios · Reglas · Presupuestos · Objetivos · Copias de seguridad · Ajustes (import account, persistent storage status, space used, version, library licences).
 
 ### 4.9 Reglas, Categorías y Comercios
-- **Reglas**: list in order, with enable/disable, move up/down, edit and delete. A search box filters the list by the rule's text or name, or the category or payee name it sets (ignoring case and accents); while searching, rules can't be moved. The editor shows "Concepto o movimiento contiene ___" and the action (category and/or payee name), with field, operator and direction under "Opciones avanzadas", plus a live count of matching transactions. Saving offers "Aplicar también a N movimientos" (those never edited by the user). Deleting explains that already categorized transactions keep their category.
+- **Reglas**: list in order, with enable/disable, move up/down, edit and delete. A search box filters the list by the rule's text or name, or the category, transfer account or payee name it sets (ignoring case and accents); while searching, rules can't be moved. A transfer rule shows "→ Revolut". The editor shows "Concepto o movimiento contiene ___" and the action: a choice between "Categoría" and "Transferencia a cuenta" (non-imported, non-archived accounts; a rule's archived account stays selectable and keeps working), plus an optional payee name, with field, operator and direction under "Opciones avanzadas", plus a live count of matching transactions. Saving offers "Aplicar también a N movimientos" (those never edited by the user). Deleting explains that already categorized transactions keep their category.
 - **Categorías**: create, rename, change icon, colour and order; delete with reassignment (§5.6).
 - **Comercios**: list with the number of transactions each; rename; merge several into one. Renaming to an existing name offers to merge.
 

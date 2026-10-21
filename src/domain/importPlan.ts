@@ -10,6 +10,7 @@ export interface PlannedRow {
   /** Fingerprint of the bank row; identifies it across overlapping files. */
   hash: string;
   status: 'new' | 'already-imported';
+  /** By the bank's sign; a transfer account (`transferAccountId`) makes the row a transfer instead. */
   type: 'expense' | 'income';
   /** Positive. */
   amount: Cents;
@@ -19,8 +20,13 @@ export interface PlannedRow {
   bankBalance: Cents;
   concept: string;
   movement: string;
-  /** Set by the first rule that matches; null = "Sin categoría". */
+  /** Set by the first rule that matches; null = "Sin categoría". Always null for a transfer. */
   categoryId: Id | null;
+  /**
+   * Set by the first rule that matches when it's a transfer rule: the row is imported as a
+   * transfer with this account, in the direction of the bank's sign. Null when it isn't one.
+   */
+  transferAccountId: Id | null;
   payeeName: string | null;
   note: string;
 }
@@ -44,11 +50,16 @@ export function rowHash(row: BankRow): string {
 
 const isBizum = (row: { concept: string }) => normalizeText(row.concept) === 'bizum';
 
-/** What rules give a row: the first matching rule's category and payee, or a payee from its concept. */
-function ruleOutcome(subject: RuleSubject, rules: Rule[]): Pick<PlannedRow, 'categoryId' | 'payeeName'> {
+/**
+ * What rules give a row: the first matching rule's category or transfer account and its
+ * payee, or a payee from its concept.
+ */
+function ruleOutcome(subject: RuleSubject, rules: Rule[]): Pick<PlannedRow, 'categoryId' | 'transferAccountId' | 'payeeName'> {
   const actions = applyRules(rules, subject);
+  const transferAccountId = actions?.transferAccountId ?? null;
   return {
-    categoryId: actions?.categoryId ?? null,
+    categoryId: transferAccountId === null ? (actions?.categoryId ?? null) : null,
+    transferAccountId,
     payeeName: actions?.payeeName ?? (isBizum(subject) || subject.concept === '' ? null : cleanPayeeName(subject.concept)),
   };
 }
