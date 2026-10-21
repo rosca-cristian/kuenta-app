@@ -40,7 +40,11 @@ _Avoid_: Hole, missing period
 
 **Expected charge**:
 An expense from a payee that was charged in each of the last two months and hasn't been charged yet this month. Used to forecast the month's spending.
-_Avoid_: Recurring transaction, subscription
+_Avoid_: Recurring transaction
+
+**Subscription**:
+A service the user pays for periodically, identified by its payee: any payee with expenses in the "Suscripciones" category. Its frequency and cost come from its imported charges; nothing about it is entered by hand.
+_Avoid_: Recurring, membership
 
 **Category**:
 The user's label for what an income or expense was for (Supermercado, Nómina…). One level, no subcategories. Transfers and balance adjustments never have one.

@@ -41,6 +41,7 @@
 8. **Monthly budgets** per category.
 9. **Home**: monthly summary, savings rate, end-of-month forecast and alerts.
 10. **Charts**: spending by category (donut), income vs expenses (bars), net worth over time (line).
+11. **Subscriptions**: the list of the user's subscriptions, derived from imported transactions, with their cost per month and per year.
 11. **Search and filters** on transactions.
 12. **Backups**: full JSON export and restore, CSV export, share via the system menu, backup reminder.
 13. **Privacy mode**: hide amounts.
@@ -298,6 +299,7 @@ Tabs:
 - **Gastos**: the month's donut by category with the total in the centre, and below it the categories with amount and percentage (acting as the legend). Tapping a category opens Movimientos filtered.
 - **Mensual**: income vs expenses bars for the last 6 or 12 months, with each month's net.
 - **Patrimonio**: net worth at the end of each of the last 12 months.
+- **Suscripciones**: one row per subscription (payee): name, last amount, frequency (mensual / anual, deduced from the dates of its charges), monthly equivalent, last charge and expected next charge. Totals per month and per year at the top. Notices: "Ha subido de precio" (last charge higher than the previous one) and "No ha llegado el cargo de este mes" (an expected charge that hasn't arrived). Nothing is entered by hand: a subscription is any payee with expenses in the "Suscripciones" category. Tapping a row opens Movimientos filtered by that payee.
 
 ### 4.6 Presupuestos
 - Month selector. Total budgeted, spent and remaining.
@@ -425,6 +427,14 @@ All checked at a 390×844 viewport. Items marked 🧪 have a unit test.
 - 🧪 Each month's net worth equals the sum of all account balances on the last day of the month.
 - Charts fit the screen width, read well on the dark background and show an empty state with text when there is no data.
 
+### 5.10b Subscriptions
+- 🧪 Every payee with expenses in "Suscripciones" appears once, with its last charge amount; payees in other categories don't.
+- 🧪 A payee charged in each of several consecutive months is monthly; one charged about 12 months apart is yearly; one with a single charge shows that charge with frequency "—" until more history exists.
+- 🧪 Monthly equivalent: monthly = last amount; yearly = last amount / 12, rounded to the cent. Totals per month and per year are the sums of the monthly equivalents (× 12 for the year).
+- 🧪 "Ha subido de precio" appears when the last charge is higher than the one before.
+- 🧪 "No ha llegado el cargo de este mes" uses the expected charge rule (§3.2) for monthly subscriptions.
+- Subscriptions charged through PayPal or another intermediary are told apart by the payee the user's rules give them (e.g. a rule `mullvad` → payee "Mullvad"), not by the bank concept.
+
 ### 5.11 Budgets
 - 🧪 With a 300 € limit on "Restaurantes" from 2026-09 and a change to 250 € from 2026-11, October uses 300 € and November and December 250 €.
 - 🧪 The "today" marker sits at (current day / days in month) of the width; status is *Cerca* from 85 % and *Superado* above 100 %.
@@ -498,7 +508,7 @@ Each part ends with green tests, a commit, a summary and your go-ahead before th
 2. **Rules and categories**: rules engine and screen, applying rules to existing transactions, rule suggestion when categorizing, categories in the preview with "Crear regla con este concepto", starter rules and categories (also added to existing installs), category management with delete-and-reassign, payee management with rename and merge.
 3. **Transfers and non-imported accounts**: "Convertir en transferencia", rule transfers, Cuentas screen, "Actualizar saldo", archiving.
 4. **Goals and budgets.**
-5. **Charts and full Inicio**: category, monthly and net worth analysis, forecast with expected charges, budget and goal widgets.
+5. **Charts and full Inicio**: category, monthly and net worth analysis, forecast with expected charges, budget and goal widgets, and the Suscripciones tab (§4.5, §5.10b).
 6. **Search and filters**, CSV export.
 7. **Backups**: export, share and restore JSON, reminder.
 8. **Privacy mode and polish**: Playwright test at 390×844, third-party request check, final pass.
