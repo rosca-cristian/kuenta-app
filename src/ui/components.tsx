@@ -44,6 +44,12 @@ export function PageHeader({ title, action, back }: { title: string; action?: Re
   );
 }
 
+/**
+ * A percentage as shown on a progress bar: rounded down up to 100, so it never claims 85 % before
+ * *Cerca* or 100 % before the target, and rounded up above it, so *Superado* never reads 100 %.
+ */
+export const formatPercent = (percent: number) => `${percent > 100 ? Math.ceil(percent) : Math.floor(percent)} %`;
+
 /** `‹ octubre 2026 ›`; with `max`, it can't go past that month. */
 export function MonthSelector({ month, onChange, max }: { month: Month; onChange: (month: Month) => void; max?: Month }) {
   return (

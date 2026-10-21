@@ -6,7 +6,7 @@ import { applyRules as firstMatchActions, hasAction, ruleMatches, suggestedRuleT
 import { monthSummary } from '../../domain/stats';
 import { budgetMonth, limitFor } from '../../domain/budgets';
 import { goalProgress } from '../../domain/goals';
-import { addMonths, daysBetween, monthOf, today, type Month } from '../../domain/dates';
+import { addMonths, daysBetween, isMonth, monthOf, today, type Month } from '../../domain/dates';
 import { normalizeText } from '../../domain/text';
 import { shapeByBankSign, transferAccountOf } from '../../domain/transfers';
 import {
@@ -339,7 +339,7 @@ export function createDexieRepository(options: DexieRepositoryOptions = {}): Dat
   }
 
   function checkMonth(month: Month) {
-    if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(month)) throw new Error(`Not a month: ${month}`);
+    if (!isMonth(month)) throw new Error(`Not a month: ${month}`);
   }
 
   function checkGoalTarget(target: number) {

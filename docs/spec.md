@@ -65,6 +65,7 @@ src/
     rules.ts         rules engine
     importPlan.ts    turns parsed rows into an import plan (new / already imported, warnings)
     budgets.ts       spending per category and month, effective limit, pace
+    goals.ts         goal progress, months left, monthly amount to save
     stats.ts         month summary, savings rate, forecast
     csv.ts           CSV export
     backup.ts        schema, validation and migrations of the JSON backup

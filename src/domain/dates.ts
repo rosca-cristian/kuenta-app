@@ -7,6 +7,8 @@ export type Month = string;
 
 const pad = (n: number, width = 2) => String(n).padStart(width, '0');
 
+export const isMonth = (value: string): value is Month => /^\d{4}-(0[1-9]|1[0-2])$/.test(value);
+
 export function isoDate(year: number, month: number, day: number): IsoDate {
   return `${pad(year, 4)}-${pad(month)}-${pad(day)}`;
 }

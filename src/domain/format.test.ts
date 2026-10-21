@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { formatMoney, formatSignedMoney, parseBankAmount, parseTypedAmount } from './money';
-import { formatDate, formatDayHeader, formatMonth, parseBankDate } from './dates';
+import { formatDate, formatDayHeader, formatMonth, isMonth, parseBankDate } from './dates';
+import { formatPercent } from '../ui/components';
 
 describe('money formatting', () => {
   it('formats cents as Spanish euros, grouping 4-digit thousands', () => {
@@ -43,5 +44,23 @@ describe('date formatting', () => {
     expect(parseBankDate('02/10/2026')).toBe('2026-10-02');
     expect(parseBankDate('31/02/2026')).toBeNull();
     expect(parseBankDate(46297)).toBe('2026-10-02');
+  });
+});
+
+describe('percent formatting', () => {
+  it('rounds down up to 100 % and up above it, so a budget over its limit never reads 100 %', () => {
+    expect(formatPercent(84.99)).toBe('84 %');
+    expect(formatPercent(100)).toBe('100 %');
+    expect(formatPercent(100.01)).toBe('101 %');
+    expect(formatPercent(0)).toBe('0 %');
+  });
+});
+
+describe('months', () => {
+  it("recognizes 'YYYY-MM' months", () => {
+    expect(isMonth('2026-10')).toBe(true);
+    expect(isMonth('2026-13')).toBe(false);
+    expect(isMonth('2026-1')).toBe(false);
+    expect(isMonth('2026-10-01')).toBe(false);
   });
 });

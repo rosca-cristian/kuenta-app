@@ -1,6 +1,6 @@
 import { useState, type FormEvent } from 'react';
 import { ChevronDown } from 'lucide-react';
-import { Button, Choice, EmptyState, MonthSelector, PageHeader } from '../../ui/components';
+import { Button, Choice, EmptyState, MonthSelector, PageHeader, formatPercent } from '../../ui/components';
 import { Sheet } from '../../ui/Sheet';
 import { IconBadge, colorFor } from '../../ui/icons';
 import { ColorPicker, IconPicker } from '../../ui/pickers';
@@ -13,8 +13,6 @@ import type { GoalSaveResult, GoalView } from '../../data/repository';
 const targetHint = 'Escribe un objetivo mayor que 0, por ejemplo 3.000 o 450,50.';
 
 /** The percentage as shown, rounded down: it never claims 100 % before the goal is reached. */
-const shownPercent = (percent: number) => `${Math.floor(percent)} %`;
-
 /** The sheet shows the editor of a goal (a new one when `goal` is null) or the confirmation to delete it. */
 type Editing = { mode: 'edit'; goal: GoalView | null } | { mode: 'delete'; goal: GoalView };
 
@@ -138,7 +136,7 @@ function GoalCard({ goal, onEdit }: { goal: GoalView; onEdit: () => void }) {
             {formatMoney(current)} <span className="text-muted">/ {formatMoney(target)}</span>
           </span>
           <span className="tabular-nums text-muted" data-testid="goal-percent">
-            {shownPercent(percent)}
+            {formatPercent(percent)}
           </span>
         </div>
         <div
@@ -147,7 +145,7 @@ function GoalCard({ goal, onEdit }: { goal: GoalView; onEdit: () => void }) {
           aria-valuemin={0}
           aria-valuemax={100}
           aria-valuenow={Math.min(100, Math.floor(percent))}
-          aria-valuetext={shownPercent(percent)}
+          aria-valuetext={formatPercent(percent)}
           className="mt-2 h-2 rounded-full bg-card-2"
         >
           <div

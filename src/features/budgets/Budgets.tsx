@@ -1,6 +1,6 @@
 import { useState, type FormEvent } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import { Button, Card, Choice, EmptyState, MonthSelector, PageHeader } from '../../ui/components';
+import { Button, Card, Choice, EmptyState, MonthSelector, PageHeader, formatPercent } from '../../ui/components';
 import { Sheet } from '../../ui/Sheet';
 import { IconBadge } from '../../ui/icons';
 import { CategoryGrid } from '../../ui/pickers';
@@ -30,12 +30,6 @@ const FILTERED_OUT: Record<Exclude<Filter, 'all'>, string> = {
 const shows = (filter: Filter, budget: BudgetView) => filter === 'all' || (filter === 'over') === (budget.status === 'over');
 
 const limitHint = 'Escribe un límite mayor que 0, por ejemplo 300 o 1.500.';
-
-/**
- * The percentage as shown, rounded down: it never claims 85 % or more before *Cerca*. The
- * status still goes by the exact amounts.
- */
-const shownPercent = (percent: number) => `${Math.floor(percent)} %`;
 
 /** The sheet adds a budget, or edits one "a partir de" the selected month. */
 type Editing = { mode: 'add' } | { mode: 'edit'; budget: BudgetView };
@@ -153,7 +147,7 @@ function BudgetCard({ budget, today, onEdit }: { budget: BudgetView; today: numb
             {formatMoney(spent)} <span className="text-muted">/ {formatMoney(limit)}</span>
           </span>
           <span className="tabular-nums text-muted" data-testid="budget-percent">
-            {shownPercent(percent)}
+            {formatPercent(percent)}
           </span>
         </div>
         <div
@@ -162,7 +156,7 @@ function BudgetCard({ budget, today, onEdit }: { budget: BudgetView; today: numb
           aria-valuemin={0}
           aria-valuemax={100}
           aria-valuenow={Math.min(100, Math.floor(percent))}
-          aria-valuetext={shownPercent(percent)}
+          aria-valuetext={formatPercent(percent)}
           className="relative mt-2 h-2 rounded-full bg-card-2"
         >
           <div className={`h-full rounded-full ${style.bar}`} style={{ width: `${Math.min(100, percent)}%` }} />
@@ -263,8 +257,7 @@ function EditBudgetForm({ budget, month, onDone }: { budget: BudgetView; month: 
       return;
     }
     setBusy(true);
-    // Saving the same limit would still replace the later ones, so an untouched Guardar changes nothing.
-    if (amount !== limit) await repo.setBudgetLimit(category.id, amount, month);
+    await repo.setBudgetLimit(category.id, amount, month);
     onDone();
   }
 
