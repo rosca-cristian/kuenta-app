@@ -62,18 +62,10 @@ const tidyName = (name: string) => name.replace(/\s+/g, ' ').trim();
 function tidyActions(actions: RuleActions): RuleActions {
   const tidy: RuleActions = {};
   if (actions.categoryId !== undefined) tidy.categoryId = actions.categoryId;
+  if (actions.transferAccountId !== undefined) tidy.transferAccountId = actions.transferAccountId;
   const payeeName = tidyName(actions.payeeName ?? '');
   if (payeeName !== '') tidy.payeeName = payeeName;
   return tidy;
-}
-
-/**
- * Throws unless the rule can be saved: it needs a text, and an action unless it's disabled
- * (deleting a category can leave a disabled rule without one, to be repointed).
- */
-function checkRule(rule: Rule) {
-  if (normalizeText(rule.match.value) === '') throw new Error('A rule needs a text to match');
-  if (rule.enabled && !hasAction(rule.actions)) throw new Error('An enabled rule needs a category or a payee name');
 }
 
 /**
@@ -155,6 +147,23 @@ export function createDexieRepository(options: DexieRepositoryOptions = {}): Dat
       if (account.archived) throw new Error(`Can't transfer to the archived account ${account.name}`);
     }
     return { ...shapeByBankSign(signedAmount(tx, importId), importId, transferAccountId), categoryId: null };
+  }
+
+  /**
+   * Throws unless the rule can be saved: it needs a text; an action unless it's disabled
+   * (deleting a category can leave a disabled rule without one, to be repointed); and a
+   * category or a transfer account, never both. Its transfer account must exist and not be
+   * the import account; an archived one is fine, so archiving never changes what rules do.
+   * Call it inside a transaction on accounts and settings.
+   */
+  async function checkRule(rule: Rule) {
+    if (normalizeText(rule.match.value) === '') throw new Error('A rule needs a text to match');
+    if (rule.enabled && !hasAction(rule.actions)) throw new Error('An enabled rule needs a category, a transfer account or a payee name');
+    const { categoryId, transferAccountId } = rule.actions;
+    if (transferAccountId === undefined) return;
+    if (categoryId !== undefined) throw new Error('A rule sets a category or a transfer account, never both');
+    if (!(await db.accounts.get(transferAccountId))) throw new Error(`Account ${transferAccountId} not found`);
+    if (transferAccountId === (await importAccountId())) throw new Error("A rule can't transfer to the import account");
   }
 
   async function payeeIdFor(name: string | null): Promise<Id | null> {
@@ -572,7 +581,7 @@ export function createDexieRepository(options: DexieRepositoryOptions = {}): Dat
 
     async createRule(draft: RuleDraft) {
       const id = crypto.randomUUID();
-      await db.transaction('rw', db.rules, async () => {
+      await db.transaction('rw', db.rules, db.accounts, db.settings, async () => {
         // A user's rule goes before every other, starter rules included, so it wins.
         const first = await db.rules.orderBy('order').first();
         const rule: Rule = {
@@ -584,7 +593,7 @@ export function createDexieRepository(options: DexieRepositoryOptions = {}): Dat
           actions: tidyActions(draft.actions),
         };
         // A new rule needs an action even when it starts disabled.
-        checkRule({ ...rule, enabled: true });
+        await checkRule({ ...rule, enabled: true });
         await db.rules.add(rule);
       });
       changed();
@@ -592,7 +601,7 @@ export function createDexieRepository(options: DexieRepositoryOptions = {}): Dat
     },
 
     async updateRule(id, changes: RuleChanges) {
-      await db.transaction('rw', db.rules, async () => {
+      await db.transaction('rw', db.rules, db.accounts, db.settings, async () => {
         const rule = await db.rules.get(id);
         if (!rule) throw new Error(`Rule ${id} not found`);
         const updated: Rule = {
@@ -601,7 +610,7 @@ export function createDexieRepository(options: DexieRepositoryOptions = {}): Dat
           match: { ...rule.match, ...changes.match },
           actions: tidyActions(changes.actions ?? rule.actions),
         };
-        checkRule(updated);
+        await checkRule(updated);
         await db.rules.put(updated);
       });
       changed();
@@ -812,17 +821,20 @@ export function createDexieRepository(options: DexieRepositoryOptions = {}): Dat
           (await db.transactions.where('importHash').anyOf(rows.map((row) => row.hash)).toArray()).map((tx) => tx.importHash),
         );
         const fresh = rows.filter((row) => !already.has(row.hash));
+        // An account deleted since the preview was made can't take a transfer any more.
+        const accountIds = new Set(await db.accounts.toCollection().primaryKeys());
         const txs: Transaction[] = [];
         for (const row of fresh) {
+          // A category chosen in the preview is the user's edit, and wins over a transfer rule.
+          const userChose = chosen.has(row.hash);
+          const transferTo = !userChose && row.transferAccountId !== null && accountIds.has(row.transferAccountId) ? row.transferAccountId : null;
           txs.push({
             id: crypto.randomUUID(),
-            type: row.type,
+            ...shapeByBankSign(row.bankAmount, preview.accountId, transferTo),
             amount: row.amount,
             date: row.date,
-            accountId: preview.accountId,
-            toAccountId: null,
-            // A category chosen in the preview is the user's edit; one set by a rule isn't.
-            categoryId: chosen.has(row.hash) ? (chosen.get(row.hash) ?? null) : row.categoryId,
+            // One set by a rule isn't the user's edit; a transfer never has one.
+            categoryId: userChose ? (chosen.get(row.hash) ?? null) : transferTo === null ? row.categoryId : null,
             payeeId: await payeeIdFor(row.payeeName),
             note: row.note,
             source: 'import',
@@ -832,7 +844,7 @@ export function createDexieRepository(options: DexieRepositoryOptions = {}): Dat
             bankConcept: row.concept,
             bankMovement: row.movement,
             bankBalance: row.bankBalance,
-            editedAt: chosen.has(row.hash) ? importedAt : null,
+            editedAt: userChose ? importedAt : null,
             createdAt: importedAt,
             updatedAt: importedAt,
           });

@@ -62,7 +62,8 @@ export interface CommitImportOptions {
   exclude?: string[];
   /**
    * Categories the user chose in the preview, by fingerprint (null for "Sin categoría").
-   * They win over the plan's, and those transactions count as edited by the user, so rules
+   * They win over the plan's, a transfer rule's included (the row is then an ordinary
+   * expense or income), and those transactions count as edited by the user, so rules
    * applied later never change them.
    */
   categories?: Record<string, Id | null>;
@@ -237,12 +238,14 @@ export interface DataRepository {
   listRules(): Promise<Rule[]>;
   /**
    * Places the rule before every existing one, so it wins over starter rules. Throws when
-   * the rule has no text, or neither a category nor a payee name.
+   * the rule has no text; no category, transfer account or payee name; both a category and
+   * a transfer account; or a transfer account that is unknown or the import account.
    */
   createRule(draft: RuleDraft): Promise<Id>;
   /**
-   * Throws, changing nothing, when the rule would be left without text, or enabled without
-   * a category or a payee name (a rule whose category was deleted stays disabled until it gets one).
+   * Throws, changing nothing, when the rule would be left without text, enabled without a
+   * category, a transfer account or a payee name (a rule whose category was deleted stays
+   * disabled until it gets one), or with a transfer account `createRule` refuses.
    */
   updateRule(id: Id, changes: RuleChanges): Promise<void>;
   /** Swaps the rule with the previous or next one, changing which wins. */

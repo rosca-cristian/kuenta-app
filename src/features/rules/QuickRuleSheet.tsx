@@ -3,9 +3,10 @@ import { Sheet } from '../../ui/Sheet';
 import { Button } from '../../ui/components';
 import { useRepo, useRepoQuery } from '../../lib/repo';
 import { cleanPayeeName, normalizeText } from '../../domain/text';
-import type { Id } from '../../domain/model';
+import type { Id, RuleActions } from '../../domain/model';
 import { ruleMatches, type RuleSubject } from '../../domain/rules';
 import type { RulePreview } from '../../data/repository';
+import { RuleActionFields, type ActionKind } from './RuleActionFields';
 
 export interface QuickRuleSheetProps {
   open: boolean;
@@ -14,12 +15,17 @@ export interface QuickRuleSheetProps {
   /** The category the rule sets to start with; the user can pick another. Null starts with none. */
   categoryId: Id | null;
   /**
+   * The account to start with when the rule should start as a transfer rule ("Transferencia
+   * a cuenta"), e.g. from an import preview row a transfer rule matches. Wins over `categoryId`.
+   */
+  transferAccountId?: Id | null;
+  /**
    * When the sheet follows a transaction the user just categorized: its payee and how many
    * other uncategorized transactions it has, to ask "¿Usar siempre Supermercado para Mercadona? (3 más)".
    */
   question?: { payeeName: string; others: number };
   /**
-   * Rows not imported yet that saving would also categorize, such as the import preview's
+   * Rows not imported yet that saving would also change, such as the import preview's
    * rows whose category the user didn't choose: the sheet counts them apart.
    */
   pendingRows?: RuleSubject[];
@@ -31,14 +37,16 @@ export interface QuickRuleSheetProps {
 const countText = (n: number) => (n === 1 ? '1 movimiento' : `${n} movimientos`);
 
 /**
- * A quick way to create a rule "concepto o movimiento contiene ___ → categoría", with a live
- * count of the transactions it matches. Saving places the rule before every other one
- * (starter rules included) and applies it to the transactions the user never edited.
+ * A quick way to create a rule "concepto o movimiento contiene ___ → categoría" (or a
+ * transfer to an account), with a live count of the transactions it matches. Saving places
+ * the rule before every other one (starter rules included) and applies it to the
+ * transactions the user never edited.
  */
 export function QuickRuleSheet({
   open,
   initialText,
   categoryId: initialCategoryId,
+  transferAccountId: initialAccountId = null,
   question,
   pendingRows,
   onSaved,
@@ -46,8 +54,12 @@ export function QuickRuleSheet({
 }: QuickRuleSheetProps) {
   const repo = useRepo();
   const categories = useRepoQuery((r) => r.listCategories());
+  const accounts = useRepoQuery((r) => r.listAccounts());
+  const initialKind: ActionKind = initialAccountId !== null ? 'transfer' : 'category';
   const [text, setText] = useState(initialText);
+  const [kind, setKind] = useState(initialKind);
   const [categoryId, setCategoryId] = useState(initialCategoryId);
+  const [accountId, setAccountId] = useState(initialAccountId);
   const [saving, setSaving] = useState(false);
 
   // Every time the sheet opens, it starts again from what the caller gives it.
@@ -56,16 +68,21 @@ export function QuickRuleSheet({
     setWasOpen(open);
     if (open) {
       setText(initialText);
+      setKind(initialKind);
       setCategoryId(initialCategoryId);
+      setAccountId(initialAccountId);
       setSaving(false);
     }
   }
 
   const hasText = normalizeText(text) !== '';
-  const actions = categoryId ? { categoryId } : {};
+  // Only the chosen kind of action is saved: a rule never has both.
+  const actions: RuleActions =
+    kind === 'category' ? (categoryId ? { categoryId } : {}) : accountId ? { transferAccountId: accountId } : {};
+  const hasAction = Object.keys(actions).length > 0;
   const preview = useRepoQuery(
     (r) => (open && hasText ? r.previewRule({ match: { value: text }, actions }) : Promise.resolve(null)),
-    [open, text, categoryId],
+    [open, text, kind, categoryId, accountId],
   );
 
   const pendingMatches =
@@ -74,13 +91,16 @@ export function QuickRuleSheet({
       : null;
 
   const category = categories?.find((c) => c.id === categoryId);
-  const title = question && category ? `¿Usar siempre ${category.name} para ${question.payeeName}? (${question.others} más)` : 'Crear regla';
+  const title =
+    question && category && kind === 'category'
+      ? `¿Usar siempre ${category.name} para ${question.payeeName}? (${question.others} más)`
+      : 'Crear regla';
 
   async function save(event: FormEvent) {
     event.preventDefault();
-    if (!categoryId || !hasText || saving) return;
+    if (!hasAction || !hasText || saving) return;
     setSaving(true);
-    const ruleId = await repo.createRule({ name: cleanPayeeName(text), match: { value: text }, actions: { categoryId } });
+    const ruleId = await repo.createRule({ name: cleanPayeeName(text), match: { value: text }, actions });
     const applied = await repo.applyRules(ruleId);
     onSaved?.({ ruleId, applied });
     onClose();
@@ -100,25 +120,20 @@ export function QuickRuleSheet({
           <span className="text-xs">Se aplica a los movimientos cuyo concepto o movimiento contiene este texto.</span>
         </label>
 
-        <label className="flex flex-col gap-1 text-sm text-muted">
-          Categoría
-          <select
-            value={categoryId ?? ''}
-            onChange={(event) => setCategoryId(event.target.value || null)}
-            className="min-h-11 rounded-xl border border-line bg-card-2 px-3 text-base text-text outline-none focus:border-accent"
-          >
-            {categoryId === null && <option value="">Elige una categoría</option>}
-            <optgroup label="Gastos">
-              {categories?.filter((c) => c.kind === 'expense').map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
-            </optgroup>
-            <optgroup label="Ingresos">
-              {categories?.filter((c) => c.kind === 'income').map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
-            </optgroup>
-          </select>
-        </label>
+        <RuleActionFields
+          kind={kind}
+          onKindChange={setKind}
+          categoryId={categoryId}
+          onCategoryChange={setCategoryId}
+          accountId={accountId}
+          onAccountChange={setAccountId}
+          categories={categories ?? []}
+          accounts={accounts ?? []}
+          noCategoryLabel={categoryId === null ? 'Elige una categoría' : null}
+        />
 
         <p className="text-sm" data-testid="quick-rule-count" aria-live="polite">
-          {hasText ? preview && countSentence(preview, categoryId !== null) : 'Escribe el texto que buscará la regla.'}
+          {hasText ? preview && countSentence(preview, hasAction) : 'Escribe el texto que buscará la regla.'}
         </p>
         {pendingMatches !== null && (
           <p className="-mt-2 text-sm" data-testid="quick-rule-pending" aria-live="polite">
@@ -128,7 +143,7 @@ export function QuickRuleSheet({
           </p>
         )}
 
-        <Button type="submit" disabled={!hasText || !categoryId || saving}>
+        <Button type="submit" disabled={!hasText || !hasAction || saving}>
           Crear regla
         </Button>
         <Button type="button" variant="secondary" onClick={onClose}>
@@ -139,9 +154,9 @@ export function QuickRuleSheet({
   );
 }
 
-function countSentence({ matching, applicable }: RulePreview, withCategory: boolean): string {
+function countSentence({ matching, applicable }: RulePreview, withAction: boolean): string {
   if (matching === 0) return 'No coincide con ningún movimiento.';
   const matches = `Coincide con ${countText(matching)}.`;
-  if (!withCategory) return matches;
+  if (!withAction) return matches;
   return applicable === 0 ? `${matches} No cambiará ninguno.` : `${matches} Se aplicará a ${applicable} que no has editado.`;
 }

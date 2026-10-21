@@ -46,7 +46,7 @@ test('change categories in the preview, create a rule from a row and import', as
   await previewRow(page, 'Kfc 0123 Gran Via').click();
   await page.getByRole('button', { name: 'Crear regla con este concepto' }).click();
   await expect(page.getByLabel('Texto de la regla')).toHaveValue('kfc');
-  await page.getByRole('dialog').getByLabel('Categoría').selectOption('Restaurantes');
+  await page.getByRole('dialog').getByRole('combobox', { name: 'Categoría' }).selectOption('Restaurantes');
   await expect(page.getByTestId('quick-rule-pending')).toHaveText('En esta importación: 2 filas.');
   await page.getByRole('button', { name: 'Crear regla', exact: true }).click();
   await expect(page.getByRole('heading', { name: 'Crear regla' })).toHaveCount(0);

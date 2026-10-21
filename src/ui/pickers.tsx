@@ -60,7 +60,8 @@ export function CategoryGrid({
   withNone = false,
 }: {
   categories: Category[];
-  value: Id | null;
+  /** The picked category; null is "Sin categoría", undefined picks nothing (e.g. a transfer). */
+  value: Id | null | undefined;
   onPick: (id: Id | null) => void;
   withNone?: boolean;
 }) {

@@ -4,6 +4,7 @@ import { CircleCheck, FileUp, TriangleAlert } from 'lucide-react';
 import { Alert, Amount, Button, Card, PageHeader } from '../../ui/components';
 import { Sheet } from '../../ui/Sheet';
 import { CategoryGrid } from '../../ui/pickers';
+import { TransferBadge } from '../../ui/icons';
 import { useServices, useRepoQuery } from '../../lib/repo';
 import { formatDate } from '../../domain/dates';
 import { formatMoney } from '../../domain/money';
@@ -133,7 +134,10 @@ function Preview({
 }) {
   const { repo } = useServices();
   const categories = useRepoQuery((r) => r.listCategories());
+  const accounts = useRepoQuery((r) => r.listAccounts());
   const categoryName = new Map(categories?.map((category) => [category.id, category.name]));
+  // Null for no account, so a row that isn't a transfer has no transfer name.
+  const accountName = (id: Id | null) => (id === null ? null : (accounts?.find((account) => account.id === id)?.name ?? ''));
   // Re-planned after each rule created from a row.
   const [current, setCurrent] = useState(preview);
   const [excluded, setExcluded] = useState<Set<string>>(new Set());
@@ -142,14 +146,16 @@ function Preview({
   // Both kept after their sheet closes, so it doesn't change while it slides away.
   const [editing, setEditing] = useState<PlannedRow | null>(null);
   const [editingOpen, setEditingOpen] = useState(false);
-  const [ruleFrom, setRuleFrom] = useState<{ text: string; categoryId: Id | null } | null>(null);
+  const [ruleFrom, setRuleFrom] = useState<{ text: string; categoryId: Id | null; transferAccountId: Id | null } | null>(null);
   const [creatingRule, setCreatingRule] = useState(false);
   const [busy, setBusy] = useState(false);
   const fresh = current.plan.rows.filter((row) => row.status === 'new');
   const already = current.plan.rows.length - fresh.length;
   const count = fresh.length - excluded.size;
   const categoryOf = (row: PlannedRow) => (row.hash in chosen ? chosen[row.hash] : row.categoryId);
-  // The rows a new rule would categorize: those to import whose category the user didn't choose.
+  // A transfer rule's account, unless the user chose a category, which wins over it.
+  const transferOf = (row: PlannedRow) => (row.hash in chosen ? null : row.transferAccountId);
+  // The rows a new rule would change: those to import whose category the user didn't choose.
   const ruleCanChange = fresh.filter((row) => !excluded.has(row.hash) && !(row.hash in chosen)).map(ruleSubjectOf);
 
   function toggle(hash: string) {
@@ -166,13 +172,14 @@ function Preview({
 
   function choose(row: PlannedRow, categoryId: Id | null) {
     // Picking the category a rule already gave the row isn't a change: later rules may still change it.
-    if (categoryId !== categoryOf(row) || row.hash in chosen) setChosen({ ...chosen, [row.hash]: categoryId });
+    // On a row a transfer rule makes a transfer, any category (even "Sin categoría") overrides the rule.
+    if (transferOf(row) !== null || categoryId !== categoryOf(row) || row.hash in chosen) setChosen({ ...chosen, [row.hash]: categoryId });
     setEditingOpen(false);
   }
 
   function createRule(row: PlannedRow) {
     setEditingOpen(false);
-    setRuleFrom({ text: suggestedRuleText(row.concept), categoryId: categoryOf(row) });
+    setRuleFrom({ text: suggestedRuleText(row.concept), categoryId: categoryOf(row), transferAccountId: transferOf(row) });
     setCreatingRule(true);
   }
 
@@ -205,6 +212,7 @@ function Preview({
           <ul className="overflow-hidden rounded-2xl border border-line bg-card">
             {fresh.map((row) => {
               const categoryId = categoryOf(row);
+              const transferName = accountName(transferOf(row));
               return (
                 <li key={row.hash} className="flex min-h-14 items-center border-b border-line last:border-b-0">
                   <input
@@ -218,13 +226,15 @@ function Preview({
                     <span className="min-w-0 flex-1">
                       <span className="block truncate">{rowName(row)}</span>
                       <span className="block truncate text-xs text-muted">
-                        <span className={categoryId ? '' : 'text-warn'} data-testid="preview-category">
-                          {(categoryId && categoryName.get(categoryId)) || 'Sin categoría'}
+                        <span className={categoryId || transferName !== null ? '' : 'text-warn'} data-testid="preview-category">
+                          {transferName !== null
+                            ? transferText(row, transferName)
+                            : (categoryId && categoryName.get(categoryId)) || 'Sin categoría'}
                         </span>{' '}
                         · {formatDate(row.date)} · {row.movement || row.concept}
                       </span>
                     </span>
-                    <Amount cents={row.amount} kind={row.type} />
+                    <Amount cents={row.amount} kind={transferName !== null ? 'neutral' : row.type} />
                   </button>
                 </li>
               );
@@ -253,6 +263,7 @@ function Preview({
             row={editing}
             categories={categories ?? []}
             categoryId={categoryOf(editing)}
+            transferAccountName={accountName(transferOf(editing))}
             onChoose={(categoryId) => choose(editing, categoryId)}
             onCreateRule={() => createRule(editing)}
           />
@@ -262,6 +273,7 @@ function Preview({
         open={creatingRule}
         initialText={ruleFrom?.text ?? ''}
         categoryId={ruleFrom?.categoryId ?? null}
+        transferAccountId={ruleFrom?.transferAccountId ?? null}
         pendingRows={ruleCanChange}
         onSaved={async () => setCurrent(await repo.replanImport(current))}
         onClose={() => setCreatingRule(false)}
@@ -272,17 +284,27 @@ function Preview({
 
 const rowName = (row: PlannedRow) => row.payeeName || row.note || row.concept;
 
-/** A new row of the preview: pick its category, or create a rule from its concept. */
+/** What a transfer rule makes of a row, by the bank's sign: "Transferencia → Revolut" or "Transferencia desde Revolut". */
+const transferText = (row: PlannedRow, accountName: string) =>
+  row.bankAmount < 0 ? `Transferencia → ${accountName}` : `Transferencia desde ${accountName}`;
+
+/**
+ * A new row of the preview: pick its category, or create a rule from its concept. On a row
+ * a transfer rule matches (`transferAccountName`), picking a category imports it as an
+ * ordinary expense or income instead.
+ */
 function PreviewRowForm({
   row,
   categories,
   categoryId,
+  transferAccountName,
   onChoose,
   onCreateRule,
 }: {
   row: PlannedRow;
   categories: Category[];
   categoryId: Id | null;
+  transferAccountName: string | null;
   onChoose: (categoryId: Id | null) => void;
   onCreateRule: () => void;
 }) {
@@ -294,11 +316,21 @@ function PreviewRowForm({
   return (
     <div className="flex flex-col gap-4">
       <div className="text-center">
-        <Amount cents={row.amount} kind={row.type} className="text-3xl font-semibold" />
+        <Amount cents={row.amount} kind={transferAccountName !== null ? 'neutral' : row.type} className="text-3xl font-semibold" />
         <p className="mt-1 text-sm text-muted">{formatDate(row.date)}</p>
       </div>
 
-      <CategoryGrid categories={ordered} value={categoryId} onPick={onChoose} withNone />
+      {transferAccountName !== null && (
+        <div className="flex items-center gap-3 rounded-xl bg-card-2 p-3">
+          <TransferBadge size={32} />
+          <p className="min-w-0 flex-1 text-sm">
+            {transferText(row, transferAccountName)}, por una regla. Elige una categoría para importarlo como{' '}
+            {row.type === 'expense' ? 'gasto' : 'ingreso'}.
+          </p>
+        </div>
+      )}
+
+      <CategoryGrid categories={ordered} value={transferAccountName !== null ? undefined : categoryId} onPick={onChoose} withNone />
 
       <div className="rounded-xl bg-card-2 p-3 text-xs text-muted">
         <p>Concepto del banco: {row.concept}</p>

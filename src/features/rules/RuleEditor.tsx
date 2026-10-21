@@ -5,15 +5,11 @@ import { useRepo } from '../../lib/repo';
 import { hasAction } from '../../domain/rules';
 import { normalizeText } from '../../domain/text';
 import type { Category, Id, Rule, RuleActions, RuleMatch } from '../../domain/model';
-import type { RulePreview } from '../../data/repository';
+import type { AccountView, RulePreview } from '../../data/repository';
 import { DIRECTION_LABELS, FIELD_LABELS, OP_LABELS, conditionText, movementsText } from './ruleText';
+import { Choice, RuleActionFields, type ActionKind } from './RuleActionFields';
 
 const DEFAULT_MATCH: RuleMatch = { field: 'conceptOrMovement', op: 'contains', value: '', direction: 'any' };
-
-const KIND_GROUPS: { kind: Category['kind']; title: string }[] = [
-  { kind: 'expense', title: 'Gastos' },
-  { kind: 'income', title: 'Ingresos' },
-];
 
 const inputClass = 'min-h-11 rounded-xl border border-line bg-card-2 px-3 text-base text-text outline-none focus:border-accent';
 
@@ -44,25 +40,29 @@ function useRulePreview(match: RuleMatch, actions: RuleActions): RulePreview | n
 
 /**
  * Creates a rule (when `rule` is null) or edits one: "Concepto o movimiento contiene ___"
- * and its actions, with field, operator and direction under "Opciones avanzadas", and a
- * live count of matching transactions. `onSaved` gets how many never-edited transactions
- * applying the saved rule would change.
+ * and its actions (a category or a transfer account, and a payee name), with field,
+ * operator and direction under "Opciones avanzadas", and a live count of matching
+ * transactions. `onSaved` gets how many never-edited transactions applying the saved rule
+ * would change.
  */
 export function RuleEditor({
   rule,
   categories,
+  accounts,
   onSaved,
   onDelete,
 }: {
   rule: Rule | null;
   categories: Category[];
+  accounts: AccountView[];
   onSaved: (ruleId: Id, applicable: number) => void;
   onDelete: (rule: Rule) => void;
 }) {
   const repo = useRepo();
   const [match, setMatch] = useState<RuleMatch>(rule?.match ?? DEFAULT_MATCH);
-  // '' stands for no category.
-  const [categoryId, setCategoryId] = useState<Id | ''>(rule?.actions.categoryId ?? '');
+  const [kind, setKind] = useState<ActionKind>(rule?.actions.transferAccountId !== undefined ? 'transfer' : 'category');
+  const [categoryId, setCategoryId] = useState<Id | null>(rule?.actions.categoryId ?? null);
+  const [accountId, setAccountId] = useState<Id | null>(rule?.actions.transferAccountId ?? null);
   const [payeeName, setPayeeName] = useState(rule?.actions.payeeName ?? '');
   const [advanced, setAdvanced] = useState(
     match.field !== DEFAULT_MATCH.field || match.op !== DEFAULT_MATCH.op || match.direction !== DEFAULT_MATCH.direction,
@@ -70,8 +70,10 @@ export function RuleEditor({
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
+  // Only the chosen kind of action is saved: a rule never has both.
   const actions: RuleActions = {};
-  if (categoryId) actions.categoryId = categoryId;
+  if (kind === 'category' && categoryId) actions.categoryId = categoryId;
+  if (kind === 'transfer' && accountId) actions.transferAccountId = accountId;
   if (payeeName.trim()) actions.payeeName = payeeName;
   const preview = useRulePreview(match, actions);
   const hasText = normalizeText(match.value) !== '';
@@ -84,7 +86,7 @@ export function RuleEditor({
   async function save(event: FormEvent) {
     event.preventDefault();
     if (!hasText) return setError('Escribe el texto que debe contener.');
-    if (!hasAction(actions)) return setError('Elige una categoría o un comercio.');
+    if (!hasAction(actions)) return setError(kind === 'category' ? 'Elige una categoría o un comercio.' : 'Elige una cuenta o un comercio.');
     setBusy(true);
     let id: Id;
     if (rule) {
@@ -163,30 +165,26 @@ export function RuleEditor({
         )}
       </div>
 
-      <label className="flex flex-col gap-1 text-sm text-muted">
-        Categoría
-        <select
-          value={categoryId}
-          onChange={(event) => {
-            setCategoryId(event.target.value);
-            setError(null);
-          }}
-          className={inputClass}
-        >
-          <option value="">Ninguna</option>
-          {KIND_GROUPS.map(({ kind, title }) => (
-            <optgroup key={kind} label={title}>
-              {categories
-                .filter((category) => category.kind === kind)
-                .map((category) => (
-                  <option key={category.id} value={category.id}>
-                    {category.name}
-                  </option>
-                ))}
-            </optgroup>
-          ))}
-        </select>
-      </label>
+      <RuleActionFields
+        kind={kind}
+        onKindChange={(next) => {
+          setKind(next);
+          setError(null);
+        }}
+        categoryId={categoryId}
+        onCategoryChange={(id) => {
+          setCategoryId(id);
+          setError(null);
+        }}
+        accountId={accountId}
+        onAccountChange={(id) => {
+          setAccountId(id);
+          setError(null);
+        }}
+        categories={categories}
+        accounts={accounts}
+        noCategoryLabel="Ninguna"
+      />
       <label className="flex flex-col gap-1 text-sm text-muted">
         Nombre del comercio
         <input
@@ -214,47 +212,6 @@ export function RuleEditor({
         </Button>
       )}
     </form>
-  );
-}
-
-/** A row of mutually exclusive options, as segmented buttons. */
-function Choice<T extends string>({
-  legend,
-  name,
-  value,
-  options,
-  onChange,
-}: {
-  legend: string;
-  name: string;
-  value: T;
-  options: Record<T, string>;
-  onChange: (value: T) => void;
-}) {
-  const entries = Object.entries(options) as [T, string][];
-  return (
-    <fieldset>
-      <legend className="mb-1 text-sm text-muted">{legend}</legend>
-      <div className="grid gap-2" style={{ gridTemplateColumns: `repeat(${entries.length}, minmax(0, 1fr))` }}>
-        {entries.map(([option, label]) => (
-          <label
-            key={option}
-            className={`relative flex min-h-11 items-center justify-center rounded-xl px-1 text-center text-xs leading-tight ${
-              value === option ? 'bg-accent/20 ring-1 ring-accent' : 'bg-card-2'
-            }`}
-          >
-            <input
-              type="radio"
-              name={name}
-              checked={value === option}
-              onChange={() => onChange(option)}
-              className="absolute inset-0 cursor-pointer appearance-none rounded-xl focus-visible:ring-2 focus-visible:ring-accent"
-            />
-            {label}
-          </label>
-        ))}
-      </div>
-    </fieldset>
   );
 }
 
