@@ -13,7 +13,7 @@ The date the money actually moved (when you paid), as opposed to the date the ba
 _Avoid_: Booking date (for the transaction's date)
 
 **Opening balance**:
-The account's balance before its oldest imported transaction, derived from the first import, not typed by the user.
+The account's balance before its first transaction. For the import account it's derived from the imports (the balance before the oldest imported row), never typed; for a non-imported account it's typed by the user (default 0).
 _Avoid_: Initial balance
 
 **Transfer**:
@@ -28,11 +28,15 @@ _Avoid_: Beneficiary, beneficiario, merchant
 The single account that bank statement imports post into. It's a global setting, not a property of the account.
 _Avoid_: BBVA account (as an account attribute)
 
+**Non-imported account**:
+An account no statement is imported into (Revolut, savings, investments). Its balance is its opening balance plus the transfers that reach or leave it and its balance adjustments.
+_Avoid_: Manual account, external account
+
 **Balance**:
 The amount in an account at a given date: its opening balance plus every transaction up to that date.
 
 **Balance adjustment**:
-An uncategorized transaction created to make an account's balance agree with the bank's after an import that doesn't add up (e.g. rows missing from the file).
+An uncategorized transaction created to make an account's balance agree with reality: the bank's after an import that doesn't add up (e.g. rows missing from the file), or the balance the user types with "Actualizar saldo" on a non-imported account.
 
 **Gap**:
 A stretch of time with transactions missing between two imports, detected because the bank's running balance doesn't chain from the last imported row to the first new one.

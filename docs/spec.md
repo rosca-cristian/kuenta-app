@@ -170,7 +170,7 @@ interface Rule {
     direction: 'any' | 'out' | 'in';   // charge, credit or both
   };
   actions: {
-    categoryId?: Id;
+    categoryId?: Id;         // either a category or a transfer account, never both
     payeeName?: string;      // creates or reuses the payee
     transferAccountId?: Id;  // turns it into a transfer with this account
   };
@@ -271,7 +271,7 @@ Fixed bottom navigation: **Inicio · Movimientos · Importar · Análisis · Má
 4. Go straight to Importar with the step-by-step export instructions.
 
 ### 4.2 Inicio
-- Month card: **total balance**, income, expenses, savings (amount and rate) and "A este ritmo gastarás X € este mes" (current month only).
+- Month card: **total balance** (every account, archived ones included), income, expenses, savings (amount and rate) and "A este ritmo gastarás X € este mes" (current month only).
 - Alerts, only when they apply: "Han pasado N días desde la última importación" (from 8 days), "N movimientos sin categoría", "Hay un hueco entre el 07/10 y el 14/10", "N presupuestos superados", "Haz una copia de seguridad".
 - After an update that brought starter rules, when they would change transactions already imported: "Aplicar las reglas de serie a N movimientos ya importados" (only those never edited), with Aplicar, which reports how many changed, and Descartar. Either one hides it for good.
 - Accounts with their balance (archived ones hidden; non-imported ones labelled "no importada").
@@ -282,7 +282,7 @@ Fixed bottom navigation: **Inicio · Movimientos · Importar · Análisis · Má
 - Text search (payee, note, bank concept and movement) and filters: month, account, category, type and "sin categoría".
 - List grouped by day with a header such as "lunes, 20 oct · −45,30 €" (date and day's net).
 - Row: circle with the category's icon and colour; payee or note; category · account in grey; amount on the right (income in green, expenses in normal text colour).
-- Tapping a row opens the **edit sheet**: amount, date and account shown read-only; category, payee and note editable; "Convertir en transferencia" (pick the other account); the original bank concept and movement. For an incoming amount, the category picker shows first the **expense** categories used that same day.
+- Tapping a row opens the **edit sheet**: amount, date and account shown read-only; category, payee and note editable; "Convertir en transferencia" (pick the other account) and, on a transfer, "Quitar transferencia" (back to expense or income by the bank's sign, uncategorized); both count as the user's edit; the original bank concept and movement. For an incoming amount, the category picker shows first the **expense** categories used that same day.
 - **Rule suggestion**: after saving a category on a transaction whose payee has other uncategorized transactions, Kuenta asks "¿Usar siempre Supermercado para Mercadona? (3 más)" with "Crear regla". The proposed text is the concept cut at the first `-`, `*` or digit (`Mercadona - crta del inge` → `mercadona`), editable, with a live count of matching transactions. Not offered for Bizum rows.
 - "Exportar CSV", respecting active filters.
 
@@ -290,6 +290,7 @@ Fixed bottom navigation: **Inicio · Movimientos · Importar · Análisis · Má
 - **Entry**: the export steps (BBVA → Descargar → Hojas de cálculo → ⋮ → Compartir y exportar → Enviar una copia → Kuenta), an "Elegir archivo" button and the import history (date, period, created, "Deshacer").
 - **Preview** (opens by itself when a file is shared):
   - **Nuevos** (will be created): with the category set by a rule or "Sin categoría", editable in the row; a checkbox to exclude the row; the action "Crear regla con este concepto", which applies the new rule to the remaining new rows of this preview.
+  - A new row a transfer rule matches shows "Transferencia → Revolut" instead of a category; choosing a category in the row makes it an expense or income again.
   - **Ya importados** (ignored): count only.
   - Warnings: gap before or after the file, rows older than the current opening balance (it will be recomputed), wrong currency.
 - **Importar** button. Result screen: "Creados N · Saldo BBVA 1.234,56 € · Saldo en Kuenta 1.234,56 € ✓ Cuadra", or the difference with "Crear ajuste de saldo".
@@ -322,7 +323,7 @@ Cuentas · Categorías · Comercios · Reglas · Presupuestos · Objetivos · Co
 ### 4.10 Cuentas
 - Create a non-imported account with name, type, icon, colour and an optional opening balance.
 - "Actualizar saldo": type the real balance; Kuenta creates a balance adjustment for the difference.
-- Archive. The import account can't be archived until another account is chosen as the import account.
+- Archive and unarchive non-imported accounts. The import account can't be archived (changing the import account is out of v1). An account with no transactions can be deleted; rules that transfer to it lose that action and are disabled.
 
 ### 4.11 Copias de seguridad
 - "Exportar copia" (downloads the JSON) and "Compartir copia" (system menu: Drive, email, Telegram…).
@@ -384,7 +385,7 @@ All checked at a 390×844 viewport. Items marked 🧪 have a unit test.
 - 🧪 The balance at a date ignores later transactions.
 - 🧪 "Actualizar saldo" to 650 € on that account creates a −50 € adjustment.
 - An account with transactions can't be deleted, only archived. An archived account doesn't appear in pickers or on Inicio, but its transactions stay in the history and count in net worth. Goals linked to it keep showing its balance.
-- The import account can't be archived without choosing another import account first.
+- The import account can't be archived.
 
 ### 5.6 Categories and payees
 - On first run these categories exist:
@@ -476,6 +477,7 @@ All checked at a 390×844 viewport. Items marked 🧪 have a unit test.
 | Reimbursements (a received Bizum linked to the expenses it pays back) | Parked idea, see rosca-cristian/kuenta-app#10. Today a refund gets the expense's category and subtracts from it (§3.2). |
 | Subcategories and tags | Not chosen. The model allows adding them later. |
 | Other banks, Norma 43, PDF, the BBVA "Informe de gastos" export | The BBVA reader is isolated in `import/bbva` so other formats can be added. |
+| Changing the import account | Only the BBVA reader exists; the import account is fixed at first run. |
 | Importing non-imported accounts (Revolut, investments) | Later; they would get their own reader. |
 | Reading BBVA notifications | Requires a Capacitor APK. |
 | Open banking, sync, automatic cloud backups | Require servers or external services. |
