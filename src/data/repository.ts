@@ -30,6 +30,17 @@ export interface ImportPreview {
   plan: ImportPlan;
 }
 
+export interface CommitImportOptions {
+  /** Fingerprints of the new rows to leave out. */
+  exclude?: string[];
+  /**
+   * Categories the user chose in the preview, by fingerprint (null for "Sin categoría").
+   * They win over the plan's, and those transactions count as edited by the user, so rules
+   * applied later never change them.
+   */
+  categories?: Record<string, Id | null>;
+}
+
 export type PreviewResult = { ok: true; preview: ImportPreview } | { ok: false; error: ReadError };
 
 export interface BalanceCheck {
@@ -223,8 +234,13 @@ export interface DataRepository {
   mergePayees(keepId: Id, mergeIds: Id[]): Promise<void>;
 
   previewImport(file: Blob | ArrayBuffer, fileName: string): Promise<PreviewResult>;
+  /**
+   * The preview with the current rules run again on its new rows, e.g. after the user
+   * created a rule from one of them. Rows imported before and warnings don't change.
+   */
+  replanImport(preview: ImportPreview): Promise<ImportPreview>;
   /** Imports the new rows of a preview, except the excluded fingerprints, in one transaction. */
-  commitImport(preview: ImportPreview, options?: { exclude?: string[] }): Promise<ImportOutcome>;
+  commitImport(preview: ImportPreview, options?: CommitImportOptions): Promise<ImportOutcome>;
   balanceCheck(): Promise<BalanceCheck | null>;
   /** Creates an uncategorized adjustment so the import account agrees with the bank. */
   createBalanceAdjustment(): Promise<void>;

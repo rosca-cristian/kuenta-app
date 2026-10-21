@@ -1,7 +1,7 @@
 import { KuentaDb } from './db';
 import { STARTER_CATEGORIES, STARTER_DATA_VERSION, STARTER_RULES } from '../seed';
 import { bankOrder, findGaps, latestBalanceOf, openingBalanceOf, type ChainLink } from '../../domain/chain';
-import { planImport } from '../../domain/importPlan';
+import { planImport, reapplyRules } from '../../domain/importPlan';
 import { applyRules as firstMatchActions, hasAction, ruleMatches, suggestedRuleText } from '../../domain/rules';
 import { monthSummary } from '../../domain/stats';
 import { addMonths, daysBetween, today } from '../../domain/dates';
@@ -24,6 +24,7 @@ import type {
   CategoryDraft,
   CategorySaveResult,
   CategoryUsage,
+  CommitImportOptions,
   DataRepository,
   HomeData,
   ImportOutcome,
@@ -644,8 +645,13 @@ export function createDexieRepository(options: DexieRepositoryOptions = {}): Dat
       return { ok: true, preview: { fileName, accountId, plan: planImport(result.rows, existing, rules) } };
     },
 
-    async commitImport(preview: ImportPreview, { exclude = [] } = {}): Promise<ImportOutcome> {
+    async replanImport(preview) {
+      return { ...preview, plan: reapplyRules(preview.plan, await db.rules.toArray()) };
+    },
+
+    async commitImport(preview: ImportPreview, { exclude = [], categories = {} }: CommitImportOptions = {}): Promise<ImportOutcome> {
       const excluded = new Set(exclude);
+      const chosen = new Map(Object.entries(categories));
       const rows = preview.plan.rows.filter((row) => row.status === 'new' && !excluded.has(row.hash));
       const batchId = crypto.randomUUID();
       const importedAt = stamp();
@@ -665,8 +671,8 @@ export function createDexieRepository(options: DexieRepositoryOptions = {}): Dat
             date: row.date,
             accountId: preview.accountId,
             toAccountId: null,
-            // Rules applied on import don't count as the user's edits: editedAt stays null.
-            categoryId: row.categoryId,
+            // A category chosen in the preview is the user's edit; one set by a rule isn't.
+            categoryId: chosen.has(row.hash) ? (chosen.get(row.hash) ?? null) : row.categoryId,
             payeeId: await payeeIdFor(row.payeeName),
             note: row.note,
             source: 'import',
@@ -676,7 +682,7 @@ export function createDexieRepository(options: DexieRepositoryOptions = {}): Dat
             bankConcept: row.concept,
             bankMovement: row.movement,
             bankBalance: row.bankBalance,
-            editedAt: null,
+            editedAt: chosen.has(row.hash) ? importedAt : null,
             createdAt: importedAt,
             updatedAt: importedAt,
           });

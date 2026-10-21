@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react';
 import { Sheet } from '../../ui/Sheet';
 import { Amount, Button } from '../../ui/components';
-import { IconBadge } from '../../ui/icons';
+import { CategoryGrid } from '../../ui/pickers';
 import { useRepo, useRepoQuery } from '../../lib/repo';
 import { formatDate } from '../../domain/dates';
 import type { Category, Id } from '../../domain/model';
@@ -96,24 +96,7 @@ function EditForm({ tx, onDone }: { tx: TransactionView; onDone: (proposal: Prop
 
       {tx.source === 'import' && (
         <>
-          <fieldset>
-            <legend className="mb-2 text-sm text-muted">Categoría</legend>
-            <div className="grid grid-cols-4 gap-2">
-              {ordered.map((category) => (
-                <button
-                  key={category.id}
-                  onClick={() => setCategoryId(categoryId === category.id ? null : category.id)}
-                  aria-pressed={categoryId === category.id}
-                  className={`flex flex-col items-center gap-1 rounded-xl p-2 text-[11px] leading-tight ${
-                    categoryId === category.id ? 'bg-accent/20 ring-1 ring-accent' : 'bg-card-2'
-                  }`}
-                >
-                  <IconBadge icon={category.icon} color={category.color} size={32} />
-                  <span className="line-clamp-2 text-center">{category.name}</span>
-                </button>
-              ))}
-            </div>
-          </fieldset>
+          <CategoryGrid categories={ordered} value={categoryId} onPick={(id) => setCategoryId(categoryId === id ? null : id)} />
 
           <label className="flex flex-col gap-1 text-sm text-muted">
             Comercio

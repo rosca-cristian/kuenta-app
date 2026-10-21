@@ -4,6 +4,7 @@ import { Button } from '../../ui/components';
 import { useRepo, useRepoQuery } from '../../lib/repo';
 import { cleanPayeeName, normalizeText } from '../../domain/text';
 import type { Id } from '../../domain/model';
+import { ruleMatches, type RuleSubject } from '../../domain/rules';
 import type { RulePreview } from '../../data/repository';
 
 export interface QuickRuleSheetProps {
@@ -17,6 +18,11 @@ export interface QuickRuleSheetProps {
    * other uncategorized transactions it has, to ask "¿Usar siempre Supermercado para Mercadona? (3 más)".
    */
   question?: { payeeName: string; others: number };
+  /**
+   * Rows not imported yet that saving would also categorize, such as the import preview's
+   * rows whose category the user didn't choose: the sheet counts them apart.
+   */
+  pendingRows?: RuleSubject[];
   /** Called once the rule is created and applied to the transactions the user never edited. */
   onSaved?: (result: { ruleId: Id; applied: number }) => void;
   onClose: () => void;
@@ -29,7 +35,15 @@ const countText = (n: number) => (n === 1 ? '1 movimiento' : `${n} movimientos`)
  * count of the transactions it matches. Saving places the rule before every other one
  * (starter rules included) and applies it to the transactions the user never edited.
  */
-export function QuickRuleSheet({ open, initialText, categoryId: initialCategoryId, question, onSaved, onClose }: QuickRuleSheetProps) {
+export function QuickRuleSheet({
+  open,
+  initialText,
+  categoryId: initialCategoryId,
+  question,
+  pendingRows,
+  onSaved,
+  onClose,
+}: QuickRuleSheetProps) {
   const repo = useRepo();
   const categories = useRepoQuery((r) => r.listCategories());
   const [text, setText] = useState(initialText);
@@ -53,6 +67,11 @@ export function QuickRuleSheet({ open, initialText, categoryId: initialCategoryI
     (r) => (open && hasText ? r.previewRule({ match: { value: text }, actions }) : Promise.resolve(null)),
     [open, text, categoryId],
   );
+
+  const pendingMatches =
+    pendingRows && hasText
+      ? pendingRows.filter((row) => ruleMatches({ field: 'conceptOrMovement', op: 'contains', direction: 'any', value: text }, row)).length
+      : null;
 
   const category = categories?.find((c) => c.id === categoryId);
   const title = question && category ? `¿Usar siempre ${category.name} para ${question.payeeName}? (${question.others} más)` : 'Crear regla';
@@ -101,6 +120,13 @@ export function QuickRuleSheet({ open, initialText, categoryId: initialCategoryI
         <p className="text-sm" data-testid="quick-rule-count" aria-live="polite">
           {hasText ? preview && countSentence(preview, categoryId !== null) : 'Escribe el texto que buscará la regla.'}
         </p>
+        {pendingMatches !== null && (
+          <p className="-mt-2 text-sm" data-testid="quick-rule-pending" aria-live="polite">
+            {pendingMatches === 0
+              ? 'No coincide con ninguna fila de esta importación.'
+              : `En esta importación: ${pendingMatches === 1 ? '1 fila' : `${pendingMatches} filas`}.`}
+          </p>
+        )}
 
         <Button type="submit" disabled={!hasText || !categoryId || saving}>
           Crear regla

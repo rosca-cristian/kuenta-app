@@ -4,7 +4,7 @@ import { bankOrder, findGaps, type ChainLink, type Gap } from './chain';
 import { cleanPayeeName, normalizeText } from './text';
 import type { BankRow } from './bankRow';
 import type { Id, Rule } from './model';
-import { applyRules } from './rules';
+import { applyRules, type RuleSubject } from './rules';
 
 export interface PlannedRow {
   /** Fingerprint of the bank row; identifies it across overlapping files. */
@@ -42,7 +42,16 @@ export function rowHash(row: BankRow): string {
   return [row.valueDate, row.bookingDate, row.amount, row.concept, row.movement, row.balance].join('|');
 }
 
-const isBizum = (row: BankRow) => normalizeText(row.concept) === 'bizum';
+const isBizum = (row: { concept: string }) => normalizeText(row.concept) === 'bizum';
+
+/** What rules give a row: the first matching rule's category and payee, or a payee from its concept. */
+function ruleOutcome(subject: RuleSubject, rules: Rule[]): Pick<PlannedRow, 'categoryId' | 'payeeName'> {
+  const actions = applyRules(rules, subject);
+  return {
+    categoryId: actions?.categoryId ?? null,
+    payeeName: actions?.payeeName ?? (isBizum(subject) || subject.concept === '' ? null : cleanPayeeName(subject.concept)),
+  };
+}
 
 /**
  * Decides what an import would do: which rows are new, which were imported
@@ -56,7 +65,6 @@ export function planImport(rows: BankRow[], existing: (ChainLink & { hash: strin
     const hash = rowHash(row);
     const status = known.has(hash) ? 'already-imported' : 'new';
     known.add(hash);
-    const actions = applyRules(rules, row);
     return {
       hash,
       status,
@@ -68,8 +76,7 @@ export function planImport(rows: BankRow[], existing: (ChainLink & { hash: strin
       bankBalance: row.balance,
       concept: row.concept,
       movement: row.movement,
-      categoryId: actions?.categoryId ?? null,
-      payeeName: actions?.payeeName ?? (isBizum(row) || row.concept === '' ? null : cleanPayeeName(row.concept)),
+      ...ruleOutcome(row, rules),
       note: isBizum(row) ? row.movement : '',
     };
   });
@@ -96,6 +103,19 @@ export function planImport(rows: BankRow[], existing: (ChainLink & { hash: strin
   if (gaps.length > 0) warnings.push({ kind: 'gaps', gaps });
 
   return { rows: planned, dateFrom: bookingDates[0], dateTo: bookingDates[bookingDates.length - 1], warnings };
+}
+
+/** The bank data rules look at in a planned row. */
+export function ruleSubjectOf(row: PlannedRow): RuleSubject {
+  return { concept: row.concept, movement: row.movement, amount: row.bankAmount };
+}
+
+/** The plan with `rules` run again on its new rows; rows imported before and warnings stay as they are. */
+export function reapplyRules(plan: ImportPlan, rules: Rule[]): ImportPlan {
+  return {
+    ...plan,
+    rows: plan.rows.map((row) => (row.status === 'new' ? { ...row, ...ruleOutcome(ruleSubjectOf(row), rules) } : row)),
+  };
 }
 
 function toLink(row: BankRow): ChainLink {
