@@ -276,8 +276,42 @@ export function createDexieRepository(options: DexieRepositoryOptions = {}): Dat
     return existing ? { ok: false, reason: 'exists', existing } : null;
   }
 
-  function checkOpeningBalance(cents: number) {
-    if (!Number.isSafeInteger(cents)) throw new Error(`An opening balance must be whole cents, not ${cents}`);
+  function checkWholeCents(cents: number, what: string) {
+    if (!Number.isSafeInteger(cents)) throw new Error(`${what} must be whole cents, not ${cents}`);
+  }
+
+  /** The account, unless it's missing or the import account (which `action` doesn't apply to). */
+  async function nonImportedAccount(id: Id, action: string): Promise<Account> {
+    const account = await db.accounts.get(id);
+    if (!account) throw new Error(`Account ${id} not found`);
+    if (id === (await importAccountId())) throw new Error(`The import account can't ${action}`);
+    return account;
+  }
+
+  /** An uncategorized balance adjustment of `difference` (signed, not 0) on the account, dated today. */
+  async function addBalanceAdjustment(accountId: Id, difference: number) {
+    const createdAt = stamp();
+    await db.transactions.add({
+      id: crypto.randomUUID(),
+      type: difference > 0 ? 'income' : 'expense',
+      amount: Math.abs(difference),
+      date: today(now()),
+      accountId,
+      toAccountId: null,
+      categoryId: null,
+      payeeId: null,
+      note: 'Ajuste de saldo',
+      source: 'adjustment',
+      importBatchId: null,
+      importHash: null,
+      bookingDate: null,
+      bankConcept: null,
+      bankMovement: null,
+      bankBalance: null,
+      editedAt: null,
+      createdAt,
+      updatedAt: createdAt,
+    });
   }
 
   async function toViews(txs: Transaction[]): Promise<TransactionView[]> {
@@ -351,11 +385,15 @@ export function createDexieRepository(options: DexieRepositoryOptions = {}): Dat
       const importId = await setting<Id | null>('importAccountId', null);
       const accounts = await db.accounts.orderBy('order').toArray();
       return Promise.all(
-        accounts.map(async (account) => ({
-          ...account,
-          balance: await balanceOf(account, await accountTransactions(account.id)),
-          isImportAccount: account.id === importId,
-        })),
+        accounts.map(async (account) => {
+          const txs = await accountTransactions(account.id);
+          return {
+            ...account,
+            balance: await balanceOf(account, txs),
+            isImportAccount: account.id === importId,
+            transactionCount: txs.length,
+          };
+        }),
       );
     },
 
@@ -363,7 +401,7 @@ export function createDexieRepository(options: DexieRepositoryOptions = {}): Dat
       const id = crypto.randomUUID();
       const name = tidyName(draft.name);
       const openingBalance = draft.openingBalance ?? 0;
-      checkOpeningBalance(openingBalance);
+      checkWholeCents(openingBalance, 'An opening balance');
       const result = await db.transaction('rw', db.accounts, async (): Promise<AccountSaveResult> => {
         const refused = await refuseAccountName(name, id);
         if (refused) return refused;
@@ -390,7 +428,7 @@ export function createDexieRepository(options: DexieRepositoryOptions = {}): Dat
     async updateAccount(id, changes: AccountChanges): Promise<AccountSaveResult> {
       const update = changes.name === undefined ? { ...changes } : { ...changes, name: tidyName(changes.name) };
       if (update.openingBalance !== undefined) {
-        checkOpeningBalance(update.openingBalance);
+        checkWholeCents(update.openingBalance, 'An opening balance');
         // The import account's opening balance follows its imports (see refreshOpeningBalance).
         if (id === (await importAccountId())) throw new Error("The import account's opening balance comes from its imports");
       }
@@ -403,6 +441,36 @@ export function createDexieRepository(options: DexieRepositoryOptions = {}): Dat
       });
       if (result.ok) changed();
       return result;
+    },
+
+    async updateAccountBalance(id, balance) {
+      checkWholeCents(balance, 'A balance');
+      const difference = await db.transaction('rw', db.accounts, db.transactions, db.settings, async () => {
+        const account = await nonImportedAccount(id, 'have its balance typed');
+        const difference = balance - (await balanceOf(account, await accountTransactions(id)));
+        if (difference !== 0) await addBalanceAdjustment(id, difference);
+        return difference;
+      });
+      if (difference !== 0) changed();
+      return difference;
+    },
+
+    async setAccountArchived(id, archived) {
+      await db.transaction('rw', db.accounts, db.settings, async () => {
+        await nonImportedAccount(id, 'be archived');
+        await db.accounts.update(id, { archived, updatedAt: stamp() });
+      });
+      changed();
+    },
+
+    async deleteAccount(id) {
+      await db.transaction('rw', db.accounts, db.transactions, db.settings, async () => {
+        await nonImportedAccount(id, 'be deleted');
+        const count = (await accountTransactions(id)).length;
+        if (count > 0) throw new Error(`Account ${id} has ${count} transactions: archive it instead`);
+        await db.accounts.delete(id);
+      });
+      changed();
     },
 
     async listCategories() {
@@ -775,29 +843,7 @@ export function createDexieRepository(options: DexieRepositoryOptions = {}): Dat
     async createBalanceAdjustment() {
       const check = await computeBalanceCheck();
       if (!check || check.difference === 0) return;
-      const accountId = await importAccountId();
-      const createdAt = stamp();
-      await db.transactions.add({
-        id: crypto.randomUUID(),
-        type: check.difference > 0 ? 'income' : 'expense',
-        amount: Math.abs(check.difference),
-        date: today(now()),
-        accountId,
-        toAccountId: null,
-        categoryId: null,
-        payeeId: null,
-        note: 'Ajuste de saldo',
-        source: 'adjustment',
-        importBatchId: null,
-        importHash: null,
-        bookingDate: null,
-        bankConcept: null,
-        bankMovement: null,
-        bankBalance: null,
-        editedAt: null,
-        createdAt,
-        updatedAt: createdAt,
-      });
+      await addBalanceAdjustment(await importAccountId(), check.difference);
       changed();
     },
 
