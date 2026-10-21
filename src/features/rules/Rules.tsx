@@ -1,9 +1,10 @@
 import { useState } from 'react';
-import { ChevronDown, ChevronUp } from 'lucide-react';
+import { ChevronDown, ChevronUp, Search } from 'lucide-react';
 import { Button, EmptyState, PageHeader } from '../../ui/components';
 import { Sheet } from '../../ui/Sheet';
 import { useRepo, useRepoQuery } from '../../lib/repo';
 import { hasAction } from '../../domain/rules';
+import { normalizeText } from '../../domain/text';
 import type { Category, Id, Rule } from '../../domain/model';
 import { ApplyOffer, DeleteRuleForm, RuleEditor } from './RuleEditor';
 import { actionText, conditionText } from './ruleText';
@@ -24,7 +25,12 @@ export function Rules() {
   const rules = useRepoQuery((r) => r.listRules());
   const categories = useRepoQuery((r) => r.listCategories());
   const [sheet, setSheet] = useState<RuleSheet | null>(null);
+  const [query, setQuery] = useState('');
   const close = () => setSheet(null);
+
+  const needle = normalizeText(query);
+  const searching = needle !== '';
+  const shown = rules && categories && searching ? rules.filter((rule) => ruleMatches(rule, needle, categories)) : rules;
 
   return (
     <>
@@ -45,18 +51,39 @@ export function Rules() {
           {rules.length === 0 ? (
             <EmptyState title="Aún no hay reglas">Crea una para categorizar tus movimientos al importarlos.</EmptyState>
           ) : (
-            <ul aria-label="Reglas" className="overflow-hidden rounded-2xl border border-line bg-card">
-              {rules.map((rule, i) => (
-                <RuleRow
-                  key={rule.id}
-                  rule={rule}
-                  categories={categories}
-                  first={i === 0}
-                  last={i === rules.length - 1}
-                  onEdit={() => setSheet({ mode: 'edit', rule })}
+            <>
+              <label className="flex min-h-11 items-center gap-2 rounded-xl border border-line bg-card px-3 text-muted focus-within:border-accent">
+                <Search size={18} className="shrink-0" />
+                <input
+                  type="search"
+                  aria-label="Buscar reglas"
+                  placeholder="Buscar reglas"
+                  value={query}
+                  onChange={(event) => setQuery(event.target.value)}
+                  className="min-h-11 min-w-0 flex-1 bg-transparent text-base text-text outline-none"
                 />
-              ))}
-            </ul>
+              </label>
+              {shown && shown.length > 0 ? (
+                <ul aria-label="Reglas" className="overflow-hidden rounded-2xl border border-line bg-card">
+                  {shown.map((rule, i) => (
+                    <RuleRow
+                      key={rule.id}
+                      rule={rule}
+                      categories={categories}
+                      // Moving swaps a rule with its neighbours, which a search may hide.
+                      position={searching ? null : { first: i === 0, last: i === rules.length - 1 }}
+                      onEdit={() => setSheet({ mode: 'edit', rule })}
+                    />
+                  ))}
+                </ul>
+              ) : (
+                <EmptyState title={`Ninguna regla coincide con «${query.replace(/\s+/g, ' ').trim()}»`}>
+                  <Button variant="ghost" onClick={() => setQuery('')}>
+                    Ver todas las reglas
+                  </Button>
+                </EmptyState>
+              )}
+            </>
           )}
         </div>
       )}
@@ -89,17 +116,22 @@ export function Rules() {
   );
 }
 
+/** Whether the search (normalized) is in the rule's text, name, or the category or payee name it sets. */
+function ruleMatches(rule: Rule, needle: string, categories: Category[]): boolean {
+  const category = categories.find((c) => c.id === rule.actions.categoryId)?.name ?? '';
+  return [rule.match.value, rule.name, category, rule.actions.payeeName ?? ''].some((text) => normalizeText(text).includes(needle));
+}
+
 function RuleRow({
   rule,
   categories,
-  first,
-  last,
+  position,
   onEdit,
 }: {
   rule: Rule;
   categories: Category[];
-  first: boolean;
-  last: boolean;
+  /** Where the rule is in the whole list, for its up and down buttons; null hides them. */
+  position: { first: boolean; last: boolean } | null;
   onEdit: () => void;
 }) {
   const repo = useRepo();
@@ -120,7 +152,7 @@ function RuleRow({
           <span className={`size-5 rounded-full bg-white transition-transform ${rule.enabled ? 'translate-x-4' : ''}`} />
         </span>
       </button>
-      <button className="min-h-16 min-w-0 flex-1 py-2 pr-1 text-left active:bg-card-2" onClick={onEdit}>
+      <button className={`min-h-16 min-w-0 flex-1 py-2 text-left active:bg-card-2 ${position ? 'pr-1' : 'pr-4'}`} onClick={onEdit}>
         <span className={`block text-sm ${rule.enabled ? '' : 'text-muted'}`}>{conditionText(rule.match)}</span>
         {actionable ? (
           <span className="block truncate text-xs text-muted">→ {actionText(rule.actions, categories)}</span>
@@ -128,22 +160,26 @@ function RuleRow({
           <span className="block text-xs text-warn">Necesita una categoría o un comercio</span>
         )}
       </button>
-      <button
-        aria-label={`Subir ${rule.name}`}
-        disabled={first}
-        onClick={() => void repo.moveRule(rule.id, 'up')}
-        className="flex size-11 shrink-0 items-center justify-center text-muted disabled:opacity-30"
-      >
-        <ChevronUp size={20} />
-      </button>
-      <button
-        aria-label={`Bajar ${rule.name}`}
-        disabled={last}
-        onClick={() => void repo.moveRule(rule.id, 'down')}
-        className="mr-1 flex size-11 shrink-0 items-center justify-center text-muted disabled:opacity-30"
-      >
-        <ChevronDown size={20} />
-      </button>
+      {position && (
+        <>
+          <button
+            aria-label={`Subir ${rule.name}`}
+            disabled={position.first}
+            onClick={() => void repo.moveRule(rule.id, 'up')}
+            className="flex size-11 shrink-0 items-center justify-center text-muted disabled:opacity-30"
+          >
+            <ChevronUp size={20} />
+          </button>
+          <button
+            aria-label={`Bajar ${rule.name}`}
+            disabled={position.last}
+            onClick={() => void repo.moveRule(rule.id, 'down')}
+            className="mr-1 flex size-11 shrink-0 items-center justify-center text-muted disabled:opacity-30"
+          >
+            <ChevronDown size={20} />
+          </button>
+        </>
+      )}
     </li>
   );
 }
