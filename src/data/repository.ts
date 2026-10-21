@@ -95,6 +95,8 @@ export interface HomeData {
   daysSinceLastImport: number | null;
   uncategorized: number;
   gaps: Gap[];
+  /** Budgets above 100 % in the current month, whatever month Inicio shows. */
+  budgetsOver: number;
 }
 
 export interface TransactionChanges {
@@ -145,6 +147,8 @@ export interface CategoryUsage {
   transactions: number;
   /** Rules whose action sets the category. */
   rules: number;
+  /** Whether it has a budget in any month: every limit goes with it. */
+  budget: boolean;
 }
 
 export interface RuleDraft {
@@ -253,8 +257,9 @@ export interface DataRepository {
   categoryUsage(id: Id): Promise<CategoryUsage>;
   /**
    * Deletes a category in one transaction: its transactions move to `moveTo` (null for
-   * "Sin categoría") without counting as the user's edits, and the rules that set it lose
-   * that action and are disabled, so the user can repoint them.
+   * "Sin categoría") without counting as the user's edits, the rules that set it lose
+   * that action and are disabled, so the user can repoint them, and its budget limits of
+   * every month are deleted.
    */
   deleteCategory(id: Id, moveTo: Id | null): Promise<void>;
 

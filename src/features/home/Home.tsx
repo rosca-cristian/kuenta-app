@@ -69,6 +69,11 @@ export function Home() {
             {home.uncategorized === 1 ? '1 movimiento sin categoría' : `${home.uncategorized} movimientos sin categoría`}
           </Alert>
         )}
+        {home.budgetsOver > 0 && (
+          <Alert tone="warn" onClick={() => navigate('/mas/presupuestos?filtro=superados')}>
+            {home.budgetsOver === 1 ? '1 presupuesto superado' : `${home.budgetsOver} presupuestos superados`}
+          </Alert>
+        )}
 
         <Card>
           <h2 className="mb-2 font-medium">Cuentas</h2>

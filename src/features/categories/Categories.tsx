@@ -251,6 +251,7 @@ function DeleteForm({
             : `Las ${usage.rules} reglas que asignan esta categoría se desactivarán, para que puedas cambiarlas después.`}
         </Alert>
       )}
+      {usage.budget && <Alert tone="warn">También se borrará su presupuesto, incluido el de meses anteriores.</Alert>}
       <div className="flex gap-3">
         <Button variant="secondary" className="flex-1" onClick={onCancel} disabled={busy}>
           Cancelar

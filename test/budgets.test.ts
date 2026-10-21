@@ -306,3 +306,70 @@ describe('the "today" marker and the totals', () => {
     expect((await repo.budgets('2026-10')).totals).toEqual({ budgeted: 35000, spent: 43000, remaining: -8000 });
   });
 });
+
+describe('budgets over on Inicio', () => {
+  /** Imports one purchase per category on `date`, each categorized by hand. */
+  async function spend(repo: DataRepository, spending: [string, number][], date = '02/10/2026') {
+    await importFile(
+      repo,
+      spending.map(([name, importe]) => ({ valor: date, concepto: 'Tienda', movimiento: name, importe })),
+    );
+    const month = `${date.slice(6)}-${date.slice(3, 5)}`;
+    for (const [name] of spending) {
+      await repo.updateTransaction(await transactionId(repo, month, name), { categoryId: await categoryId(repo, name) });
+    }
+  }
+
+  it('counts none without budgets, or when every budget is at most at its limit', async () => {
+    const repo = await setup();
+    expect((await repo.home('2026-10')).budgetsOver).toBe(0);
+
+    await spend(repo, [['Ocio', -50], ['Viajes', -100]]);
+    await repo.setBudgetLimit(await categoryId(repo, 'Ocio'), 10000);
+    await repo.setBudgetLimit(await categoryId(repo, 'Viajes'), 10000);
+
+    // Viajes is exactly at its limit: Cerca, not Superado.
+    expect((await repo.home('2026-10')).budgetsOver).toBe(0);
+  });
+
+  it('counts one budget over its limit, then several', async () => {
+    const repo = await setup();
+    await spend(repo, [['Ocio', -50], ['Viajes', -100.01], ['Regalos', -300]]);
+    for (const name of ['Ocio', 'Viajes', 'Regalos']) await repo.setBudgetLimit(await categoryId(repo, name), 10000);
+    expect((await repo.home('2026-10')).budgetsOver).toBe(2);
+
+    await repo.setBudgetLimit(await categoryId(repo, 'Viajes'), 20000);
+    expect((await repo.home('2026-10')).budgetsOver).toBe(1);
+
+    await repo.setBudgetLimit(await categoryId(repo, 'Ocio'), 4000);
+    await repo.setBudgetLimit(await categoryId(repo, 'Viajes'), 5000);
+    expect((await repo.home('2026-10')).budgetsOver).toBe(3);
+  });
+
+  it('ignores budgets over in past months', async () => {
+    const repo = await setup();
+    await spend(repo, [['Ocio', -150]], '10/09/2026');
+    await repo.setBudgetLimit(await categoryId(repo, 'Ocio'), 10000, '2026-09');
+    expect((await budgetOf(repo, '2026-09', 'Ocio'))!.status).toBe('over');
+
+    expect((await repo.home('2026-10')).budgetsOver).toBe(0);
+    expect((await repo.home('2026-09')).budgetsOver).toBe(0);
+  });
+
+  it("goes by the clock's current month whatever month Inicio shows", async () => {
+    const repo = await setup();
+    await spend(repo, [['Ocio', -150]]);
+    await repo.setBudgetLimit(await categoryId(repo, 'Ocio'), 10000, '2026-09');
+
+    expect((await repo.home('2026-10')).budgetsOver).toBe(1);
+    expect((await repo.home('2026-09')).budgetsOver).toBe(1);
+    expect((await repo.home('2026-08')).budgetsOver).toBe(1);
+
+    // In November, October's overspending is a past month's.
+    const november = await setup(() => new Date('2026-11-02T10:00:00'));
+    await spend(november, [['Ocio', -150]]);
+    await november.setBudgetLimit(await categoryId(november, 'Ocio'), 10000, '2026-10');
+    expect((await november.home('2026-10')).budgetsOver).toBe(0);
+    expect((await november.home('2026-11')).budgetsOver).toBe(0);
+  });
+});

@@ -1,12 +1,13 @@
 import { describe, expect, it } from 'vitest';
+import { KuentaDb } from '../src/data/dexie/db';
 import { createDexieRepository } from '../src/data/dexie/dexieRepository';
 import type { DataRepository } from '../src/data/repository';
 import { bbvaXlsx, type SampleMovement } from './support/bbvaXlsx';
 
 let dbCount = 0;
 
-async function setup(now = () => new Date('2026-10-20T10:00:00')) {
-  const repo = createDexieRepository({ name: `kuenta-categories-test-${++dbCount}`, now });
+async function setup(now = () => new Date('2026-10-20T10:00:00'), name = `kuenta-categories-test-${++dbCount}`) {
+  const repo = createDexieRepository({ name, now });
   await repo.completeOnboarding({ importAccountName: 'BBVA' });
   return repo;
 }
@@ -159,8 +160,22 @@ describe('what deleting a category affects', () => {
     await repo.updateTransaction(fruteria.id, { categoryId: supermercado.id });
 
     // Mercadona, Carrefour, Alcampo, Lidl and Dia are starter rules for Supermercado.
-    expect(await repo.categoryUsage(supermercado.id)).toEqual({ transactions: 3, rules: 5 });
-    expect(await repo.categoryUsage((await categoryNamed(repo, 'Viajes')).id)).toEqual({ transactions: 0, rules: 0 });
+    expect(await repo.categoryUsage(supermercado.id)).toEqual({ transactions: 3, rules: 5, budget: false });
+    expect(await repo.categoryUsage((await categoryNamed(repo, 'Viajes')).id)).toEqual({ transactions: 0, rules: 0, budget: false });
+  });
+
+  it('says whether it has a budget, in this month or an earlier one', async () => {
+    const repo = await setup();
+    const viajes = await categoryNamed(repo, 'Viajes');
+    const ocio = await categoryNamed(repo, 'Ocio');
+    await repo.setBudgetLimit(viajes.id, 30000);
+    // Ocio had a budget in September only.
+    await repo.setBudgetLimit(ocio.id, 5000, '2026-09');
+    await repo.setBudgetLimit(ocio.id, 0, '2026-10');
+
+    expect(await repo.categoryUsage(viajes.id)).toEqual({ transactions: 0, rules: 0, budget: true });
+    expect((await repo.categoryUsage(ocio.id)).budget).toBe(true);
+    expect((await repo.categoryUsage((await categoryNamed(repo, 'Compras')).id)).budget).toBe(false);
   });
 });
 
@@ -248,6 +263,26 @@ describe('deleting a category', () => {
     expect(latest.categoryId).toBeNull();
   });
 
+  it('deletes every budget limit it had, leaving the other categories’ budgets', async () => {
+    const name = 'kuenta-categories-test-budgets';
+    const repo = await setup(undefined, name);
+    await importFile(repo, september);
+    const supermercado = await categoryNamed(repo, 'Supermercado');
+    const restaurantes = await categoryNamed(repo, 'Restaurantes');
+    await repo.setBudgetLimit(supermercado.id, 30000, '2026-08');
+    await repo.setBudgetLimit(supermercado.id, 25000, '2026-10');
+    await repo.setBudgetLimit(supermercado.id, 0, '2026-11');
+    await repo.setBudgetLimit(restaurantes.id, 20000, '2026-09');
+
+    await repo.deleteCategory(supermercado.id, null);
+
+    const db = new KuentaDb(name);
+    const limits = await db.budgetLimits.toArray();
+    db.close();
+    expect(limits.map((limit) => [limit.categoryId, limit.fromMonth, limit.amount])).toEqual([[restaurantes.id, '2026-09', 20000]]);
+    expect((await repo.budgets('2026-09')).budgets.map((budget) => budget.category.name)).toEqual(['Restaurantes']);
+  });
+
   it('keeps the payee a disabled rule sets', async () => {
     const repo = await setup();
     const compras = await categoryNamed(repo, 'Compras');
@@ -263,10 +298,12 @@ describe('deleting a category', () => {
     const supermercado = await categoryNamed(repo, 'Supermercado');
     const compras = await categoryNamed(repo, 'Compras');
     await repo.deleteCategory(compras.id, null);
+    await repo.setBudgetLimit(supermercado.id, 30000, '2026-09');
     const snapshot = async () => ({
       categories: await repo.listCategories(),
       rules: await repo.listRules(),
       transactions: await repo.listTransactions('2026-09'),
+      budgets: await repo.budgets('2026-09'),
     });
     const before = await snapshot();
 

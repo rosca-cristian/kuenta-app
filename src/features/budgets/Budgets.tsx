@@ -1,4 +1,5 @@
 import { useState, type FormEvent } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { Button, Card, Choice, EmptyState, MonthSelector, PageHeader } from '../../ui/components';
 import { Sheet } from '../../ui/Sheet';
 import { IconBadge } from '../../ui/icons';
@@ -41,12 +42,14 @@ type Editing = { mode: 'add' } | { mode: 'edit'; budget: BudgetView };
 
 /**
  * Más → Presupuestos: a month's budgets (the current month or an earlier one) with their
- * spending, and adding, changing or removing one from that month on.
+ * spending, and adding, changing or removing one from that month on. Inicio's alert opens
+ * it with `?filtro=superados`, showing only the budgets over.
  */
 export function Budgets() {
   const currentMonth = monthOf(today());
+  const [params] = useSearchParams();
   const [month, setMonth] = useState(currentMonth);
-  const [filter, setFilter] = useState<Filter>('all');
+  const [filter, setFilter] = useState<Filter>(() => (params.get('filtro') === 'superados' ? 'over' : 'all'));
   const view = useRepoQuery((r) => r.budgets(month), [month]);
   const available = useRepoQuery((r) => r.budgetableCategories(month), [month]);
   const [editing, setEditing] = useState<Editing | null>(null);
