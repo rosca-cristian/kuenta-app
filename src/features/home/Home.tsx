@@ -72,11 +72,14 @@ export function Home() {
 
         <Card>
           <h2 className="mb-2 font-medium">Cuentas</h2>
-          <ul className="flex flex-col gap-3">
+          <ul aria-label="Cuentas" className="flex flex-col gap-3">
             {home.accounts.map((account) => (
               <li key={account.id} className="flex items-center gap-3">
                 <IconBadge icon={account.icon} color={account.color} size={36} />
-                <span className="flex-1">{account.name}</span>
+                <span className="flex min-w-0 flex-1 flex-col">
+                  <span className="truncate">{account.name}</span>
+                  {!account.isImportAccount && <span className="text-xs text-muted">no importada</span>}
+                </span>
                 <span className="tabular-nums">{formatMoney(account.balance)}</span>
               </li>
             ))}

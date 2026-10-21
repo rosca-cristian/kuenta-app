@@ -9,6 +9,7 @@ import { Import } from './features/import/Import';
 import { ComingSoon, More } from './features/more/More';
 import { Payees } from './features/payees/Payees';
 import { Categories } from './features/categories/Categories';
+import { Accounts } from './features/accounts/Accounts';
 import { Rules } from './features/rules/Rules';
 
 export function App() {
@@ -26,6 +27,7 @@ export function App() {
               <Route path="/importar" element={<Import />} />
               <Route path="/analisis" element={<ComingSoon title="Análisis" />} />
               <Route path="/mas" element={<More />} />
+              <Route path="/mas/cuentas" element={<Accounts />} />
               <Route path="/mas/categorias" element={<Categories />} />
               <Route path="/mas/comercios" element={<Payees />} />
               <Route path="/mas/reglas" element={<Rules />} />

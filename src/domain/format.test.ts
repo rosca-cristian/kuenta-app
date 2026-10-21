@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { formatMoney, formatSignedMoney, parseBankAmount } from './money';
+import { formatMoney, formatSignedMoney, parseBankAmount, parseTypedAmount } from './money';
 import { formatDate, formatDayHeader, formatMonth, parseBankDate } from './dates';
 
 describe('money formatting', () => {
@@ -17,6 +17,18 @@ describe('money formatting', () => {
     expect(parseBankAmount('12,5')).toBe(1250);
     expect(parseBankAmount('-1.325,64')).toBe(-132564);
     expect(parseBankAmount('abc')).toBeNull();
+  });
+
+  it('reads amounts the user types, with a decimal comma, grouping dots and a sign', () => {
+    expect(parseTypedAmount('500')).toBe(50000);
+    expect(parseTypedAmount(' -20,50 ')).toBe(-2050);
+    expect(parseTypedAmount('−1.234,56 €')).toBe(-123456);
+    expect(parseTypedAmount('1.500')).toBe(150000);
+    expect(parseTypedAmount('-1.500.000')).toBe(-150000000);
+    expect(parseTypedAmount('12.5')).toBe(1250);
+    expect(parseTypedAmount('0,00')).toBe(0);
+    expect(parseTypedAmount('')).toBeNull();
+    expect(parseTypedAmount('12,3,4')).toBeNull();
   });
 });
 

@@ -32,6 +32,17 @@ export function parseBankAmount(value: unknown): Cents | null {
   return sign === '-' ? -cents : cents;
 }
 
+/**
+ * Converts an amount the user typed, Spanish style, into cents: "-20,50", "1.234,56 €".
+ * Unlike a bank cell, dots grouping thousands without a decimal comma ("1.500") still
+ * read as thousands. Returns null when it isn't an amount.
+ */
+export function parseTypedAmount(text: string): Cents | null {
+  const compact = text.replace(/\s|€/g, '');
+  if (!compact.includes(',') && /^[+\-−]?\d{1,3}(\.\d{3})+$/.test(compact)) return parseBankAmount(compact.replace(/\./g, ''));
+  return parseBankAmount(compact);
+}
+
 function groupThousands(digits: string): string {
   return digits.replace(/\B(?=(\d{3})+(?!\d))/g, '.');
 }

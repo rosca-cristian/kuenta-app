@@ -3,13 +3,38 @@ import type { IsoDate, Month } from '../domain/dates';
 import type { Gap } from '../domain/chain';
 import type { ImportPlan } from '../domain/importPlan';
 import type { MonthSummary } from '../domain/stats';
-import type { Account, Category, CategoryKind, Id, ImportBatch, Payee, Rule, RuleActions, RuleMatch, Transaction } from '../domain/model';
+import type { Account, AccountType, Category, CategoryKind, Id, ImportBatch, Payee, Rule, RuleActions, RuleMatch, Transaction } from '../domain/model';
 import type { ReadError } from '../import/bbva/reader';
 
 export interface AccountView extends Account {
   balance: Cents;
   isImportAccount: boolean;
 }
+
+export interface AccountDraft {
+  name: string;
+  type: AccountType;
+  /** A name from the icon set. */
+  icon: string;
+  /** A palette token. */
+  color: string;
+  /**
+   * Non-imported accounts only: their balance before their first transaction. Defaults to 0
+   * and may be negative. The import account's is derived from imports and can't be set.
+   */
+  openingBalance?: Cents;
+}
+
+export type AccountChanges = Partial<AccountDraft>;
+
+/**
+ * The outcome of creating or editing an account. It's refused when the name is empty, or
+ * when another account (`existing`) already has it ignoring case and accents.
+ */
+export type AccountSaveResult =
+  | { ok: true; id: Id }
+  | { ok: false; reason: 'empty' }
+  | { ok: false; reason: 'exists'; existing: Account };
 
 export interface TransactionView extends Transaction {
   category: Category | null;
@@ -58,8 +83,10 @@ export interface ImportOutcome {
 }
 
 export interface HomeData {
+  /** The sum of every account's balance, archived ones included. */
   totalBalance: Cents;
   summary: MonthSummary;
+  /** The non-archived accounts, in order. */
   accounts: AccountView[];
   daysSinceLastImport: number | null;
   uncategorized: number;
@@ -152,7 +179,15 @@ export interface DataRepository {
   /** Creates the import account and the starter categories. */
   completeOnboarding(input: { importAccountName: string }): Promise<void>;
 
+  /** Every account in order, archived ones included, with its balance today. */
   listAccounts(): Promise<AccountView[]>;
+  /** Creates a non-imported account, placed after every existing one. */
+  createAccount(draft: AccountDraft): Promise<AccountSaveResult>;
+  /**
+   * Changes an account's name, type, icon and colour, and a non-imported account's opening
+   * balance. Throws, changing nothing, when given an opening balance for the import account.
+   */
+  updateAccount(id: Id, changes: AccountChanges): Promise<AccountSaveResult>;
   /** Categories in order; pickers show them in this order. */
   listCategories(): Promise<Category[]>;
   /** Places the category after every existing one of its kind. */
