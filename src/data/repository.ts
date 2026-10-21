@@ -9,6 +9,8 @@ import type { ReadError } from '../import/bbva/reader';
 export interface AccountView extends Account {
   balance: Cents;
   isImportAccount: boolean;
+  /** Transactions from or to the account; it can be deleted only while there are none. */
+  transactionCount: number;
 }
 
 export interface AccountDraft {
@@ -179,7 +181,10 @@ export interface DataRepository {
   /** Creates the import account and the starter categories. */
   completeOnboarding(input: { importAccountName: string }): Promise<void>;
 
-  /** Every account in order, archived ones included, with its balance today. */
+  /**
+   * Every account in order, archived ones included, with its balance today. Account pickers
+   * leave out the archived ones.
+   */
   listAccounts(): Promise<AccountView[]>;
   /** Creates a non-imported account, placed after every existing one. */
   createAccount(draft: AccountDraft): Promise<AccountSaveResult>;
@@ -188,6 +193,24 @@ export interface DataRepository {
    * balance. Throws, changing nothing, when given an opening balance for the import account.
    */
   updateAccount(id: Id, changes: AccountChanges): Promise<AccountSaveResult>;
+  /**
+   * "Actualizar saldo": makes a non-imported account's balance the typed one with a balance
+   * adjustment dated today for the difference, or nothing when it already has it. Returns the
+   * adjustment's signed amount (0 when none). Throws, changing nothing, for the import account,
+   * whose balance comes from the bank.
+   */
+  updateAccountBalance(id: Id, balance: Cents): Promise<Cents>;
+  /**
+   * Archives or unarchives an account. An archived account leaves Inicio's list and the
+   * pickers, but its transactions stay and its balance still counts in the total. Throws,
+   * changing nothing, for the import account.
+   */
+  setAccountArchived(id: Id, archived: boolean): Promise<void>;
+  /**
+   * Deletes an account with no transactions. Throws, changing nothing, while it has any
+   * (it can be archived instead) and for the import account.
+   */
+  deleteAccount(id: Id): Promise<void>;
   /** Categories in order; pickers show them in this order. */
   listCategories(): Promise<Category[]>;
   /** Places the category after every existing one of its kind. */
