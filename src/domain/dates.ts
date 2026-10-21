@@ -58,6 +58,12 @@ export function addMonths(month: Month, count: number): Month {
   return `${pad(Math.floor(index / 12), 4)}-${pad((index % 12) + 1)}`;
 }
 
+/** Whole months from `from` to `to` (positive when `to` is later): 2026-10 → 2027-06 is 8. */
+export function monthsBetween(from: Month, to: Month): number {
+  const index = (month: Month) => Number(month.slice(0, 4)) * 12 + Number(month.slice(5, 7));
+  return index(to) - index(from);
+}
+
 /** Whole days from `from` to `to` (positive when `to` is later). */
 export function daysBetween(from: IsoDate, to: IsoDate): number {
   const toUtc = (d: IsoDate) => Date.UTC(Number(d.slice(0, 4)), Number(d.slice(5, 7)) - 1, Number(d.slice(8, 10)));

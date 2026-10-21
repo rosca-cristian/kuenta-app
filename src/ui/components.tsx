@@ -48,11 +48,17 @@ export function PageHeader({ title, action, back }: { title: string; action?: Re
 export function MonthSelector({ month, onChange, max }: { month: Month; onChange: (month: Month) => void; max?: Month }) {
   return (
     <div className="flex items-center justify-center gap-2">
-      <button aria-label="Mes anterior" className="flex size-11 items-center justify-center text-muted" onClick={() => onChange(addMonths(month, -1))}>
+      <button
+        type="button"
+        aria-label="Mes anterior"
+        className="flex size-11 items-center justify-center text-muted"
+        onClick={() => onChange(addMonths(month, -1))}
+      >
         <ChevronLeft />
       </button>
       <span className="min-w-36 text-center font-medium capitalize">{formatMonth(month)}</span>
       <button
+        type="button"
         aria-label="Mes siguiente"
         disabled={max !== undefined && month >= max}
         className="flex size-11 items-center justify-center text-muted disabled:opacity-30"

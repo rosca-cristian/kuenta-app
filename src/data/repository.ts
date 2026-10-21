@@ -216,6 +216,8 @@ export interface GoalDraft {
   name: string;
   /** Above 0. */
   target: Cents;
+  /** Any month, past ones included; none (null) by default. */
+  targetMonth?: Month | null;
   /** Not archived, and without another non-archived goal. */
   accountId: Id;
   /** A name from the icon set; the account's by default. */
@@ -224,9 +226,12 @@ export interface GoalDraft {
   color: string;
 }
 
+export type GoalChanges = Partial<GoalDraft>;
+
 /**
- * The outcome of creating a goal. It's refused when the name is empty, or when its account
- * already has a non-archived goal (`existing`): the same money would count twice.
+ * The outcome of creating, editing or unarchiving a goal. It's refused when the name is
+ * empty, or when its account already has another non-archived goal (`existing`): the same
+ * money would count twice.
  */
 export type GoalSaveResult =
   | { ok: true; id: Id }
@@ -269,9 +274,10 @@ export interface DataRepository {
    */
   setAccountArchived(id: Id, archived: boolean): Promise<void>;
   /**
-   * Deletes an account with no transactions. The rules that transfer to it lose that action
-   * and are disabled, so the user can repoint them. Throws, changing nothing, while it has
-   * any (it can be archived instead) and for the import account.
+   * Deletes an account with no transactions, and its goals, archived ones included. The rules
+   * that transfer to it lose that action and are disabled, so the user can repoint them.
+   * Throws, changing nothing, while it has any (it can be archived instead) and for the
+   * import account.
    */
   deleteAccount(id: Id): Promise<void>;
   /** Categories in order; pickers show them in this order. */
@@ -403,15 +409,33 @@ export interface DataRepository {
 
   /**
    * Every goal, archived ones included, in the order of their accounts (then active before
-   * archived, then by name), each with its account's balance today as progress.
+   * archived, then by name), each with its account's balance today as progress and, against
+   * the current month, how much to save per month.
    */
   listGoals(): Promise<GoalView[]>;
-  /** The non-archived accounts without a non-archived goal, in order: those the goal editor offers. */
-  goalAccounts(): Promise<AccountView[]>;
   /**
-   * Creates a goal without a target month. Refused for an empty name or an account that
-   * already has a non-archived goal; throws, changing nothing, for a target that isn't whole
-   * cents above 0 and for an unknown or archived account.
+   * The accounts the goal editor offers, in order: the non-archived ones without a
+   * non-archived goal, plus, when editing (`goalId`), that goal's own account, archived or not.
+   */
+  goalAccounts(goalId?: Id): Promise<AccountView[]>;
+  /**
+   * Creates a goal. Refused for an empty name or an account that already has a non-archived
+   * goal; throws, changing nothing, for a target that isn't whole cents above 0, a target
+   * month that isn't 'YYYY-MM', and an unknown or archived account.
    */
   createGoal(draft: GoalDraft): Promise<GoalSaveResult>;
+  /**
+   * Changes the given fields of a goal, as `createGoal` checks them. Moving a non-archived
+   * goal to an account with another non-archived goal is refused; it can stay on its own
+   * account once that's archived, but not move to another archived one. Throws, changing
+   * nothing, for an unknown goal.
+   */
+  updateGoal(id: Id, changes: GoalChanges): Promise<GoalSaveResult>;
+  /**
+   * Archives a goal, which frees its account for a new one, or unarchives it: refused while
+   * its account has another non-archived goal. Throws for an unknown goal.
+   */
+  setGoalArchived(id: Id, archived: boolean): Promise<GoalSaveResult>;
+  /** Deletes a goal and nothing else: a goal has no history. Throws for an unknown goal. */
+  deleteGoal(id: Id): Promise<void>;
 }

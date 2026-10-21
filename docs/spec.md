@@ -312,7 +312,7 @@ Tabs:
 ### 4.7 Objetivos
 - List with name, current / target, percentage and, when there is a target month, how much to save per month to get there ("ahorra X €/mes"), or "Fecha superada · faltan X €" once that month has passed unreached. At 100 % it shows "Conseguido".
 - Each goal shows its linked account's balance as progress (any account, the import account included). An account has at most one non-archived goal, so the account picker hides accounts that already have one.
-- Create and edit: name, target amount, optional target month, account, icon and colour (defaulting to the account's). Archive (archived goals in a collapsed section) and delete.
+- Create and edit: name, target amount, optional target month (a `‹ junio 2027 ›` stepper, any month, or "Sin fecha"), account, icon and colour (defaulting to the account's). When editing, the account picker also offers the goal's own account, even an archived one. Archive (archived goals in a collapsed section, with no monthly amount), unarchive and delete.
 
 ### 4.8 Más
 Cuentas · Categorías · Comercios · Reglas · Presupuestos · Objetivos · Copias de seguridad · Ajustes (import account, persistent storage status, space used, version, library licences).
@@ -452,7 +452,7 @@ All checked at a 390×844 viewport. Items marked 🧪 have a unit test.
 - 🧪 A goal linked to the "Ahorro viaje" account shows that account's current balance as progress; a transfer into the account raises it, and a negative balance shows 0 %.
 - 🧪 With a target month: "ahorra X €/mes" = (target − current) / months left, where months left = target month − current month (at least 1), rounded up to the cent. In October 2026 a goal for 2027-06 has 8 months left.
 - 🧪 Once the target month has passed unreached it shows "Fecha superada · faltan X €"; reached goals show "Conseguido" and no monthly amount.
-- 🧪 Creating a second non-archived goal on the same account is refused; an archived goal doesn't block it.
+- 🧪 Creating a second non-archived goal on the same account is refused; an archived goal doesn't block it. Moving a non-archived goal to, or unarchiving one on, an account that already has another non-archived goal is refused too.
 
 ### 5.13 Backups and CSV
 - 🧪 **Round trip**: exporting, wiping everything and restoring leaves the data identical, table by table and field by field.

@@ -12,6 +12,7 @@ import { shapeByBankSign, transferAccountOf } from '../../domain/transfers';
 import {
   signedAmount,
   type Account,
+  type Goal,
   type Id,
   type ImportBatch,
   type Rule,
@@ -33,6 +34,7 @@ import type {
   CategoryUsage,
   CommitImportOptions,
   DataRepository,
+  GoalChanges,
   GoalDraft,
   GoalSaveResult,
   GoalView,
@@ -336,9 +338,20 @@ export function createDexieRepository(options: DexieRepositoryOptions = {}): Dat
     if (!Number.isSafeInteger(cents)) throw new Error(`${what} must be whole cents, not ${cents}`);
   }
 
+  function checkMonth(month: Month) {
+    if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(month)) throw new Error(`Not a month: ${month}`);
+  }
+
   function checkGoalTarget(target: number) {
     checkWholeCents(target, 'A goal target');
     if (target <= 0) throw new Error(`A goal target must be above 0, not ${target}`);
+  }
+
+  /** A goal can go on any account but an archived one, except the one it's already on. */
+  async function checkGoalAccount(accountId: Id, ownAccountId: Id | null) {
+    const account = await db.accounts.get(accountId);
+    if (!account) throw new Error(`Account ${accountId} not found`);
+    if (account.archived && accountId !== ownAccountId) throw new Error(`Account ${account.name} is archived: it can't get a goal`);
   }
 
   /** Why a goal can't be on this account: another non-archived goal (`existing`) already is, so its money would count twice. */
@@ -541,7 +554,7 @@ export function createDexieRepository(options: DexieRepositoryOptions = {}): Dat
     },
 
     async deleteAccount(id) {
-      await db.transaction('rw', db.accounts, db.transactions, db.settings, db.rules, async () => {
+      await db.transaction('rw', [db.accounts, db.transactions, db.settings, db.rules, db.goals], async () => {
         await nonImportedAccount(id, 'be deleted');
         const count = (await accountTransactions(id)).length;
         if (count > 0) throw new Error(`Account ${id} has ${count} transactions: archive it instead`);
@@ -552,6 +565,7 @@ export function createDexieRepository(options: DexieRepositoryOptions = {}): Dat
             delete rule.actions.transferAccountId;
             rule.enabled = false;
           });
+        await db.goals.where('accountId').equals(id).delete();
         await db.accounts.delete(id);
       });
       changed();
@@ -1007,7 +1021,7 @@ export function createDexieRepository(options: DexieRepositoryOptions = {}): Dat
     async setBudgetLimit(categoryId, amount, fromMonth = monthOf(today(now()))) {
       checkWholeCents(amount, 'A budget limit');
       if (amount < 0) throw new Error(`A budget limit can't be negative: ${amount}`);
-      if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(fromMonth)) throw new Error(`Not a month: ${fromMonth}`);
+      checkMonth(fromMonth);
       await db.transaction('rw', db.categories, db.budgetLimits, async () => {
         const category = await db.categories.get(categoryId);
         if (!category) throw new Error(`Category ${categoryId} not found`);
@@ -1026,38 +1040,91 @@ export function createDexieRepository(options: DexieRepositoryOptions = {}): Dat
     async listGoals(): Promise<GoalView[]> {
       const [accounts, goals] = await Promise.all([repository.listAccounts(), db.goals.toArray()]);
       const byId = new Map(accounts.map((account) => [account.id, account]));
+      const currentMonth = monthOf(today(now()));
       return goals
         .flatMap((goal) => {
           const account = byId.get(goal.accountId);
-          // A goal outlives an account deleted before account deletion took its goals along.
-          return account ? [{ ...goal, account, ...goalProgress(goal.target, account.balance) }] : [];
+          // Account deletion takes its goals along; this skips any left by an account deleted before it did.
+          return account ? [{ ...goal, account, ...goalProgress(goal.target, account.balance, goal.targetMonth, currentMonth) }] : [];
         })
         .sort((a, b) => a.account.order - b.account.order || Number(a.archived) - Number(b.archived) || a.name.localeCompare(b.name, 'es'));
     },
 
-    async goalAccounts() {
-      const [accounts, goals] = await Promise.all([repository.listAccounts(), db.goals.filter((goal) => !goal.archived).toArray()]);
-      const taken = new Set(goals.map((goal) => goal.accountId));
-      return accounts.filter((account) => !account.archived && !taken.has(account.id));
+    async goalAccounts(goalId) {
+      const [accounts, goals] = await Promise.all([repository.listAccounts(), db.goals.toArray()]);
+      const ownAccountId = goals.find((goal) => goal.id === goalId)?.accountId;
+      const taken = new Set(goals.filter((goal) => goal.id !== goalId && !goal.archived).map((goal) => goal.accountId));
+      return accounts.filter((account) => account.id === ownAccountId || (!account.archived && !taken.has(account.id)));
     },
 
     async createGoal(draft: GoalDraft): Promise<GoalSaveResult> {
       const id = crypto.randomUUID();
       const name = tidyName(draft.name);
+      const targetMonth = draft.targetMonth ?? null;
       checkGoalTarget(draft.target);
+      if (targetMonth !== null) checkMonth(targetMonth);
       const result = await db.transaction('rw', db.accounts, db.goals, async (): Promise<GoalSaveResult> => {
-        const account = await db.accounts.get(draft.accountId);
-        if (!account) throw new Error(`Account ${draft.accountId} not found`);
-        if (account.archived) throw new Error(`Account ${account.name} is archived: it can't get a goal`);
+        await checkGoalAccount(draft.accountId, null);
         if (name === '') return { ok: false, reason: 'empty' };
         const refused = await refuseGoalAccount(draft.accountId, id);
         if (refused) return refused;
         const { target, accountId, icon, color } = draft;
-        await db.goals.add({ id, name, target, targetMonth: null, accountId, icon, color, archived: false });
+        await db.goals.add({ id, name, target, targetMonth, accountId, icon, color, archived: false });
         return { ok: true, id };
       });
       if (result.ok) changed();
       return result;
+    },
+
+    async updateGoal(id, changes: GoalChanges): Promise<GoalSaveResult> {
+      const { name, target, targetMonth, accountId, icon, color } = changes;
+      // Only the fields given change.
+      const update: Partial<Goal> = {
+        ...(name !== undefined && { name: tidyName(name) }),
+        ...(target !== undefined && { target }),
+        ...(targetMonth !== undefined && { targetMonth }),
+        ...(accountId !== undefined && { accountId }),
+        ...(icon !== undefined && { icon }),
+        ...(color !== undefined && { color }),
+      };
+      if (target !== undefined) checkGoalTarget(target);
+      if (targetMonth !== undefined && targetMonth !== null) checkMonth(targetMonth);
+      const result = await db.transaction('rw', db.accounts, db.goals, async (): Promise<GoalSaveResult> => {
+        const goal = await db.goals.get(id);
+        if (!goal) throw new Error(`Goal ${id} not found`);
+        if (accountId !== undefined) await checkGoalAccount(accountId, goal.accountId);
+        if (update.name === '') return { ok: false, reason: 'empty' };
+        // An archived goal counts nothing twice: it's checked when unarchived.
+        if (accountId !== undefined && accountId !== goal.accountId && !goal.archived) {
+          const refused = await refuseGoalAccount(accountId, id);
+          if (refused) return refused;
+        }
+        await db.goals.update(id, update);
+        return { ok: true, id };
+      });
+      if (result.ok) changed();
+      return result;
+    },
+
+    async setGoalArchived(id, archived): Promise<GoalSaveResult> {
+      const result = await db.transaction('rw', db.goals, async (): Promise<GoalSaveResult> => {
+        const goal = await db.goals.get(id);
+        if (!goal) throw new Error(`Goal ${id} not found`);
+        const refused = archived ? null : await refuseGoalAccount(goal.accountId, id);
+        if (refused) return refused;
+        await db.goals.update(id, { archived });
+        return { ok: true, id };
+      });
+      if (result.ok) changed();
+      return result;
+    },
+
+    async deleteGoal(id) {
+      await db.transaction('rw', db.goals, async () => {
+        if (!(await db.goals.get(id))) throw new Error(`Goal ${id} not found`);
+        await db.goals.delete(id);
+      });
+      changed();
     },
   };
 
