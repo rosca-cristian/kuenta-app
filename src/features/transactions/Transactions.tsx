@@ -1,13 +1,15 @@
 import { useMemo, useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { Check } from 'lucide-react';
-import { Amount, EmptyState, MonthSelector, PageHeader } from '../../ui/components';
+import { Amount, EmptyState, FilterChip, MonthSelector, PageHeader } from '../../ui/components';
 import { IconBadge, TransferBadge } from '../../ui/icons';
 import { useRepoQuery } from '../../lib/repo';
 import { formatDayHeader, monthOf, today } from '../../domain/dates';
 import { formatSignedMoney } from '../../domain/money';
 import { signedAmount } from '../../domain/model';
-import type { TransactionView } from '../../data/repository';
+import type { TransactionFilter, TransactionView } from '../../data/repository';
 import { EditTransactionSheet } from './EditTransactionSheet';
+import { filterParams, monthParam, withMonth, withoutFilter } from './filters';
 
 function title(tx: TransactionView): string {
   return tx.payee?.name || tx.note || tx.bankConcept || 'Movimiento';
@@ -19,10 +21,16 @@ function subtitle(tx: TransactionView): string {
   return `${tx.source === 'adjustment' ? 'Ajuste de saldo' : tx.category?.name ?? 'Sin categoría'} · ${tx.account.name}`;
 }
 
+/**
+ * Movimientos: a month's transactions, newest first. Análisis and Inicio open it with a
+ * month and a filter in the URL (see `filters.ts`), shown as a removable chip.
+ */
 export function Transactions() {
-  const [month, setMonth] = useState(monthOf(today()));
+  const [params, setParams] = useSearchParams();
+  const month = monthParam(params) ?? monthOf(today());
+  const filter = filterParams(params);
   const [editing, setEditing] = useState<string | null>(null);
-  const transactions = useRepoQuery((repo) => repo.listTransactions(month), [month]);
+  const transactions = useRepoQuery((repo) => repo.listTransactions(month, filter ?? undefined), [month, filter]);
 
   const days = useMemo(() => {
     const groups = new Map<string, TransactionView[]>();
@@ -37,10 +45,15 @@ export function Transactions() {
   return (
     <>
       <PageHeader title="Movimientos" />
-      <MonthSelector month={month} onChange={setMonth} />
-      {transactions && transactions.length === 0 && (
-        <EmptyState title="No hay movimientos este mes">Importa el Excel de BBVA desde la pestaña Importar.</EmptyState>
-      )}
+      <MonthSelector month={month} onChange={(next) => setParams(withMonth(params, next), { replace: true })} />
+      {filter && <FilterLabel filter={filter} onRemove={() => setParams(withoutFilter(params), { replace: true })} />}
+      {transactions &&
+        transactions.length === 0 &&
+        (filter ? (
+          <EmptyState title="Ningún movimiento con este filtro este mes">Quita el filtro para ver todos los movimientos del mes.</EmptyState>
+        ) : (
+          <EmptyState title="No hay movimientos este mes">Importa el Excel de BBVA desde la pestaña Importar.</EmptyState>
+        ))}
       <div className="flex flex-col gap-4 px-4 pb-4">
         {days.map(([date, txs]) => {
           const net = txs.reduce((sum, tx) => (tx.type === 'transfer' ? sum : sum + signedAmount(tx, tx.accountId)), 0);
@@ -77,5 +90,25 @@ export function Transactions() {
       </div>
       <EditTransactionSheet id={editing} onClose={() => setEditing(null)} />
     </>
+  );
+}
+
+/** The chip describing the URL's filter: the category ("Sin categoría") and the payee it shows. */
+function FilterLabel({ filter, onRemove }: { filter: TransactionFilter; onRemove: () => void }) {
+  const names = useRepoQuery(async (repo) => {
+    const [categories, payees] = await Promise.all([repo.listCategories(), filter.payeeId === undefined ? [] : repo.listPayees()]);
+    return {
+      category: categories.find((category) => category.id === filter.categoryId)?.name,
+      payee: payees.find((payee) => payee.id === filter.payeeId)?.name,
+    };
+  }, [filter]);
+  if (!names) return null;
+  const parts: string[] = [];
+  if (filter.categoryId !== undefined) parts.push(filter.categoryId === null ? 'Sin categoría' : names.category ?? 'Categoría borrada');
+  if (filter.payeeId !== undefined) parts.push(names.payee ?? 'Comercio borrado');
+  return (
+    <div className="flex px-4 pb-3">
+      <FilterChip label={parts.join(' · ')} onRemove={onRemove} />
+    </div>
   );
 }

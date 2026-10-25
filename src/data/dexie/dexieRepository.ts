@@ -3,7 +3,7 @@ import { STARTER_CATEGORIES, STARTER_DATA_VERSION, STARTER_RULES } from '../seed
 import { bankOrder, findGaps, latestBalanceOf, openingBalanceOf, type ChainLink } from '../../domain/chain';
 import { planImport, reapplyRules } from '../../domain/importPlan';
 import { applyRules as firstMatchActions, hasAction, ruleMatches, suggestedRuleText, type RuleSubject } from '../../domain/rules';
-import { monthSummary } from '../../domain/stats';
+import { isUncategorized, monthSpending, monthSummary } from '../../domain/stats';
 import { budgetMonth, limitFor } from '../../domain/budgets';
 import { goalProgress } from '../../domain/goals';
 import { addMonths, daysBetween, isMonth, monthOf, today, type Month } from '../../domain/dates';
@@ -47,7 +47,9 @@ import type {
   RuleChanges,
   RuleDraft,
   Settings,
+  SpendingView,
   TransactionChanges,
+  TransactionFilter,
   TransactionView,
 } from '../repository';
 
@@ -781,9 +783,15 @@ export function createDexieRepository(options: DexieRepositoryOptions = {}): Dat
       changed();
     },
 
-    async listTransactions(month) {
+    async listTransactions(month, filter: TransactionFilter = {}) {
       const txs = await db.transactions.where('date').between(`${month}-01`, `${month}-31￿`).toArray();
-      return toViews(txs.sort(newestFirst));
+      const { categoryId, payeeId } = filter;
+      const matching = txs.filter(
+        (tx) =>
+          (categoryId === undefined || (categoryId === null ? isUncategorized(tx) : tx.categoryId === categoryId)) &&
+          (payeeId === undefined || tx.payeeId === payeeId),
+      );
+      return toViews(matching.sort(newestFirst));
     },
 
     async getTransaction(id) {
@@ -994,6 +1002,18 @@ export function createDexieRepository(options: DexieRepositoryOptions = {}): Dat
         gaps: findGaps(chain),
         budgetsOver: currentBudgets.budgets.filter((budget) => budget.status === 'over').length,
       };
+    },
+
+    async spending(month): Promise<SpendingView> {
+      return db.transaction('r', db.categories, db.transactions, async () => {
+        const [categories, txs] = await Promise.all([db.categories.orderBy('order').toArray(), transactionsIn(month)]);
+        const byId = new Map(categories.map((category) => [category.id, category]));
+        const { entries, total } = monthSpending(txs, month, categories.map((category) => category.id));
+        return {
+          entries: entries.map(({ categoryId, ...entry }) => ({ category: categoryId === null ? null : byId.get(categoryId)!, ...entry })),
+          total,
+        };
+      });
     },
 
     async budgets(month): Promise<BudgetsView> {

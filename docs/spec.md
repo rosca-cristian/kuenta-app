@@ -299,7 +299,7 @@ Fixed bottom navigation: **Inicio · Movimientos · Importar · Análisis · Má
 
 ### 4.5 Análisis
 Tabs:
-- **Gastos**: the month's donut by category with the total in the centre, and below it the categories with amount and percentage (acting as the legend). Tapping a category opens Movimientos filtered.
+- **Gastos**: the month's donut by category with the total in the centre, and below it the categories with amount and percentage (acting as the legend). Categories whose net spending (§3.2) is zero or negative are left out; uncategorized expenses form a grey "Sin categoría" slice. Tapping a category (or "Sin categoría") opens Movimientos filtered by that month and category.
 - **Mensual**: income vs expenses bars for the last 6 or 12 months, with each month's net.
 - **Patrimonio**: net worth at the end of each of the last 12 months.
 - **Suscripciones**: one row per subscription (payee): name, last amount, frequency (mensual / anual, deduced from the dates of its charges), monthly equivalent, last charge and expected next charge. Totals per month and per year at the top. Notices: "Ha subido de precio" (last charge higher than the previous one) and "No ha llegado el cargo de este mes" (an expected charge that hasn't arrived). Nothing is entered by hand: a subscription is any payee with expenses in the "Suscripciones" category. Tapping a row opens Movimientos filtered by that payee.
@@ -428,6 +428,7 @@ All checked at a 390×844 viewport. Items marked 🧪 have a unit test.
 
 ### 5.10 Charts
 - 🧪 The donut's slices match the list below it and the centre total, and refunds subtract (§3.2).
+- 🧪 Categories with net spending ≤ 0 are left out of the donut and its list; uncategorized expenses form the "Sin categoría" slice.
 - 🧪 Monthly bars match each month's summary.
 - 🧪 Each month's net worth equals the sum of all account balances on the last day of the month.
 - Charts fit the screen width, read well on the dark background and show an empty state with text when there is no data.
