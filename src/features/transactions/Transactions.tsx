@@ -9,6 +9,7 @@ import { formatSignedMoney } from '../../domain/money';
 import { signedAmount } from '../../domain/model';
 import type { TransactionFilter, TransactionView } from '../../data/repository';
 import { EditTransactionSheet } from './EditTransactionSheet';
+import { ExportCsvButton } from './ExportCsvButton';
 import { filterParams, periodParam, textParam, withoutFilter, withPeriod, withText } from './filters';
 
 /** How long typing pauses before the search goes into the URL. */
@@ -57,7 +58,7 @@ export function Transactions() {
 
   return (
     <>
-      <PageHeader title="Movimientos" />
+      <PageHeader title="Movimientos" action={<ExportCsvButton />} />
       <div className="flex flex-col gap-2 px-4 pb-2">
         <SearchBox value={text} onChange={search} />
         <Choice
