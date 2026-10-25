@@ -10,8 +10,8 @@ export const BACKUP_FORMAT = 1;
 
 /**
  * The settings that describe the user's data, the only ones a backup carries. The others belong
- * to the device (`persistRequested`, `lastBackupAt`, `lastChangeAt`): restoring them on another
- * phone would bring stale state.
+ * to the device (`persistRequested`, `privacyMode`, `lastBackupAt`, `lastChangeAt`): restoring
+ * them on another phone would bring stale state.
  */
 export const BACKUP_SETTINGS: readonly string[] = ['importAccountId', 'starterDataVersion', 'starterRulesOffer', 'onboardingDone'];
 

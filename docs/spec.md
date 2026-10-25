@@ -264,7 +264,7 @@ Format, confirmed with real exports (October 2026). The file is what Google Shee
 
 ## 4. Screens
 
-Fixed bottom navigation: **Inicio · Movimientos · Importar · Análisis · Más**. Every screen with a period uses the same `‹ octubre 2026 ›` selector. The eye icon for privacy mode sits in the header of Inicio and Movimientos.
+Fixed bottom navigation: **Inicio · Movimientos · Importar · Análisis · Más**. Every screen with a period uses the same `‹ octubre 2026 ›` selector. The eye icon for privacy mode (open eye "Ocultar importes", crossed-out eye "Mostrar importes") sits in the header of Inicio and Movimientos; it turns the mode on or off for the whole app.
 
 ### 4.1 First run
 1. Welcome: what Kuenta is, that data only lives on this phone, and the weekly import routine. "Empezar" goes on; the secondary "Restaurar una copia" brings a backup back instead (below).
@@ -359,7 +359,8 @@ All checked at a 390×844 viewport. Items marked 🧪 have a unit test.
 - 🧪 Text amounts are also accepted: "1.234,56" → 123456, "-0,5" → −50.
 - 🧪 Formatting: 123456 → "1.234,56 €" (4-digit thousands are grouped too); −500 → "−5,00 €".
 - 🧪 Dates show as "20/10/2026" in tables and CSV, and "lunes, 20 de octubre" in headers.
-- In privacy mode every amount (chart axes and labels included) shows as "•••• €", and the mode persists across restarts.
+- 🧪 In privacy mode every amount on every screen (lists, totals, sheets, Importar, chart axes and tooltips included) shows exactly as "•••• €", with no sign or "+"/"−"; percentages, counts, dates, colours and chart shapes stay. Amount inputs being edited show their value, and exports (backup, CSV) keep the real amounts.
+- 🧪 Privacy mode belongs to the phone: it persists across restarts, applies from the first frame, isn't in backups, survives a restore and doesn't count as a data change (no backup reminder).
 
 ### 5.2 Reading the BBVA file
 - 🧪 Finds the header row by column names (ignoring case and accents), not by position, wherever it starts.

@@ -6,7 +6,8 @@ import { IconBadge, colorFor } from '../../ui/icons';
 import { ColorPicker, IconPicker } from '../../ui/pickers';
 import { useRepo, useRepoQuery } from '../../lib/repo';
 import { formatMonth, monthOf, today, type Month } from '../../domain/dates';
-import { formatMoney, formatTypedAmount, parseTypedAmount } from '../../domain/money';
+import { formatTypedAmount, parseTypedAmount } from '../../domain/money';
+import { useMoney } from '../../lib/money';
 import type { Id } from '../../domain/model';
 import type { GoalSaveResult, GoalView } from '../../data/repository';
 
@@ -114,6 +115,7 @@ function GoalList({ title, goals, onEdit }: { title: string; goals: GoalView[]; 
 function GoalCard({ goal, onEdit }: { goal: GoalView; onEdit: () => void }) {
   const { name, icon, color, account, current, target, targetMonth, percent, reached, plan } = goal;
   const accountName = account.archived ? `${account.name} (archivada)` : account.name;
+  const { money } = useMoney();
   return (
     <li>
       <button onClick={onEdit} className="block w-full rounded-2xl border border-line bg-card p-4 text-left active:bg-card-2">
@@ -133,7 +135,7 @@ function GoalCard({ goal, onEdit }: { goal: GoalView; onEdit: () => void }) {
         </div>
         <div className="mt-3 flex items-baseline justify-between gap-2 text-sm">
           <span className="tabular-nums" data-testid="goal-progress">
-            {formatMoney(current)} <span className="text-muted">/ {formatMoney(target)}</span>
+            {money(current)} <span className="text-muted">/ {money(target)}</span>
           </span>
           <span className="tabular-nums text-muted" data-testid="goal-percent">
             {formatPercent(percent)}
@@ -156,7 +158,7 @@ function GoalCard({ goal, onEdit }: { goal: GoalView; onEdit: () => void }) {
         {/* An archived goal is no longer pursued: no amount to save. */}
         {plan && !goal.archived && (
           <div className={`mt-2 text-sm tabular-nums ${plan.kind === 'overdue' ? 'text-warn' : 'text-muted'}`} data-testid="goal-plan">
-            {plan.kind === 'save' ? `ahorra ${formatMoney(plan.perMonth)}/mes` : `Fecha superada · faltan ${formatMoney(plan.missing)}`}
+            {plan.kind === 'save' ? `ahorra ${money(plan.perMonth)}/mes` : `Fecha superada · faltan ${money(plan.missing)}`}
           </div>
         )}
       </button>
@@ -172,6 +174,7 @@ function GoalCard({ goal, onEdit }: { goal: GoalView; onEdit: () => void }) {
 function GoalForm({ goal, onDone, onDelete }: { goal: GoalView | null; onDone: () => void; onDelete: (goal: GoalView) => void }) {
   const repo = useRepo();
   const accounts = useRepoQuery((r) => r.goalAccounts(goal?.id), [goal?.id]);
+  const { money } = useMoney();
   const [name, setName] = useState(goal?.name ?? '');
   const [text, setText] = useState(goal ? formatTypedAmount(goal.target) : '');
   const [targetMonth, setTargetMonth] = useState<Month | null>(goal?.targetMonth ?? null);
@@ -258,7 +261,7 @@ function GoalForm({ goal, onDone, onDelete }: { goal: GoalView | null; onDone: (
           >
             <IconBadge icon={option.icon} color={option.color} size={32} />
             <span className="min-w-0 flex-1 truncate">{option.archived ? `${option.name} (archivada)` : option.name}</span>
-            <span className="shrink-0 text-sm tabular-nums text-muted">{formatMoney(option.balance)}</span>
+            <span className="shrink-0 text-sm tabular-nums text-muted">{money(option.balance)}</span>
           </button>
         ))}
         <span className="text-xs text-muted">El progreso es el saldo de la cuenta. Cada cuenta puede tener un solo objetivo.</span>

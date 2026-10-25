@@ -2,8 +2,9 @@ import { CartesianGrid, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YA
 import { Card, EmptyState } from '../../ui/components';
 import { usePrefersReducedMotion } from '../../ui/motion';
 import { useRepoQuery } from '../../lib/repo';
+import { useMoney } from '../../lib/money';
 import { formatMonth } from '../../domain/dates';
-import { formatCompactMoney, formatMoney, formatSignedMoney, type Cents } from '../../domain/money';
+import type { Cents } from '../../domain/money';
 import { AXIS_TICK, shortMonth } from './chart';
 
 /** Green above 0, red below, the normal text colour at 0. */
@@ -20,6 +21,7 @@ const ZERO_BASED: [(min: number) => number, (max: number) => number] = [(min) =>
 export function NetWorth() {
   const view = useRepoQuery((repo) => repo.netWorth(), []);
   const reducedMotion = usePrefersReducedMotion();
+  const { money, signedMoney, compactMoney } = useMoney();
 
   if (!view) return null;
   if (view.latest === null) {
@@ -35,11 +37,11 @@ export function NetWorth() {
       <Card>
         <p className="text-sm text-muted">Patrimonio hoy</p>
         <p className={`text-3xl font-semibold tabular-nums ${signColour(view.latest)}`} data-testid="net-worth-latest">
-          {formatMoney(view.latest)}
+          {money(view.latest)}
         </p>
         {view.change !== null && (
           <p className="text-sm" data-testid="net-worth-change">
-            <span className={`tabular-nums ${signColour(view.change)}`}>{formatSignedMoney(view.change)}</span>
+            <span className={`tabular-nums ${signColour(view.change)}`}>{signedMoney(view.change)}</span>
             <span className="text-muted"> este mes</span>
           </p>
         )}
@@ -51,9 +53,9 @@ export function NetWorth() {
             <CartesianGrid vertical={false} stroke="var(--color-line)" />
             <XAxis dataKey="month" tickFormatter={shortMonth} tick={AXIS_TICK} axisLine={false} tickLine={false} interval="preserveStartEnd" />
             {/* From 0, so the compact labels stay distinct and a small change doesn't look like a fall. */}
-            <YAxis tickFormatter={formatCompactMoney} tick={AXIS_TICK} axisLine={false} tickLine={false} width={72} domain={ZERO_BASED} />
+            <YAxis tickFormatter={compactMoney} tick={AXIS_TICK} axisLine={false} tickLine={false} width={72} domain={ZERO_BASED} />
             <Tooltip
-              formatter={(value) => [formatMoney(Number(value)), 'Patrimonio']}
+              formatter={(value) => [money(Number(value)), 'Patrimonio']}
               labelFormatter={(month) => formatMonth(String(month))}
               contentStyle={{ background: 'var(--color-card-2)', border: '1px solid var(--color-line)', borderRadius: 12 }}
               labelStyle={{ color: 'var(--color-muted)' }}

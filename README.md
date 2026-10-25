@@ -12,6 +12,10 @@ Personal finance PWA fed by your bank's statement. Once a week you export your B
 3. Open Kuenta from its icon. Installing it is what makes it appear in Android's share sheet.
 4. Moving from another phone? On the welcome screen, tap **Restaurar una copia** instead of **Empezar** and pick your `kuenta-copia-….json` (see [Backups](#backups)): Kuenta opens on Inicio with your data, no setup needed.
 
+## Privacy mode
+
+Tap the eye in the header of **Inicio** or **Movimientos** to hide every amount in the app (lists, totals, charts) behind "•••• €"; percentages, counts and dates stay visible. Tap it again to show them. The choice belongs to this phone: it stays after closing the app, isn't saved in backups and isn't changed by restoring one. Exported backups and CSVs always have the real amounts.
+
 ## Weekly import
 
 1. In the BBVA app, open the account and download the movements.

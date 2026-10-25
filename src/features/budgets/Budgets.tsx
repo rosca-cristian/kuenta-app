@@ -6,7 +6,8 @@ import { IconBadge } from '../../ui/icons';
 import { CategoryGrid } from '../../ui/pickers';
 import { useRepo, useRepoQuery } from '../../lib/repo';
 import { formatMonth, monthOf, today, type Month } from '../../domain/dates';
-import { formatMoney, formatTypedAmount, parseTypedAmount } from '../../domain/money';
+import { formatTypedAmount, parseTypedAmount } from '../../domain/money';
+import { useMoney } from '../../lib/money';
 import type { BudgetStatus } from '../../domain/budgets';
 import type { Category, Id } from '../../domain/model';
 import type { BudgetView } from '../../data/repository';
@@ -102,23 +103,24 @@ export function Budgets() {
 }
 
 function Totals({ budgeted, spent, remaining }: { budgeted: number; spent: number; remaining: number }) {
+  const { money } = useMoney();
   return (
     <Card>
       <dl className="grid grid-cols-3 gap-2 text-sm">
         <div>
           <dt className="text-muted">Presupuestado</dt>
-          <dd className="tabular-nums" data-testid="budgets-budgeted">{formatMoney(budgeted)}</dd>
+          <dd className="tabular-nums" data-testid="budgets-budgeted">{money(budgeted)}</dd>
         </div>
         <div>
           <dt className="text-muted">Gastado</dt>
-          <dd className="tabular-nums" data-testid="budgets-spent">{formatMoney(spent)}</dd>
+          <dd className="tabular-nums" data-testid="budgets-spent">{money(spent)}</dd>
         </div>
         <div>
           <dt className="text-muted">Queda</dt>
           {remaining < 0 ? (
-            <dd className="tabular-nums text-danger" data-testid="budgets-remaining">{formatMoney(-remaining)} por encima</dd>
+            <dd className="tabular-nums text-danger" data-testid="budgets-remaining">{money(-remaining)} por encima</dd>
           ) : (
-            <dd className="tabular-nums" data-testid="budgets-remaining">{formatMoney(remaining)}</dd>
+            <dd className="tabular-nums" data-testid="budgets-remaining">{money(remaining)}</dd>
           )}
         </div>
       </dl>
@@ -133,6 +135,7 @@ function Totals({ budgeted, spent, remaining }: { budgeted: number; spent: numbe
 function BudgetCard({ budget, today, onEdit }: { budget: BudgetView; today: number | null; onEdit: () => void }) {
   const { category, limit, spent, percent, status } = budget;
   const style = BUDGET_STATUS[status];
+  const { money } = useMoney();
   return (
     <li>
       <button onClick={onEdit} className="block w-full rounded-2xl border border-line bg-card p-4 text-left active:bg-card-2">
@@ -145,7 +148,7 @@ function BudgetCard({ budget, today, onEdit }: { budget: BudgetView; today: numb
         </div>
         <div className="mt-3 flex items-baseline justify-between gap-2 text-sm">
           <span className="tabular-nums" data-testid="budget-spent">
-            {formatMoney(spent)} <span className="text-muted">/ {formatMoney(limit)}</span>
+            {money(spent)} <span className="text-muted">/ {money(limit)}</span>
           </span>
           <span className="tabular-nums text-muted" data-testid="budget-percent">
             {formatPercent(percent)}

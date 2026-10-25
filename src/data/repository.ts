@@ -76,6 +76,8 @@ export interface Settings {
   onboardingDone: boolean;
   importAccountId: Id | null;
   persistRequested: boolean;
+  /** Privacy mode: every amount on screen shows as "•••• €". It belongs to this phone, not to backups. */
+  privacyMode: boolean;
 }
 
 export interface ImportPreview {
@@ -348,13 +350,15 @@ export interface DataRepository {
   /**
    * Called after every write. Returns an unsubscribe function. Every write that changes the
    * user's data also records when in the `lastChangeAt` setting, before calling it; settings
-   * bookkeeping (`persistRequested`, `lastBackupAt`, dismissing the starter-rules offer) and
+   * bookkeeping (`persistRequested`, `privacyMode`, `lastBackupAt`, dismissing the starter-rules offer) and
    * onboarding's starter data don't.
    */
   subscribe(listener: () => void): () => void;
 
   getSettings(): Promise<Settings>;
   setPersistRequested(): Promise<void>;
+  /** Turns privacy mode on or off. Settings bookkeeping: it doesn't count as a data change. */
+  setPrivacyMode(on: boolean): Promise<void>;
   /** Creates the import account and the starter categories. */
   completeOnboarding(input: { importAccountName: string }): Promise<void>;
 
