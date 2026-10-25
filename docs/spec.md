@@ -338,7 +338,7 @@ Cuentas · Categorías · Comercios · Reglas · Presupuestos · Objetivos · Co
 At `#/mas/copias`, listed in Más.
 - "Exportar copia" downloads the JSON backup (§5.13) and "Compartir copia" opens the system menu with it (Drive, email, Telegram…), or downloads it when the browser can't share files. Either counts as a backup once the file is downloaded or shared; closing the share menu doesn't.
 - "Restaurar copia": pick the JSON, see a summary ("Copia del 12/10/2026: 3 cuentas, 845 movimientos…"), confirm with "Sustituir todos mis datos", optionally exporting current data first.
-- "Exportar movimientos (CSV)" with a date range.
+- "Exportar movimientos (CSV)": native "Desde" and "Hasta" date inputs, defaulting to the whole history (the first transaction's date to today), and the number of transactions dated in that range, both days included. The button downloads them in Movimientos' CSV format (§5.13) as `kuenta-movimientos-AAAA-MM-DD.csv`. It's disabled, with a message saying why, when the range has no transactions ("No hay movimientos entre esas fechas.") or "Desde" is after "Hasta". A CSV can't be restored, so it doesn't count as a backup: "Última copia" doesn't change.
 - "Última copia: 12/10/2026", or "Nunca", the date of the last backup made on this phone.
 
 ### Design (dark only)
@@ -491,6 +491,7 @@ All checked at a 390×844 viewport. Items marked 🧪 have a unit test.
   - `Cuenta destino` only for transfers; `Categoría`, `Comercio`, `Nota` and `Concepto banco` empty when absent.
   - A field with `;`, `"`, CR or LF goes in quotes, with `"` doubled. **Formula guard**: a text field starting with `=`, `+`, `-` or `@` gets a leading `'`, so Excel never runs it as a formula; amounts are left alone.
   - Movimientos' "Exportar CSV" exports exactly the list shown (period, search and filters), and is disabled when it's empty.
+  - 🧪 Copias de seguridad's "Exportar movimientos (CSV)" exports the transactions dated from "Desde" to "Hasta", both included, in the same format; disabled when the range is empty or inverted; it doesn't set `lastBackupAt`.
 - File names: `kuenta-copia-AAAA-MM-DD.json` and `kuenta-movimientos-AAAA-MM-DD.csv`.
 - "Compartir copia" opens the system menu with the JSON file. If the browser can't share files, it downloads it. A download or a share sets `lastBackupAt`; a cancelled share doesn't.
 - The reminder appears on Inicio when more than 7 days have passed since the last backup (or none was ever made) and data has changed since. It disappears after exporting or sharing.

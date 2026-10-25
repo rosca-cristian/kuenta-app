@@ -66,6 +66,10 @@ export interface TransactionFilter {
   categoryId?: Id | null;
   type?: TxType;
   payeeId?: Id;
+  /** On or after this date (the transaction's date, inclusive). */
+  from?: IsoDate;
+  /** On or before this date (the transaction's date, inclusive). */
+  to?: IsoDate;
 }
 
 export interface Settings {

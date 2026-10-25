@@ -82,3 +82,51 @@ describe('exporting Movimientos as CSV', () => {
     expect(concepts(transactionsCsv(shops))).toEqual(['Tienda A', 'Tienda B', 'Tienda C']);
   });
 });
+
+describe('exporting a date range as CSV', () => {
+  /** Three months, with two rows on the range's first day and one on its last. */
+  const history: SampleMovement[] = [
+    { valor: '31/08/2026', concepto: 'Antes', movimiento: 'Pago con tarjeta', importe: -1 },
+    { valor: '01/09/2026', concepto: 'Inicio A', movimiento: 'Pago con tarjeta', importe: -2 },
+    { valor: '01/09/2026', concepto: 'Inicio B', movimiento: 'Pago con tarjeta', importe: -3 },
+    { valor: '15/09/2026', concepto: 'Abono de nómina', movimiento: 'Empresa ejemplo', importe: 1500 },
+    { valor: '02/10/2026', concepto: 'Fin', movimiento: 'Pago con tarjeta', importe: -4 },
+    { valor: '03/10/2026', concepto: 'Después', movimiento: 'Pago con tarjeta', importe: -5 },
+  ];
+  const concepts = (txs: { bankConcept: string | null }[]) => txs.map((tx) => tx.bankConcept);
+
+  it('includes both ends of the range, across months, and combines with the other filters', async () => {
+    const { repo } = await setup();
+    await importFile(repo, history);
+
+    const range = await repo.listTransactions(null, { from: '2026-09-01', to: '2026-10-02' });
+    expect(concepts(range)).toEqual(['Fin', 'Abono de nómina', 'Inicio B', 'Inicio A']);
+    expect(concepts(await repo.listTransactions(null, { from: '2026-10-02' }))).toEqual(['Después', 'Fin']);
+    expect(concepts(await repo.listTransactions(null, { to: '2026-08-31' }))).toEqual(['Antes']);
+    expect(concepts(await repo.listTransactions(null, { from: '2026-09-01', to: '2026-09-01' }))).toEqual(['Inicio B', 'Inicio A']);
+    expect(concepts(await repo.listTransactions(null, { from: '2026-09-01', to: '2026-10-02', type: 'income' }))).toEqual(['Abono de nómina']);
+    expect(concepts(await repo.listTransactions('2026-09', { to: '2026-09-01' }))).toEqual(['Inicio B', 'Inicio A']);
+  });
+
+  it('finds nothing in a range without transactions or an inverted one', async () => {
+    const { repo } = await setup();
+    await importFile(repo, history);
+    expect(await repo.listTransactions(null, { from: '2026-09-02', to: '2026-09-14' })).toEqual([]);
+    expect(await repo.listTransactions(null, { from: '2026-10-02', to: '2026-09-01' })).toEqual([]);
+  });
+
+  it('writes the range oldest first in the bank order within a day, without counting as a backup', async () => {
+    const { repo } = await setup();
+    await importFile(repo, history);
+    const csv = transactionsCsv(await repo.listTransactions(null, { from: '2026-09-01', to: '2026-10-02' }));
+    expect(csv.split('\r\n')).toEqual([
+      '﻿Fecha;Tipo;Cuenta;Cuenta destino;Categoría;Comercio;Nota;Importe;Concepto banco',
+      '01/09/2026;Gasto;BBVA;;;Inicio A;;-2,00;Inicio A',
+      '01/09/2026;Gasto;BBVA;;;Inicio B;;-3,00;Inicio B',
+      '15/09/2026;Ingreso;BBVA;;Nómina;Abono De Nómina;;1500,00;Abono de nómina',
+      '02/10/2026;Gasto;BBVA;;;Fin;;-4,00;Fin',
+      '',
+    ]);
+    expect((await repo.backupStatus()).lastBackupAt).toBeNull();
+  });
+});
