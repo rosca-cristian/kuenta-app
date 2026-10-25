@@ -3,8 +3,13 @@ import { useNavigate } from 'react-router-dom';
 import { Landmark, ShieldCheck } from 'lucide-react';
 import { Button } from '../../ui/components';
 import { useServices } from '../../lib/repo';
+import { RestoreBackup } from '../more/RestoreBackup';
 
-/** First run: what Kuenta is, the import account, persistent storage. */
+/**
+ * First run: what Kuenta is, the import account, persistent storage. On a new phone,
+ * "Restaurar una copia" brings a backup back instead: it carries the import account, the
+ * categories and onboarding done, so the app goes straight to Inicio.
+ */
 export function Onboarding() {
   const { repo, platform } = useServices();
   const navigate = useNavigate();
@@ -12,11 +17,15 @@ export function Onboarding() {
   const [name, setName] = useState('BBVA');
   const [saving, setSaving] = useState(false);
 
+  async function requestPersistence() {
+    await platform.requestPersistence().catch(() => false);
+    await repo.setPersistRequested();
+  }
+
   async function finish() {
     setSaving(true);
     await repo.completeOnboarding({ importAccountName: name });
-    await platform.requestPersistence().catch(() => false);
-    await repo.setPersistRequested();
+    await requestPersistence();
     navigate('/importar', { replace: true });
   }
 
@@ -36,7 +45,10 @@ export function Onboarding() {
               </li>
             </ul>
           </div>
-          <Button onClick={() => setStep('account')}>Empezar</Button>
+          <div className="flex flex-col gap-2">
+            <Button onClick={() => setStep('account')}>Empezar</Button>
+            <RestoreBackup label="Restaurar una copia" onRestored={requestPersistence} />
+          </div>
         </>
       ) : (
         <>
@@ -55,7 +67,7 @@ export function Onboarding() {
               />
             </label>
             <p className="rounded-xl border border-line bg-card-2 p-4 text-sm text-muted">
-              Como todo se guarda solo en este móvil, más adelante podrás hacer copias de seguridad para no perder nada si cambias de teléfono.
+              Como todo se guarda solo en este móvil, haz copias de seguridad en Más → Copias de seguridad para no perder nada si cambias de teléfono.
             </p>
           </div>
           <Button onClick={finish} disabled={saving || name.trim() === ''}>

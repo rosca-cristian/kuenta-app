@@ -267,10 +267,12 @@ Format, confirmed with real exports (October 2026). The file is what Google Shee
 Fixed bottom navigation: **Inicio · Movimientos · Importar · Análisis · Más**. Every screen with a period uses the same `‹ octubre 2026 ›` selector. The eye icon for privacy mode sits in the header of Inicio and Movimientos.
 
 ### 4.1 First run
-1. Welcome: what Kuenta is, that data only lives on this phone, and the weekly import routine.
+1. Welcome: what Kuenta is, that data only lives on this phone, and the weekly import routine. "Empezar" goes on; the secondary "Restaurar una copia" brings a backup back instead (below).
 2. Name the import account (proposed: "BBVA"). No balance is asked: it's derived from the first import.
-3. Starter categories and rules are created, persistent storage is requested, and one sentence explains why backups matter.
+3. Starter categories and rules are created, persistent storage is requested, and one sentence explains why backups matter and points at Más → Copias de seguridad.
 4. Go straight to Importar with the step-by-step export instructions.
+
+"Restaurar una copia" (a new phone): pick the JSON backup and the same sheet as Copias de seguridad's "Restaurar copia" opens (§4.11), with the copy's summary and "Sustituir todos mis datos" but without the current data's counts or "Exportar mis datos actuales antes", as there's no data yet. Confirming restores the backup, with its import account, categories and `onboardingDone`, so no import account or starter data is created; persistent storage is requested as with "Empezar", and the app lands on Inicio with "Copia restaurada". A file that can't be restored shows why in the sheet; closing it leaves the welcome screen as it was, and "Empezar" still works.
 
 ### 4.2 Inicio
 - Month card: **total balance** (every account, archived ones included), income, expenses, savings (amount and rate) and "A este ritmo gastarás X € este mes" (current month only).
@@ -337,7 +339,7 @@ Cuentas · Categorías · Comercios · Reglas · Presupuestos · Objetivos · Co
 ### 4.11 Copias de seguridad
 At `#/mas/copias`, listed in Más.
 - "Exportar copia" downloads the JSON backup (§5.13) and "Compartir copia" opens the system menu with it (Drive, email, Telegram…), or downloads it when the browser can't share files. Either counts as a backup once the file is downloaded or shared; closing the share menu doesn't.
-- "Restaurar copia": pick the JSON and a sheet opens with its summary ("Copia del 12/10/2026: 3 cuentas, 845 movimientos, 21 categorías…": accounts, transactions, categories, payees, rules, budgets and goals) and the current data's counts, which will be replaced. "Exportar mis datos actuales antes" downloads a backup of the current data first (it counts as a backup); the destructive "Sustituir todos mis datos" replaces everything in one transaction and lands on Inicio with "Copia restaurada". A file that can't be restored shows why inline in the sheet and changes nothing (§5.13).
+- "Restaurar copia": pick the JSON and a sheet opens with its summary ("Copia del 12/10/2026: 3 cuentas, 845 movimientos, 21 categorías…": accounts, transactions, categories, payees, rules, budgets and goals) and the current data's counts, which will be replaced. "Exportar mis datos actuales antes" downloads a backup of the current data first (it counts as a backup); the destructive "Sustituir todos mis datos" replaces everything in one transaction and lands on Inicio with "Copia restaurada". A file that can't be restored shows why inline in the sheet and changes nothing (§5.13). The first-run screen offers the same restore as "Restaurar una copia" (§4.1).
 - "Exportar movimientos (CSV)": native "Desde" and "Hasta" date inputs, defaulting to the whole history (the first transaction's date to today), and the number of transactions dated in that range, both days included. The button downloads them in Movimientos' CSV format (§5.13) as `kuenta-movimientos-AAAA-MM-DD.csv`. It's disabled, with a message saying why, when the range has no transactions ("No hay movimientos entre esas fechas.") or "Desde" is after "Hasta". A CSV can't be restored, so it doesn't count as a backup: "Última copia" doesn't change.
 - "Última copia: 12/10/2026", or "Nunca", the date of the last backup made on this phone.
 

@@ -77,6 +77,23 @@ describe('restoring a backup', () => {
     expect(await target.repo.getSettings()).toEqual({ onboardingDone: true, importAccountId, persistRequested: false });
   });
 
+  it("sets up a new phone from the first-run screen: onboarding done with the backup's import account", async () => {
+    const { source, backup, text } = await richBackup();
+    const target = await setup({ fresh: true });
+    expect((await target.repo.getSettings()).onboardingDone).toBe(false);
+
+    // What the welcome screen does: restore, then request persistent storage as "Empezar" does.
+    await target.repo.restoreBackup(read(target.repo, text));
+    await target.repo.setPersistRequested();
+
+    const importAccountId = backup.data.settings.find((s) => s.key === 'importAccountId')!.value;
+    expect(await target.repo.getSettings()).toEqual({ onboardingDone: true, importAccountId, persistRequested: true });
+    expect(await target.repo.listAccounts()).toEqual(await source.repo.listAccounts());
+    expect(await target.repo.listTransactions(null)).toEqual(await source.repo.listTransactions(null));
+    // No starter data of its own: the categories are exactly the backup's.
+    expect(byId(await target.db.categories.toArray())).toEqual(byId(backup.data.categories));
+  });
+
   it('replaces different data without leaving anything of it, keeping only whether persistence was requested', async () => {
     const { text } = await richBackup();
     const target = await setup();
