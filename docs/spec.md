@@ -466,7 +466,13 @@ All checked at a 390×844 viewport. Items marked 🧪 have a unit test.
 - 🧪 Restore validates the format (`app: "kuenta"`, `format`, each table's schema, references between tables). If anything fails, current data is untouched and the problem is explained.
 - 🧪 A backup from an older format version is migrated on restore; one from a newer version is rejected with a message.
 - 🧪 Restore replaces all data in one transaction.
-- 🧪 **CSV**: UTF-8 with BOM, `;` separator, CRLF line endings and columns `Fecha;Tipo;Cuenta;Cuenta destino;Categoría;Comercio;Nota;Importe;Concepto banco`. Signed amount with a decimal comma (`-12,50`). Text with `;`, quotes or line breaks is escaped. Opens correctly in Spanish Excel with a double click.
+- 🧪 **CSV**: UTF-8 with BOM, `;` separator, CRLF line endings and columns `Fecha;Tipo;Cuenta;Cuenta destino;Categoría;Comercio;Nota;Importe;Concepto banco`. Opens correctly in Spanish Excel with a double click.
+  - One line per transaction, **oldest first**: by date and, within a date, in the bank's order; balance adjustments after the imported rows of their day.
+  - `Fecha` as `20/10/2026`. `Tipo` is `Gasto`, `Ingreso`, `Transferencia`, or `Ajuste de saldo` for a balance adjustment.
+  - `Importe` signed from the transaction's account (`Cuenta`), with a decimal comma, no thousands separator and no "€" (`-12,50`, `1500,00`). A transfer is always negative: it's the money leaving `Cuenta` for `Cuenta destino`.
+  - `Cuenta destino` only for transfers; `Categoría`, `Comercio`, `Nota` and `Concepto banco` empty when absent.
+  - A field with `;`, `"`, CR or LF goes in quotes, with `"` doubled. **Formula guard**: a text field starting with `=`, `+`, `-` or `@` gets a leading `'`, so Excel never runs it as a formula; amounts are left alone.
+  - Movimientos' "Exportar CSV" exports exactly the list shown (period, search and filters), and is disabled when it's empty.
 - File names: `kuenta-copia-AAAA-MM-DD.json` and `kuenta-movimientos-AAAA-MM-DD.csv`.
 - "Compartir copia" opens the system menu with the JSON file. If the browser can't share files, it downloads it.
 - The reminder appears on Inicio when more than 7 days have passed since the last backup (or none was ever made) and data has changed since. It disappears after exporting or sharing.

@@ -19,4 +19,16 @@ export const webPlatform: PlatformServices = {
   async isPersisted() {
     return navigator.storage?.persisted ? navigator.storage.persisted() : false;
   },
+
+  async saveFile(file) {
+    const url = URL.createObjectURL(file);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = file.name;
+    document.body.append(link);
+    link.click();
+    link.remove();
+    // Revoked once the click has handed the file to the browser's download.
+    setTimeout(() => URL.revokeObjectURL(url), 0);
+  },
 };
