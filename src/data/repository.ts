@@ -2,7 +2,7 @@ import type { Cents } from '../domain/money';
 import type { IsoDate, Month } from '../domain/dates';
 import type { Gap } from '../domain/chain';
 import type { ImportPlan } from '../domain/importPlan';
-import type { MonthSummary } from '../domain/stats';
+import type { MonthlyEntry, MonthSummary } from '../domain/stats';
 import type { BudgetStatus, BudgetTotals } from '../domain/budgets';
 import type { GoalProgress } from '../domain/goals';
 import type { Account, AccountType, Category, CategoryKind, Goal, Id, ImportBatch, Payee, Rule, RuleActions, RuleMatch, Transaction } from '../domain/model';
@@ -262,6 +262,15 @@ export interface NetWorthView {
   change: Cents | null;
 }
 
+/** How many months Análisis → Mensual covers. */
+export type MonthlyRange = 6 | 12;
+
+/** Análisis → Mensual: income vs expenses by month. */
+export interface MonthlyView {
+  /** Oldest first, ending at the current month; empty when there's no data. */
+  entries: MonthlyEntry[];
+}
+
 /** A goal with its account and how far it is. */
 export interface GoalView extends Goal, GoalProgress {
   /** The linked account with its balance today, archived or not: a goal keeps showing an archived account's balance. */
@@ -460,6 +469,13 @@ export interface DataRepository {
    * between accounts, so they don't change it; balance adjustments do.
    */
   netWorth(): Promise<NetWorthView>;
+
+  /**
+   * Análisis → Mensual: each month's income and expenses, as Inicio's summary counts them,
+   * for the last 6 or 12 months ending at the current one, which is marked in progress.
+   * The months before the first one with imported transactions are left out.
+   */
+  monthly(months: MonthlyRange): Promise<MonthlyView>;
 
   /**
    * The budgets of a month with their spending by transaction date. Transfers, balance

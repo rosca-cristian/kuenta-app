@@ -3,7 +3,7 @@ import { STARTER_CATEGORIES, STARTER_DATA_VERSION, STARTER_RULES } from '../seed
 import { bankOrder, findGaps, latestBalanceOf, openingBalanceOf, type ChainLink } from '../../domain/chain';
 import { planImport, reapplyRules } from '../../domain/importPlan';
 import { applyRules as firstMatchActions, hasAction, ruleMatches, suggestedRuleText, type RuleSubject } from '../../domain/rules';
-import { isUncategorized, monthSpending, monthSummary } from '../../domain/stats';
+import { isUncategorized, monthlySeries, monthSpending, monthSummary } from '../../domain/stats';
 import { monthForecast } from '../../domain/forecast';
 import { budgetMonth, limitFor } from '../../domain/budgets';
 import { goalProgress } from '../../domain/goals';
@@ -42,6 +42,7 @@ import type {
   HomeData,
   ImportOutcome,
   ImportPreview,
+  MonthlyView,
   NetWorthPoint,
   NetWorthView,
   PayeeRenameResult,
@@ -1054,6 +1055,18 @@ export function createDexieRepository(options: DexieRepositoryOptions = {}): Dat
         const latest = points.at(-1)?.netWorth ?? null;
         const previous = points.at(-2)?.netWorth ?? null;
         return { points, latest, change: latest !== null && previous !== null ? latest - previous : null };
+      });
+    },
+
+    async monthly(months): Promise<MonthlyView> {
+      const currentMonth = monthOf(today(now()));
+      return db.transaction('r', db.transactions, async () => {
+        const [txs, first] = await Promise.all([
+          db.transactions.where('date').between(`${addMonths(currentMonth, 1 - months)}-01`, `${addMonths(currentMonth, 1)}-01`).toArray(),
+          // Balance adjustments aren't data: they only correct a balance.
+          db.transactions.orderBy('date').filter((tx) => tx.source === 'import').first(),
+        ]);
+        return { entries: monthlySeries(txs, currentMonth, months, first ? monthOf(first.date) : null) };
       });
     },
 
