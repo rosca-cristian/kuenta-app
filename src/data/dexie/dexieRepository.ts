@@ -4,6 +4,7 @@ import { bankOrder, findGaps, latestBalanceOf, openingBalanceOf, type ChainLink 
 import { planImport, reapplyRules } from '../../domain/importPlan';
 import { applyRules as firstMatchActions, hasAction, ruleMatches, suggestedRuleText, type RuleSubject } from '../../domain/rules';
 import { monthSummary } from '../../domain/stats';
+import { monthForecast } from '../../domain/forecast';
 import { budgetMonth, limitFor } from '../../domain/budgets';
 import { goalProgress } from '../../domain/goals';
 import { addMonths, daysBetween, isMonth, monthOf, today, type Month } from '../../domain/dates';
@@ -979,7 +980,7 @@ export function createDexieRepository(options: DexieRepositoryOptions = {}): Dat
     async home(month): Promise<HomeData> {
       const allAccounts = await repository.listAccounts();
       const accountId = await importAccountId();
-      const [monthTxs, lastImport, uncategorized, chain, currentBudgets, goals] = await Promise.all([
+      const [monthTxs, lastImport, uncategorized, chain, currentBudgets, goals, forecastTxs] = await Promise.all([
         transactionsIn(month),
         db.importBatches.orderBy('importedAt').reverse().filter((batch) => !batch.undone).first(),
         db.transactions.filter((tx) => tx.source === 'import' && tx.type !== 'transfer' && tx.categoryId === null).count(),
@@ -987,6 +988,8 @@ export function createDexieRepository(options: DexieRepositoryOptions = {}): Dat
         // Budgets can only be acted on in the current month, whichever month Inicio shows.
         repository.budgets(monthOf(today(now()))),
         repository.listGoals(),
+        // Expected charges look at the two months before.
+        db.transactions.where('date').between(`${addMonths(month, -2)}-01`, `${addMonths(month, 1)}-01`).toArray(),
       ]);
       return {
         // Archived accounts still hold money: they count in the total, but aren't listed.
@@ -999,6 +1002,7 @@ export function createDexieRepository(options: DexieRepositoryOptions = {}): Dat
         budgetsOver: currentBudgets.budgets.filter((budget) => budget.status === 'over').length,
         topBudgets: [...currentBudgets.budgets].sort((a, b) => b.percent - a.percent || b.spent - a.spent).slice(0, TOP_BUDGETS),
         goals: goals.filter((goal) => !goal.archived),
+        forecast: monthForecast(forecastTxs, month, today(now())),
       };
     },
 

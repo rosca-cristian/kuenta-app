@@ -105,6 +105,8 @@ export interface HomeData {
   topBudgets: BudgetView[];
   /** The non-archived goals, in the goals list's order, with their progress. */
   goals: GoalView[];
+  /** Where the month's spending is heading, with its expected charges; null for other months than the current one and before the 3rd. */
+  forecast: Cents | null;
 }
 
 export interface TransactionChanges {
