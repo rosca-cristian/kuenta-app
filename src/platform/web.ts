@@ -33,6 +33,15 @@ export const webPlatform: PlatformServices = {
     return navigator.storage?.persisted ? navigator.storage.persisted() : false;
   },
 
+  async storageUsage() {
+    if (!navigator.storage?.estimate) return null;
+    try {
+      return (await navigator.storage.estimate()).usage ?? null;
+    } catch {
+      return null;
+    }
+  },
+
   saveFile,
 
   async shareFile(file) {

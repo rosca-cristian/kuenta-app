@@ -325,6 +325,8 @@ Tabs:
 
 ### 4.8 Más
 Cuentas · Categorías · Comercios · Reglas · Presupuestos · Objetivos · Copias de seguridad · Ajustes (import account, persistent storage status, space used, version, library licences).
+- **Ajustes**: the import account, whether persistent storage was granted (§5.14), "Espacio usado", the space Kuenta's data takes on this phone as the browser estimates it (`navigator.storage.estimate()`), in MB with one decimal ("2,3 MB"), or "—" when the browser can't tell, and the version.
+- **Licencias** (`#/mas/licencias`, from Ajustes): the open-source libraries the app ships, the runtime dependencies in `package.json`, each with its version and licence. The list is static in the source and a test fails when it and `dependencies` differ; the licence texts aren't bundled (they are in each library's repository).
 
 ### 4.9 Reglas, Categorías y Comercios
 - **Reglas**: list in order, with enable/disable, move up/down, edit and delete. A search box filters the list by the rule's text or name, or the category, transfer account or payee name it sets (ignoring case and accents); while searching, rules can't be moved. A transfer rule shows "→ Revolut". The editor shows "Concepto o movimiento contiene ___" and the action: a choice between "Categoría" and "Transferencia a cuenta" (non-imported, non-archived accounts; a rule's archived account stays selectable and keeps working), plus an optional payee name, with field, operator and direction under "Opciones avanzadas", plus a live count of matching transactions. Saving offers "Aplicar también a N movimientos" (those never edited by the user). Deleting explains that already categorized transactions keep their category.

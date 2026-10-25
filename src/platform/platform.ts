@@ -8,6 +8,8 @@ export interface PlatformServices {
   /** Asks the browser to keep the data even under storage pressure. */
   requestPersistence(): Promise<boolean>;
   isPersisted(): Promise<boolean>;
+  /** Bytes Kuenta's data takes on this device, as the browser estimates it; null when it can't tell. */
+  storageUsage(): Promise<number | null>;
   /** Hands a file Kuenta made (a CSV export or a backup) to the user, as a download on the web. */
   saveFile(file: File): Promise<void>;
   /**

@@ -16,6 +16,7 @@ import { Rules } from './features/rules/Rules';
 import { Budgets } from './features/budgets/Budgets';
 import { Goals } from './features/goals/Goals';
 import { Backups } from './features/more/Backups';
+import { Licenses } from './features/more/Licenses';
 
 // Análisis brings Recharts: its own chunk keeps it off the first load of Inicio and Importar.
 // The service worker precaches every chunk, so it works offline too.
@@ -50,6 +51,7 @@ export function App() {
               <Route path="/mas/presupuestos" element={<Budgets />} />
               <Route path="/mas/objetivos" element={<Goals />} />
               <Route path="/mas/copias" element={<Backups />} />
+              <Route path="/mas/licencias" element={<Licenses />} />
               <Route path="*" element={<Navigate to="/" replace />} />
             </Routes>
           </main>
