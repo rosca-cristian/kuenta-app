@@ -3,25 +3,21 @@ import { Bar, BarChart, CartesianGrid, Cell, ResponsiveContainer, XAxis, YAxis }
 import { Choice, EmptyState } from '../../ui/components';
 import { usePrefersReducedMotion } from '../../ui/motion';
 import { useRepoQuery } from '../../lib/repo';
-import { formatMonth, type Month } from '../../domain/dates';
+import { formatMonth } from '../../domain/dates';
 import { formatCompactMoney, formatMoney, formatSignedMoney } from '../../domain/money';
 import type { MonthlyRange } from '../../data/repository';
+import { AXIS_TICK, shortMonth } from './chart';
 
 const RANGES: Record<`${MonthlyRange}`, string> = { 6: '6 meses', 12: '12 meses' };
 
 /** The range last chosen, kept while moving around the app. */
 let lastRange: MonthlyRange = 6;
 
-/** "oct", for the axis. */
-const shortMonth = (month: Month) => formatMonth(month).slice(0, 3);
-
 /** The current month's bars are lighter: a half month shouldn't look like a bad one. */
 const opacity = (inProgress: boolean) => (inProgress ? 0.45 : 1);
 
-const tick = { fill: 'var(--color-muted)', fontSize: 11 };
-
 /** Recharts wraps a label wider than the axis; a wider box keeps "1,2 mil €" on one line. */
-const yTick = { ...tick, width: 120 };
+const yTick = { ...AXIS_TICK, width: 120 };
 
 /**
  * Análisis → Mensual: income (green) and expenses (neutral) bars for each of the last 6 or
@@ -56,7 +52,7 @@ export function Monthly() {
               <ResponsiveContainer width="100%" height="100%">
                 <BarChart data={view.entries} margin={{ top: 8, right: 0, bottom: 0, left: 0 }} barGap={2} barCategoryGap="20%">
                   <CartesianGrid vertical={false} stroke="var(--color-line)" />
-                  <XAxis dataKey="month" tickFormatter={shortMonth} tick={tick} axisLine={false} tickLine={false} interval={0} />
+                  <XAxis dataKey="month" tickFormatter={shortMonth} tick={AXIS_TICK} axisLine={false} tickLine={false} interval={0} />
                   <YAxis tickFormatter={formatCompactMoney} tick={yTick} axisLine={false} tickLine={false} width={64} />
                   {(['income', 'expenses'] as const).map((key) => (
                     <Bar

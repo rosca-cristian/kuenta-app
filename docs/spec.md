@@ -274,7 +274,7 @@ Fixed bottom navigation: **Inicio · Movimientos · Importar · Análisis · Má
 
 ### 4.2 Inicio
 - Month card: **total balance** (every account, archived ones included), income, expenses, savings (amount and rate) and "A este ritmo gastarás X € este mes" (current month only).
-- Alerts, only when they apply: "Han pasado N días desde la última importación" (from 8 days), "N movimientos sin categoría", "Hay un hueco entre el 07/10 y el 14/10", "N presupuestos superados", "Haz una copia de seguridad".
+- Alerts, only when they apply: "Han pasado N días desde la última importación" (from 8 days), "N movimientos sin categoría" (of the month shown), "Hay un hueco entre el 07/10 y el 14/10", "N presupuestos superados", "Haz una copia de seguridad".
 - After an update that brought starter rules, when they would change transactions already imported: "Aplicar las reglas de serie a N movimientos ya importados" (only those never edited), with Aplicar, which reports how many changed, and Descartar. Either one hides it for good.
 - Accounts with their balance (archived ones hidden; non-imported ones labelled "no importada").
 - Budgets: the 3 with the highest percentage used, linking to the full screen.
@@ -424,7 +424,7 @@ All checked at a 390×844 viewport. Items marked 🧪 have a unit test.
 - 🧪 Savings rate = (income − expenses) / income for the month, without transfers; with no income it shows "—".
 - 🧪 Forecast = (expenses so far excluding expected charges' payees) / days elapsed × days in month + expected charges not yet seen (§3.2). Only shown for the current month and from the 3rd.
 - 🧪 The import reminder appears when 8 or more days have passed since the last import.
-- The "sin categoría" alert opens Movimientos filtered.
+- The "sin categoría" alert counts the uncategorized transactions of the month shown and opens Movimientos filtered to them.
 
 ### 5.10 Charts
 - 🧪 The donut's slices match the list below it and the centre total, and refunds subtract (§3.2).

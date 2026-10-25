@@ -993,10 +993,9 @@ export function createDexieRepository(options: DexieRepositoryOptions = {}): Dat
     async home(month): Promise<HomeData> {
       const allAccounts = await repository.listAccounts();
       const accountId = await importAccountId();
-      const [monthTxs, lastImport, uncategorized, chain, currentBudgets, goals, forecastTxs] = await Promise.all([
+      const [monthTxs, lastImport, chain, currentBudgets, goals, forecastTxs] = await Promise.all([
         transactionsIn(month),
         db.importBatches.orderBy('importedAt').reverse().filter((batch) => !batch.undone).first(),
-        db.transactions.filter((tx) => tx.source === 'import' && tx.type !== 'transfer' && tx.categoryId === null).count(),
         chainOf(accountId),
         // Budgets can only be acted on in the current month, whichever month Inicio shows.
         repository.budgets(monthOf(today(now()))),
@@ -1010,7 +1009,8 @@ export function createDexieRepository(options: DexieRepositoryOptions = {}): Dat
         summary: monthSummary(monthTxs, month),
         accounts: allAccounts.filter((account) => !account.archived),
         daysSinceLastImport: lastImport ? daysBetween(today(new Date(lastImport.importedAt)), today(now())) : null,
-        uncategorized,
+        // Of the month shown, like the Movimientos list its alert opens.
+        uncategorized: monthTxs.filter(isUncategorized).length,
         gaps: findGaps(chain),
         budgetsOver: currentBudgets.budgets.filter((budget) => budget.status === 'over').length,
         topBudgets: [...currentBudgets.budgets].sort((a, b) => b.percent - a.percent || b.spent - a.spent).slice(0, TOP_BUDGETS),

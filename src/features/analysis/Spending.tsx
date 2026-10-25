@@ -5,10 +5,10 @@ import { EmptyState, MonthSelector } from '../../ui/components';
 import { IconBadge, colorFor } from '../../ui/icons';
 import { usePrefersReducedMotion } from '../../ui/motion';
 import { useRepoQuery } from '../../lib/repo';
-import { formatMonth, isMonth, monthOf, today, type Month } from '../../domain/dates';
+import { formatMonth, monthOf, today, type Month } from '../../domain/dates';
 import { formatMoney } from '../../domain/money';
 import type { SpendingEntryView } from '../../data/repository';
-import { transactionsLink } from '../transactions/filters';
+import { monthParam, transactionsLink } from '../transactions/filters';
 
 /** "Sin categoría" is grey, as uncategorized rows are in Movimientos. */
 const sliceColor = (entry: SpendingEntryView) => colorFor(entry.category?.color);
@@ -28,9 +28,9 @@ export function Spending() {
   const navigate = useNavigate();
   const [params, setParams] = useSearchParams();
   const currentMonth = monthOf(today());
-  const asked = params.get('mes');
+  const asked = monthParam(params);
   // Current month and earlier: there's no spending in the future.
-  const month: Month = asked !== null && isMonth(asked) && asked <= currentMonth ? asked : currentMonth;
+  const month: Month = asked !== null && asked <= currentMonth ? asked : currentMonth;
   const view = useRepoQuery((repo) => repo.spending(month), [month]);
   const reducedMotion = usePrefersReducedMotion();
 

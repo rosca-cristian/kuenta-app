@@ -166,6 +166,20 @@ describe('filtering Movimientos', () => {
     expect((await repo.home('2026-10')).uncategorized).toBe(3);
   });
 
+  it('counts on Inicio only the month shown, as the list its alert opens', async () => {
+    const repo = await setup();
+    await importFile(repo, [
+      { valor: '15/09/2026', concepto: 'Tienda de barrio', movimiento: 'Septiembre 1', importe: -10 },
+      { valor: '16/09/2026', concepto: 'Tienda de barrio', movimiento: 'Septiembre 2', importe: -12 },
+      { valor: '05/10/2026', concepto: 'Mercadona', movimiento: 'Octubre', importe: -30 },
+    ]);
+
+    expect((await repo.home('2026-10')).uncategorized).toBe(0);
+    expect(await movementsOf(repo, '2026-10', { categoryId: null })).toEqual([]);
+    expect((await repo.home('2026-09')).uncategorized).toBe(2);
+    expect(await movementsOf(repo, '2026-09', { categoryId: null })).toHaveLength(2);
+  });
+
   it('shows a payee’s transactions, alone or with a category', async () => {
     const repo = await setup();
     await importFile(repo, movements);

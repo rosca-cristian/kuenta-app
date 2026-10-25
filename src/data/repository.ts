@@ -105,6 +105,7 @@ export interface HomeData {
   /** The non-archived accounts, in order. */
   accounts: AccountView[];
   daysSinceLastImport: number | null;
+  /** Uncategorized imported expenses and income of the month shown: what its "sin categoría" link lists. */
   uncategorized: number;
   gaps: Gap[];
   /** Budgets above 100 % in the current month, whatever month Inicio shows. */

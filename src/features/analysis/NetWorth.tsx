@@ -2,16 +2,12 @@ import { CartesianGrid, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YA
 import { Card, EmptyState } from '../../ui/components';
 import { usePrefersReducedMotion } from '../../ui/motion';
 import { useRepoQuery } from '../../lib/repo';
-import { formatMonth, type Month } from '../../domain/dates';
+import { formatMonth } from '../../domain/dates';
 import { formatCompactMoney, formatMoney, formatSignedMoney, type Cents } from '../../domain/money';
+import { AXIS_TICK, shortMonth } from './chart';
 
 /** Green above 0, red below, the normal text colour at 0. */
 const signColour = (cents: Cents) => (cents > 0 ? 'text-income' : cents < 0 ? 'text-danger' : '');
-
-/** "oct" for the axis; the tooltip has the whole month. */
-const shortMonth = (month: Month) => formatMonth(month).slice(0, 3);
-
-const AXIS_TICK = { fill: 'var(--color-muted)', fontSize: 11 };
 
 /** The value axis always includes 0, below or above the line. */
 const ZERO_BASED: [(min: number) => number, (max: number) => number] = [(min) => Math.min(0, min), (max) => Math.max(0, max)];

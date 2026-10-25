@@ -178,13 +178,15 @@ describe('the offer to apply the starter rules to what was already imported', ()
   it('applies the rules when accepted, says how many changed, and is gone for good', async () => {
     const { name } = await createPartOneDatabase();
     const repo = open(name);
-    expect((await repo.home('2026-10')).uncategorized).toBe(2);
+    // Inicio counts the month shown: one Mercadona purchase in each.
+    const uncategorized = async () => (await repo.home('2026-09')).uncategorized + (await repo.home('2026-10')).uncategorized;
+    expect(await uncategorized()).toBe(2);
 
     expect(await repo.acceptStarterRulesOffer()).toBe(2);
     expect(await categoryOf(repo, 'tx-1', '2026-09')).toBe('Supermercado');
     expect(await categoryOf(repo, 'tx-3', '2026-10')).toBe('Supermercado');
     expect(await categoryOf(repo, 'tx-2', '2026-09')).toBe('Restaurantes');
-    expect((await repo.home('2026-10')).uncategorized).toBe(0);
+    expect(await uncategorized()).toBe(0);
     expect(await repo.starterRulesOffer()).toBeNull();
     expect(await open(name).starterRulesOffer()).toBeNull();
   });

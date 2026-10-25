@@ -1,5 +1,5 @@
 import type { Cents } from './money';
-import { daysInMonth, isoDate, monthOf, monthsBetween, type IsoDate } from './dates';
+import { addMonths, daysInMonth, monthOf, monthsBetween, type IsoDate } from './dates';
 import { expectedCharges } from './forecast';
 import type { Id, Transaction } from './model';
 
@@ -37,10 +37,8 @@ const YEARLY_MAX = 13;
 
 /** The same day `count` months later, or the month's last day when it's shorter (31 January → 28 February). */
 function addMonthsToDate(date: IsoDate, count: number): IsoDate {
-  const index = Number(date.slice(0, 4)) * 12 + Number(date.slice(5, 7)) - 1 + count;
-  const [year, month] = [Math.floor(index / 12), (index % 12) + 1];
-  const day = Math.min(Number(date.slice(8, 10)), daysInMonth(isoDate(year, month, 1).slice(0, 7)));
-  return isoDate(year, month, day);
+  const month = addMonths(monthOf(date), count);
+  return `${month}-${String(Math.min(Number(date.slice(8, 10)), daysInMonth(month))).padStart(2, '0')}`;
 }
 
 function frequencyOf(previous: IsoDate | undefined, last: IsoDate): SubscriptionFrequency | null {
