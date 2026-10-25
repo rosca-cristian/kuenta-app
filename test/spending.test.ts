@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { createDexieRepository } from '../src/data/dexie/dexieRepository';
 import type { DataRepository, SpendingView } from '../src/data/repository';
+import { listNet } from '../src/domain/stats';
 import { bbvaXlsx, type SampleFileOptions, type SampleMovement } from './support/bbvaXlsx';
 
 let dbCount = 0;
@@ -239,5 +240,77 @@ describe('filtering Movimientos', () => {
     expect(await movementsOf(repo, '2026-10', { text: 'mercadona', payeeId: centro })).toEqual([]);
     expect(await movementsOf(repo, null, { text: 'cena', categoryId: null })).toEqual(['Parte de la cena']);
     expect(await movementsOf(repo, null, { text: 'compra', payeeId: centro, categoryId: supermercado })).toEqual([]);
+  });
+
+  /** The movements plus a Revolut account with a balance adjustment (+123,45 € today) and the top-up as a transfer to it. */
+  async function withRevolut() {
+    const repo = await setup();
+    const { id: revolut } = (await repo.createAccount({ name: 'Revolut', type: 'bank', icon: 'banknote', color: 'cyan' })) as { id: string };
+    await importFile(repo, movements);
+    await repo.updateAccountBalance(revolut, 12345);
+    await repo.updateTransaction(await transactionId(repo, '2026-10', 'Recarga'), { transferAccountId: revolut });
+    const bbva = (await repo.getSettings()).importAccountId!;
+    return { repo, revolut, bbva };
+  }
+
+  it('shows an account’s transactions, a transfer on either side, archived accounts included', async () => {
+    const { repo, revolut, bbva } = await withRevolut();
+
+    // Revolut: the top-up that reached it from BBVA and its adjustment (no bank movement).
+    expect(await movementsOf(repo, '2026-10', { accountId: revolut })).toEqual([null, 'Recarga']);
+    // BBVA: every imported transaction, the top-up that left it included.
+    expect(await movementsOf(repo, null, { accountId: bbva })).toHaveLength(9);
+    expect(await movementsOf(repo, '2026-09', { accountId: revolut })).toEqual([]);
+    // Archiving Revolut keeps its history findable.
+    await repo.setAccountArchived(revolut, true);
+    expect(await movementsOf(repo, null, { accountId: revolut })).toEqual([null, 'Recarga']);
+    expect(await movementsOf(repo, null, { accountId: 'nope' })).toEqual([]);
+  });
+
+  it('shows one type: expenses, income or transfers', async () => {
+    const { repo } = await withRevolut();
+
+    expect(await movementsOf(repo, '2026-10', { type: 'expense' })).toEqual(['Sin categoría 1', 'Compra 2', 'Cena', 'Compra 1']);
+    expect(await movementsOf(repo, '2026-10', { type: 'income' })).toEqual([null, 'Sin categoría 2', 'Parte de la cena', 'Nómina octubre']);
+    expect(await movementsOf(repo, null, { type: 'transfer' })).toEqual(['Recarga']);
+    expect(await movementsOf(repo, '2026-09', { type: 'income' })).toEqual([]);
+  });
+
+  it('combines the category and "sin categoría" with the account and the type: all must hold', async () => {
+    const { repo, revolut, bbva } = await withRevolut();
+    const supermercado = await categoryId(repo, 'Supermercado');
+
+    expect(await movementsOf(repo, '2026-10', { categoryId: null, type: 'income' })).toEqual(['Sin categoría 2', 'Parte de la cena']);
+    expect(await movementsOf(repo, '2026-10', { categoryId: null, type: 'expense', accountId: bbva })).toEqual(['Sin categoría 1']);
+    // Neither the transfer nor the adjustment is "sin categoría".
+    expect(await movementsOf(repo, '2026-10', { categoryId: null, accountId: revolut })).toEqual([]);
+    expect(await movementsOf(repo, null, { categoryId: supermercado, accountId: bbva, type: 'expense' })).toEqual(['Compra 2', 'Compra 1', 'Septiembre']);
+    expect(await movementsOf(repo, null, { categoryId: supermercado, type: 'income' })).toEqual([]);
+    expect(await movementsOf(repo, null, { categoryId: supermercado, accountId: revolut })).toEqual([]);
+  });
+
+  it('combines the search with every filter over all months', async () => {
+    const { repo, revolut, bbva } = await withRevolut();
+
+    expect(await movementsOf(repo, null, { text: 'mercadona', accountId: bbva, type: 'expense' })).toEqual(['Compra 2', 'Compra 1', 'Septiembre']);
+    expect(await movementsOf(repo, null, { text: 'bizum', type: 'income', categoryId: null, accountId: bbva })).toEqual(['Sin categoría 2', 'Parte de la cena']);
+    expect(await movementsOf(repo, null, { text: 'revolut', accountId: revolut, type: 'transfer' })).toEqual(['Recarga']);
+    expect(await movementsOf(repo, null, { text: 'revolut', type: 'expense' })).toEqual([]);
+    expect(await movementsOf(repo, null, { text: 'mercadona', accountId: revolut })).toEqual([]);
+  });
+
+  it('sums up the list: its count and its net, without transfers', async () => {
+    const { repo, revolut } = await withRevolut();
+
+    const october = await repo.listTransactions('2026-10');
+    expect(october).toHaveLength(9);
+    // 1500 − 80,50 − 60 + 20 − 19,50 − 15 + 30 from the bank, plus Revolut's +123,45 adjustment; not the 200 € top-up.
+    expect(listNet(october)).toBe(137500 + 12345);
+    expect(listNet(await repo.listTransactions('2026-10', { type: 'expense' }))).toBe(-17500);
+    expect(listNet(await repo.listTransactions('2026-10', { categoryId: null }))).toBe(3500);
+    // A transfer alone nets nothing, whichever side the filter is on.
+    expect(listNet(await repo.listTransactions(null, { type: 'transfer', accountId: revolut }))).toBe(0);
+    expect(listNet(await repo.listTransactions(null, { accountId: revolut }))).toBe(12345);
+    expect(listNet(await repo.listTransactions(null))).toBe(137500 + 12345 - 4000);
   });
 });

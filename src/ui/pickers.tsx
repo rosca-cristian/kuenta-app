@@ -1,6 +1,6 @@
-import { createElement } from 'react';
+import { createElement, type ReactNode } from 'react';
 import { COLOR_NAMES, ICON_NAMES, IconBadge, colorFor, colorLabel, iconFor, iconLabel } from './icons';
-import type { Category, Id } from '../domain/model';
+import type { Account, Category, Id } from '../domain/model';
 
 /** Picks one icon of the icon set, drawn in the chosen colour. */
 export function IconPicker({ value, color, onChange }: { value: string; color: string; onChange: (icon: string) => void }) {
@@ -88,6 +88,45 @@ export function CategoryGrid({
           );
         })}
       </div>
+    </fieldset>
+  );
+}
+
+/**
+ * Picks an account from a list, in the order given; an archived one says so. `children` follow
+ * the accounts, such as what to do when there are none, or a way back.
+ */
+export function AccountPicker({
+  legend,
+  accounts,
+  value,
+  onPick,
+  children,
+}: {
+  legend: string;
+  accounts: Account[];
+  /** The picked account; undefined picks none (e.g. "Todas las cuentas"). */
+  value?: Id;
+  onPick: (id: Id) => void;
+  children?: ReactNode;
+}) {
+  return (
+    <fieldset className="flex flex-col gap-2">
+      <legend className="mb-2 text-sm text-muted">{legend}</legend>
+      {accounts.map((account) => (
+        <button
+          key={account.id}
+          type="button"
+          onClick={() => onPick(account.id)}
+          aria-pressed={value === account.id}
+          className={`flex min-h-11 items-center gap-3 rounded-xl px-3 py-2 text-left ${value === account.id ? 'bg-accent/20 ring-1 ring-accent' : 'bg-card-2'}`}
+        >
+          <IconBadge icon={account.icon} color={account.color} size={32} />
+          <span className="min-w-0 flex-1 truncate">{account.name}</span>
+          {account.archived && <span className="shrink-0 text-xs text-muted">Archivada</span>}
+        </button>
+      ))}
+      {children}
     </fieldset>
   );
 }

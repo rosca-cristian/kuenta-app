@@ -62,4 +62,17 @@ test('export what Movimientos shows as a CSV for Spanish Excel, disabled for an 
     '02/10/2026;Gasto;BBVA;;Supermercado;"Mercadona; Valencia";;-12,50;"Mercadona; Valencia"',
     '',
   ]);
+
+  // The filters too: only the income of all months.
+  await page.getByRole('button', { name: 'Borrar búsqueda' }).click();
+  await page.getByRole('button', { name: 'Filtros' }).click();
+  await page.getByRole('radio', { name: 'Ingreso' }).check();
+  await page.getByRole('button', { name: 'Aplicar' }).click();
+  await expect(page.locator('main').getByRole('listitem')).toHaveCount(1);
+  const income = await exportCsv(page);
+  expect(income.bytes.subarray(3).toString('utf8').split('\r\n')).toEqual([
+    HEADER,
+    '01/10/2026;Ingreso;BBVA;;Nómina;Abono De Nómina;;1500,00;Abono de nómina',
+    '',
+  ]);
 });

@@ -1,16 +1,18 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import { Check, Search, X } from 'lucide-react';
-import { Amount, Choice, EmptyState, FilterChip, MonthSelector, PageHeader } from '../../ui/components';
+import { Check, Search, SlidersHorizontal, X } from 'lucide-react';
+import { Amount, Button, Choice, EmptyState, FilterChip, MonthSelector, PageHeader } from '../../ui/components';
 import { IconBadge, TransferBadge } from '../../ui/icons';
 import { useRepoQuery } from '../../lib/repo';
 import { formatDayHeader, monthOf, today, type Month } from '../../domain/dates';
 import { formatSignedMoney } from '../../domain/money';
-import { signedAmount } from '../../domain/model';
+import { listNet } from '../../domain/stats';
+import type { TxType } from '../../domain/model';
 import type { TransactionFilter, TransactionView } from '../../data/repository';
 import { EditTransactionSheet } from './EditTransactionSheet';
 import { ExportCsvButton } from './ExportCsvButton';
-import { filterParams, periodParam, textParam, withoutFilter, withPeriod, withText } from './filters';
+import { FiltersSheet } from './FiltersSheet';
+import { filterParams, periodParam, textParam, withFilter, withoutFilter, withPeriod, withText, type FilterField } from './filters';
 
 /** How long typing pauses before the search goes into the URL. */
 const SEARCH_DELAY_MS = 150;
@@ -29,9 +31,9 @@ function subtitle(tx: TransactionView): string {
 }
 
 /**
- * Movimientos: a month's transactions, or all months', newest first, with a search. Its state
- * lives in the URL (see `filters.ts`); Análisis and Inicio open it with a filter there, shown as a
- * removable chip.
+ * Movimientos: a month's transactions, or all months', newest first, with a search and filters,
+ * each shown as a removable chip, and how many match and their net. Its state lives in the URL
+ * (see `filters.ts`), where Análisis and Inicio put a filter too.
  */
 export function Transactions() {
   const [params, setParams] = useSearchParams();
@@ -40,6 +42,7 @@ export function Transactions() {
   const text = textParam(params);
   const filter = filterParams(params);
   const [editing, setEditing] = useState<string | null>(null);
+  const [filtering, setFiltering] = useState(false);
   const transactions = useLatest(
     useRepoQuery((repo) => repo.listTransactions(period, { ...filter, text }), [period, filter, text]),
   );
@@ -71,7 +74,13 @@ export function Transactions() {
         />
       </div>
       {period !== null && <MonthSelector month={period} onChange={(next) => setParams(withPeriod(params, next), { replace: true })} />}
-      {filter && <FilterLabel filter={filter} onRemove={() => setParams(withoutFilter(params), { replace: true })} />}
+      <FilterBar filter={filter} onOpen={() => setFiltering(true)} onRemove={(field) => setParams(withoutFilter(params, field), { replace: true })} />
+      {transactions && transactions.length > 0 && (
+        <p className="px-5 pb-3 text-sm text-muted" data-testid="summary">
+          {transactions.length === 1 ? '1 movimiento' : `${transactions.length} movimientos`} · neto{' '}
+          <span className="tabular-nums">{formatSignedMoney(listNet(transactions))}</span>
+        </p>
+      )}
       {transactions &&
         transactions.length === 0 &&
         (searching ? (
@@ -83,7 +92,7 @@ export function Transactions() {
         ))}
       <div className="flex flex-col gap-4 px-4 pb-4">
         {days.map(([date, txs]) => {
-          const net = txs.reduce((sum, tx) => (tx.type === 'transfer' ? sum : sum + signedAmount(tx, tx.accountId)), 0);
+          const net = listNet(txs);
           return (
             // Off-screen days aren't laid out, so a month of 500 transactions scrolls smoothly.
             <section key={date} style={{ contentVisibility: 'auto', containIntrinsicSize: `auto ${dayHeight(txs.length)}px` }}>
@@ -117,6 +126,15 @@ export function Transactions() {
         })}
       </div>
       <EditTransactionSheet id={editing} onClose={() => setEditing(null)} />
+      <FiltersSheet
+        open={filtering}
+        filter={filter ?? {}}
+        onApply={(next) => {
+          setFiltering(false);
+          setParams(withFilter(params, { ...next, payeeId: filter?.payeeId }), { replace: true });
+        }}
+        onClose={() => setFiltering(false)}
+      />
     </>
   );
 }
@@ -136,7 +154,7 @@ function widenHint(period: Month | null, text: string, filter: TransactionFilter
   const hints: string[] = [];
   if (period !== null) hints.push('busca en «Todos los meses»');
   if (text.trim() !== '') hints.push('prueba con otras palabras');
-  if (filter) hints.push('quita el filtro');
+  if (filter) hints.push(Object.keys(filter).length > 1 ? 'quita algún filtro' : 'quita el filtro');
   const sentence = hints.length > 1 ? `${hints.slice(0, -1).join(', ')} o ${hints[hints.length - 1]}` : hints[0] ?? '';
   return `${sentence.charAt(0).toUpperCase()}${sentence.slice(1)}.`;
 }
@@ -189,22 +207,56 @@ function SearchBox({ value, onChange }: { value: string; onChange: (value: strin
   );
 }
 
-/** The chip describing the URL's filter: the category ("Sin categoría") and the payee it shows. */
-function FilterLabel({ filter, onRemove }: { filter: TransactionFilter; onRemove: () => void }) {
+const TYPE_LABELS: Record<TxType, string> = { expense: 'Gasto', income: 'Ingreso', transfer: 'Transferencia' };
+
+/**
+ * The "Filtros" button and a removable chip for each field of the URL's filter: category ("Sin
+ * categoría"), payee, account and type; with two or more, "Quitar filtros" removes them all.
+ * `onRemove` gets the field to remove, or none for all of them.
+ */
+function FilterBar({
+  filter,
+  onOpen,
+  onRemove,
+}: {
+  filter: TransactionFilter | null;
+  onOpen: () => void;
+  onRemove: (field?: FilterField) => void;
+}) {
   const names = useRepoQuery(async (repo) => {
-    const [categories, payees] = await Promise.all([repo.listCategories(), filter.payeeId === undefined ? [] : repo.listPayees()]);
+    if (!filter) return {};
+    const [accounts, categories, payees] = await Promise.all([
+      filter.accountId === undefined ? [] : repo.listAccounts(),
+      filter.categoryId === undefined ? [] : repo.listCategories({ withArchived: true }),
+      filter.payeeId === undefined ? [] : repo.listPayees(),
+    ]);
     return {
+      account: accounts.find((account) => account.id === filter.accountId)?.name,
       category: categories.find((category) => category.id === filter.categoryId)?.name,
       payee: payees.find((payee) => payee.id === filter.payeeId)?.name,
     };
   }, [filter]);
-  if (!names) return null;
-  const parts: string[] = [];
-  if (filter.categoryId !== undefined) parts.push(filter.categoryId === null ? 'Sin categoría' : names.category ?? 'Categoría borrada');
-  if (filter.payeeId !== undefined) parts.push(names.payee ?? 'Comercio borrado');
+  const chips: [FilterField, string][] = [];
+  if (filter && names) {
+    if (filter.categoryId !== undefined) chips.push(['categoryId', filter.categoryId === null ? 'Sin categoría' : names.category ?? 'Categoría borrada']);
+    if (filter.payeeId !== undefined) chips.push(['payeeId', names.payee ?? 'Comercio borrado']);
+    if (filter.accountId !== undefined) chips.push(['accountId', names.account ?? 'Cuenta borrada']);
+    if (filter.type !== undefined) chips.push(['type', TYPE_LABELS[filter.type]]);
+  }
   return (
-    <div className="flex px-4 pb-3">
-      <FilterChip label={parts.join(' · ')} onRemove={onRemove} />
+    <div className="flex flex-wrap items-center gap-2 px-4 pb-3">
+      <Button variant="secondary" className="flex shrink-0 items-center gap-2 text-sm" onClick={onOpen}>
+        <SlidersHorizontal size={16} aria-hidden />
+        Filtros
+      </Button>
+      {chips.map(([field, label]) => (
+        <FilterChip key={field} label={label} onRemove={() => onRemove(field)} />
+      ))}
+      {chips.length >= 2 && (
+        <Button variant="ghost" className="shrink-0 text-sm" onClick={() => onRemove()}>
+          Quitar filtros
+        </Button>
+      )}
     </div>
   );
 }

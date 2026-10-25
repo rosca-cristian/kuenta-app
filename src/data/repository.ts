@@ -6,7 +6,7 @@ import type { MonthlyEntry, MonthSummary } from '../domain/stats';
 import type { BudgetStatus, BudgetTotals } from '../domain/budgets';
 import type { GoalProgress } from '../domain/goals';
 import type { Subscription, SubscriptionTotals } from '../domain/subscriptions';
-import type { Account, AccountType, Category, CategoryKind, Goal, Id, ImportBatch, Payee, Rule, RuleActions, RuleMatch, Transaction } from '../domain/model';
+import type { Account, AccountType, Category, CategoryKind, Goal, Id, ImportBatch, Payee, Rule, RuleActions, RuleMatch, Transaction, TxType } from '../domain/model';
 import type { ReadError } from '../import/bbva/reader';
 
 export interface AccountView extends Account {
@@ -49,9 +49,9 @@ export interface TransactionView extends Transaction {
 }
 
 /**
- * What Movimientos shows of its period: a search, and the category, the transactions without
- * one, or the payee Análisis and Inicio open it with. Absent fields don't filter; present ones
- * must all hold.
+ * What Movimientos shows of its period: a search, an account, a category or the transactions
+ * without one, a type, and the payee Análisis opens it with. Absent fields don't filter; present
+ * ones must all hold.
  */
 export interface TransactionFilter {
   /**
@@ -59,8 +59,11 @@ export interface TransactionFilter {
    * bank movement. Blank doesn't filter.
    */
   text?: string;
+  /** The transaction's account or, for a transfer, either of its two accounts. */
+  accountId?: Id;
   /** A category's id, or null for "sin categoría": the imported expenses and income without a category. */
   categoryId?: Id | null;
+  type?: TxType;
   payeeId?: Id;
 }
 
@@ -364,8 +367,11 @@ export interface DataRepository {
    * import account.
    */
   deleteAccount(id: Id): Promise<void>;
-  /** Categories in order; pickers show them in this order. */
-  listCategories(): Promise<Category[]>;
+  /**
+   * The non-archived categories in order; pickers show them in this order. With `withArchived`,
+   * the archived ones follow, in order: Movimientos' filter still finds their transactions.
+   */
+  listCategories(options?: { withArchived?: boolean }): Promise<Category[]>;
   /** Places the category after every existing one of its kind. */
   createCategory(draft: CategoryDraft): Promise<CategorySaveResult>;
   updateCategory(id: Id, changes: CategoryChanges): Promise<CategorySaveResult>;

@@ -582,8 +582,10 @@ export function createDexieRepository(options: DexieRepositoryOptions = {}): Dat
       changed();
     },
 
-    async listCategories() {
-      return db.categories.orderBy('order').filter((category) => !category.archived).toArray();
+    async listCategories({ withArchived = false } = {}) {
+      const categories = await db.categories.orderBy('order').toArray();
+      const active = categories.filter((category) => !category.archived);
+      return withArchived ? [...active, ...categories.filter((category) => category.archived)] : active;
     },
 
     async createCategory(draft: CategoryDraft): Promise<CategorySaveResult> {
@@ -794,11 +796,13 @@ export function createDexieRepository(options: DexieRepositoryOptions = {}): Dat
 
     async listTransactions(period, filter: TransactionFilter = {}) {
       const txs = await (period === null ? db.transactions.toArray() : transactionsIn(period));
-      const { categoryId, payeeId } = filter;
+      const { accountId, categoryId, type, payeeId } = filter;
       const text = normalizeText(filter.text ?? '');
       const matching = txs.filter(
         (tx) =>
+          (accountId === undefined || tx.accountId === accountId || tx.toAccountId === accountId) &&
           (categoryId === undefined || (categoryId === null ? isUncategorized(tx) : tx.categoryId === categoryId)) &&
+          (type === undefined || tx.type === type) &&
           (payeeId === undefined || tx.payeeId === payeeId),
       );
       const views = await toViews(matching.sort(newestFirst));

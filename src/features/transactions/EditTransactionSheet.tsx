@@ -1,8 +1,8 @@
 import { useMemo, useState } from 'react';
 import { Sheet } from '../../ui/Sheet';
 import { Amount, Button } from '../../ui/components';
-import { IconBadge, TransferBadge } from '../../ui/icons';
-import { CategoryGrid } from '../../ui/pickers';
+import { TransferBadge } from '../../ui/icons';
+import { AccountPicker, CategoryGrid } from '../../ui/pickers';
 import { useRepo, useRepoQuery } from '../../lib/repo';
 import { formatDate } from '../../domain/dates';
 import { signedAmount, type Category, type Id } from '../../domain/model';
@@ -199,23 +199,11 @@ function TransferAccountPicker({
   onCancel: () => void;
 }) {
   return (
-    <fieldset className="flex flex-col gap-2">
-      <legend className="mb-2 text-sm text-muted">{legend}</legend>
+    <AccountPicker legend={legend} accounts={accounts} onPick={onPick}>
       {accounts.length === 0 && <p className="text-sm text-muted">No tienes otras cuentas. Créalas en Más → Cuentas.</p>}
-      {accounts.map((account) => (
-        <button
-          key={account.id}
-          type="button"
-          onClick={() => onPick(account.id)}
-          className="flex min-h-11 items-center gap-3 rounded-xl bg-card-2 px-3 py-2 text-left"
-        >
-          <IconBadge icon={account.icon} color={account.color} size={32} />
-          <span className="flex-1">{account.name}</span>
-        </button>
-      ))}
       <Button variant="ghost" onClick={onCancel}>
         Cancelar
       </Button>
-    </fieldset>
+    </AccountPicker>
   );
 }
