@@ -8,18 +8,18 @@ const inputClass = 'min-h-11 w-full rounded-xl border border-line bg-card-2 px-3
 
 /**
  * Copias de seguridad's "Exportar movimientos (CSV)": the transactions dated from "Desde" to
- * "Hasta", both included, in Movimientos' CSV format. The range starts as the whole history,
- * the first transaction's date to today. A CSV can't be restored, so it isn't a backup.
+ * "Hasta", both included, in Movimientos' CSV format. The range starts as the whole history:
+ * the first transaction's date to today, or to the newest transaction's date when that's later
+ * (a value date in the future). A CSV can't be restored, so it isn't a backup.
  */
 export function CsvRangeExport() {
   const { platform } = useServices();
-  // Newest first: the last one is the first transaction.
-  const firstDate = useRepoQuery(async (r) => (await r.listTransactions(null)).at(-1)?.date ?? null);
+  const range = useRepoQuery((r) => r.transactionDateRange());
   const [picked, setPicked] = useState<{ from?: IsoDate; to?: IsoDate }>({});
-  const from = picked.from ?? firstDate ?? today();
-  const to = picked.to ?? today();
-  // Until the first date is known, "Desde" isn't its default yet: nothing to count or complain about.
-  const loading = picked.from === undefined && firstDate === undefined;
+  const from = picked.from ?? range?.first ?? today();
+  const to = picked.to ?? (range && range.last > today() ? range.last : today());
+  // Until the range is known, the dates aren't their defaults yet: nothing to count or complain about.
+  const loading = (picked.from === undefined || picked.to === undefined) && range === undefined;
   const valid = from !== '' && to !== '' && from <= to;
   const transactions = useRepoQuery((r) => (valid ? r.listTransactions(null, { from, to }) : Promise.resolve([])), [from, to, valid]);
 

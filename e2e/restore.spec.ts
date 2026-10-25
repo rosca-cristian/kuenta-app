@@ -68,6 +68,11 @@ test('restore a backup over changed data and get the original data back', async 
   await expect(page.getByText('Copia restaurada', { exact: false })).toBeVisible();
   await expect(page.getByTestId('total-balance')).toHaveText(original!);
 
+  // It shows once: reloading the app doesn't bring it back.
+  await page.reload();
+  await expect(page.getByTestId('total-balance')).toHaveText(original!);
+  await expect(page.getByText('Copia restaurada', { exact: false })).toHaveCount(0);
+
   await page.getByRole('link', { name: 'Movimientos' }).click();
   await expect(page.getByText('Mercadona')).toBeVisible();
   await page.getByRole('link', { name: 'Importar' }).click();

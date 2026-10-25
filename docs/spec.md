@@ -42,10 +42,10 @@
 9. **Home**: monthly summary, savings rate, end-of-month forecast and alerts.
 10. **Charts**: spending by category (donut), income vs expenses (bars), net worth over time (line).
 11. **Subscriptions**: the list of the user's subscriptions, derived from imported transactions, with their cost per month and per year.
-11. **Search and filters** on transactions.
-12. **Backups**: full JSON export and restore, CSV export, share via the system menu, backup reminder.
-13. **Privacy mode**: hide amounts.
-14. **PWA**: installable, works offline, persistent storage, share target for `.xlsx` files.
+12. **Search and filters** on transactions.
+13. **Backups**: full JSON export and restore, CSV export, share via the system menu, backup reminder.
+14. **Privacy mode**: hide amounts.
+15. **PWA**: installable, works offline, persistent storage, share target for `.xlsx` files.
 
 ### Removed from the earlier draft
 
@@ -60,7 +60,7 @@ src/
   domain/          Pure logic, no React or Dexie (fully unit-tested)
     money.ts         cents: parse "12,50" → 1250, from bank number -207.33 → -20733, format 1250 → "12,50 €"
     dates.ts         'YYYY-MM-DD' dates with no time zone; months; add days/months
-    balances.ts      balance per account and date, opening balance, net worth
+    balances.ts      net worth over time: every account's balance at each month's end
     chain.ts         bank running-balance chain: ordering within a day, gap detection
     rules.ts         rules engine
     importPlan.ts    turns parsed rows into an import plan (new / already imported, warnings)
@@ -209,7 +209,7 @@ interface ImportBatch {
 
 interface Setting { key: string; value: unknown }
 // keys: importAccountId, starterDataVersion, starterRulesOffer, privacyMode, lastBackupAt, lastChangeAt,
-//       onboardingDone, persistRequested, schemaVersion
+//       onboardingDone, persistRequested
 ```
 
 ### Dexie indexes
@@ -340,14 +340,15 @@ Cuentas · Categorías · Comercios · Reglas · Presupuestos · Objetivos · Co
 
 ### 4.11 Copias de seguridad
 At `#/mas/copias`, listed in Más.
-- "Exportar copia" downloads the JSON backup (§5.13) and "Compartir copia" opens the system menu with it (Drive, email, Telegram…), or downloads it when the browser can't share files. Either counts as a backup once the file is downloaded or shared; closing the share menu doesn't.
-- "Restaurar copia": pick the JSON and a sheet opens with its summary ("Copia del 12/10/2026: 3 cuentas, 845 movimientos, 21 categorías…": accounts, transactions, categories, payees, rules, budgets and goals) and the current data's counts, which will be replaced. "Exportar mis datos actuales antes" downloads a backup of the current data first (it counts as a backup); the destructive "Sustituir todos mis datos" replaces everything in one transaction and lands on Inicio with "Copia restaurada". A file that can't be restored shows why inline in the sheet and changes nothing (§5.13). The first-run screen offers the same restore as "Restaurar una copia" (§4.1).
-- "Exportar movimientos (CSV)": native "Desde" and "Hasta" date inputs, defaulting to the whole history (the first transaction's date to today), and the number of transactions dated in that range, both days included. The button downloads them in Movimientos' CSV format (§5.13) as `kuenta-movimientos-AAAA-MM-DD.csv`. It's disabled, with a message saying why, when the range has no transactions ("No hay movimientos entre esas fechas.") or "Desde" is after "Hasta". A CSV can't be restored, so it doesn't count as a backup: "Última copia" doesn't change.
+- "Exportar copia" downloads the JSON backup (§5.13) and "Compartir copia" opens the system menu with it (Drive, email, Telegram…), or downloads it when the browser can't share files. Either counts as a backup once the file is downloaded or shared; closing the share menu doesn't. If making or handing over the file fails, the screen says so ("No se ha podido exportar la copia." / "No se ha podido compartir la copia.") and "Última copia" doesn't change.
+- "Restaurar copia": pick the JSON and a sheet opens with its summary ("Copia del 12/10/2026: 3 cuentas, 845 movimientos, 21 categorías…": accounts, transactions, categories, payees, rules, budgets and goals) and the current data's counts, which will be replaced. "Exportar mis datos actuales antes" downloads a backup of the current data first (it counts as a backup); the destructive "Sustituir todos mis datos" replaces everything in one transaction and lands on Inicio with "Copia restaurada", shown once: it's gone after tapping it, leaving Inicio or reloading the app. A file that can't be restored shows why inline in the sheet and changes nothing (§5.13); one the browser can't read at all shows "No se ha podido leer el archivo.", and a failed "Exportar mis datos actuales antes" shows "No se han podido exportar tus datos actuales.". The first-run screen offers the same restore as "Restaurar una copia" (§4.1).
+- "Exportar movimientos (CSV)": native "Desde" and "Hasta" date inputs, defaulting to the whole history (the first transaction's date to today, or to the newest transaction's date when it's later, as a value date can be), and the number of transactions dated in that range, both days included. The button downloads them in Movimientos' CSV format (§5.13) as `kuenta-movimientos-AAAA-MM-DD.csv`. It's disabled, with a message saying why, when the range has no transactions ("No hay movimientos entre esas fechas.") or "Desde" is after "Hasta". A CSV can't be restored, so it doesn't count as a backup: "Última copia" doesn't change.
 - "Última copia: 12/10/2026", or "Nunca", the date of the last backup made on this phone.
 
 ### Design (dark only)
 - Near-black background, cards one shade lighter, subtle borders. One accent colour for primary actions. Green for income, amber for *Cerca*, red only for *Superado* and errors.
 - Touch targets at least 44 px; honour `safe-area-inset-*`; tabular figures so amounts line up.
+- No screen scrolls sideways at a phone's width (checked in `e2e/layout.spec.ts`: every route, Análisis' tabs and Más' screens included, with data at 390×844).
 - Short animations (≤ 200 ms), disabled under `prefers-reduced-motion`.
 
 ---
@@ -490,7 +491,7 @@ All checked at a 390×844 viewport. Items marked 🧪 have a unit test.
   - not JSON, or `app` missing or not `"kuenta"` → "El archivo no es una copia de Kuenta.";
   - `format` higher than the app knows → "Esta copia es de una versión más nueva de Kuenta. Actualiza la app para restaurarla.";
   - `format` lower → the format migrations run in order (`format n → n+1`; none yet, format 1 is the first) before validating;
-  - each table against its schema (integer cents, `YYYY-MM-DD` dates, `YYYY-MM` months, enums, required fields), references (transaction account, destination, category, payee and import; rule category and transfer account; budget limit category; goal account; an import's account; the `importAccountId` setting, which must be present) and uniqueness (ids per table, `importHash`, payee `normalized`, setting keys) → "La copia está dañada: …" naming the table and the field or reference.
+  - each table against its schema (integer cents, `YYYY-MM-DD` dates, `YYYY-MM` months, enums, required fields), references (transaction account, destination, category, payee and import; rule category and transfer account; budget limit category; goal account; an import's account; the `importAccountId` setting, which must be present) and uniqueness (ids per table, `importHash`, payee `normalized`, setting keys) → "La copia está dañada: …" naming the table, the row (counted among the file's rows, settings Kuenta doesn't restore included) and the field in Spanish ("hay datos no válidos en movimientos (fila 2, campo «importe»)"), or the reference.
 - 🧪 A backup from an older format version is migrated on restore; one from a newer version is rejected with a message.
 - 🧪 Restore replaces all data in one transaction: every table is cleared and gets the backup's rows. Settings the backup carries other than the data settings are ignored; this device's own settings (any that isn't a data setting, such as `persistRequested`) stay, `onboardingDone` is always true afterwards, and `lastBackupAt` and `lastChangeAt` become the backup's `exportedAt`, so the reminder stays quiet until the next change. Every screen refreshes.
 - 🧪 **CSV**: UTF-8 with BOM, `;` separator, CRLF line endings and columns `Fecha;Tipo;Cuenta;Cuenta destino;Categoría;Comercio;Nota;Importe;Concepto banco`. Opens correctly in Spanish Excel with a double click.
@@ -504,7 +505,7 @@ All checked at a 390×844 viewport. Items marked 🧪 have a unit test.
 - File names: `kuenta-copia-AAAA-MM-DD.json` and `kuenta-movimientos-AAAA-MM-DD.csv`.
 - "Compartir copia" opens the system menu with the JSON file. Chrome doesn't share JSON files, so there it goes as the same text with a `.txt` name (`kuenta-copia-AAAA-MM-DD.txt`), which "Restaurar copia" accepts too. If the browser can't share files at all, it downloads it. A download or a share sets `lastBackupAt`; a cancelled share doesn't.
 - 🧪 **Reminder**: Inicio shows "Haz una copia de seguridad", which opens Copias de seguridad, when `lastChangeAt` exists and is later than `lastBackupAt`, and `lastBackupAt` is null or more than 7 days before now. It disappears after exporting or sharing, and doesn't come back while the data hasn't changed, however old the last backup.
-  - Every write that changes the user's data records `lastChangeAt` = now: imports and undoing them, transaction edits, rules and applying them, categories, payees, accounts and balance updates, budgets, goals. Settings bookkeeping doesn't (`persistRequested`, `lastBackupAt`, dismissing the starter-rules offer), nor does onboarding's starter data, so a fresh install with no data isn't reminded.
+  - Every write that changes the user's data records `lastChangeAt` = now: imports and undoing them, transaction edits, rules and applying them, categories, payees, accounts and balance updates, budgets, goals. Settings bookkeeping doesn't (`persistRequested`, `privacyMode`, `lastBackupAt`, dismissing the starter-rules offer), nor does onboarding's starter data, so a fresh install with no data isn't reminded. Nor does a write that changes nothing: moving the first category or rule up or the last one down, saving an edit with what's already there (which doesn't mark the transaction as edited either), archiving an account or goal that already is.
   - Installs from before the reminder have no `lastChangeAt`: they start counting from their next change, so updating the app alone never shows it.
 
 ### 5.14 PWA and storage

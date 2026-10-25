@@ -18,15 +18,17 @@ export function Backups() {
   const { platform } = useServices();
   const status = useRepoQuery((r) => r.backupStatus());
   const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   async function backupFile() {
     const backup = await repo.exportBackup();
     return new File([backupJson(backup)], backupFileName(today(new Date(backup.exportedAt))), { type: 'application/json' });
   }
 
-  /** Makes the backup and hands it to `deliver`, which says whether it reached the user. */
+  /** Makes the backup and hands it to `deliver`, which says whether it reached the user. Throws when either fails. */
   async function run(deliver: (file: File) => Promise<boolean>) {
     setBusy(true);
+    setError(null);
     try {
       if (await deliver(await backupFile())) await repo.markBackupMade();
     } finally {
@@ -41,6 +43,15 @@ export function Backups() {
     });
   const shareCopy = () => run(async (file) => (await platform.shareFile(file)) !== 'cancelled');
 
+  /** Runs a button's action, saying so when it fails: a backup that wasn't made must never look made. */
+  async function attempt(action: () => Promise<void>, failure: string) {
+    try {
+      await action();
+    } catch {
+      setError(failure);
+    }
+  }
+
   return (
     <>
       <PageHeader title="Copias de seguridad" back="/mas" />
@@ -54,14 +65,19 @@ export function Backups() {
             Última copia: {status === undefined ? '…' : status.lastBackupAt ? formatDate(today(new Date(status.lastBackupAt))) : 'Nunca'}
           </p>
           <div className="mt-4 flex flex-col gap-2">
-            <Button disabled={busy} onClick={() => void exportCopy()}>
+            <Button disabled={busy} onClick={() => void attempt(exportCopy, 'No se ha podido exportar la copia.')}>
               Exportar copia
             </Button>
-            <Button variant="secondary" disabled={busy} onClick={() => void shareCopy()}>
+            <Button variant="secondary" disabled={busy} onClick={() => void attempt(shareCopy, 'No se ha podido compartir la copia.')}>
               Compartir copia
             </Button>
             <RestoreBackup disabled={busy} exportCurrent={exportCopy} />
           </div>
+          {error && (
+            <p role="alert" className="mt-3 text-sm text-danger">
+              {error}
+            </p>
+          )}
         </Card>
         <CsvRangeExport />
       </div>

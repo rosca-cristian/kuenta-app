@@ -1,10 +1,10 @@
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { Alert, Button } from '../../ui/components';
 import { Sheet } from '../../ui/Sheet';
 import { useRepo, useRepoQuery } from '../../lib/repo';
 import { formatDate, today } from '../../domain/dates';
-import type { BackupCounts, BackupDamage, BackupError, BackupReadResult, BackupTable } from '../../domain/backup';
+import { backupFieldName, type BackupCounts, type BackupDamage, type BackupError, type BackupReadResult, type BackupTable } from '../../domain/backup';
 
 /** Each table's rows in "La copia está dañada: …": one, with its article, and the table's name. */
 const TABLE_NAMES: Record<BackupTable, [string, string]> = {
@@ -19,19 +19,19 @@ const TABLE_NAMES: Record<BackupTable, [string, string]> = {
   settings: ['un ajuste', 'ajustes'],
 };
 
-/** What's wrong with a damaged backup, in Spanish, naming the table and the field or reference. */
+/** What's wrong with a damaged backup, in Spanish, naming the table and the field (by its Spanish name) or reference. */
 function damageText(damage: BackupDamage): string {
   switch (damage.kind) {
     case 'invalid': {
-      if (damage.table === null) return `el campo «${damage.field ?? 'data'}» no es válido`;
-      const where = [damage.row === null ? null : `fila ${damage.row + 1}`, damage.field === null ? null : `campo «${damage.field}»`];
+      if (damage.table === null) return `el campo «${backupFieldName(damage.field ?? 'data')}» no es válido`;
+      const where = [damage.row === null ? null : `fila ${damage.row + 1}`, damage.field === null ? null : `campo «${backupFieldName(damage.field)}»`];
       const detail = where.filter((part) => part !== null).join(', ');
       return `hay datos no válidos en ${TABLE_NAMES[damage.table][1]}${detail ? ` (${detail})` : ''}`;
     }
     case 'duplicate':
-      return `hay filas repetidas en ${TABLE_NAMES[damage.table][1]} (campo «${damage.field}»)`;
+      return `hay filas repetidas en ${TABLE_NAMES[damage.table][1]} (campo «${backupFieldName(damage.field)}»)`;
     case 'reference':
-      return `${TABLE_NAMES[damage.table][0]} apunta a ${TABLE_NAMES[damage.target][0]} que no está en la copia (campo «${damage.field}»)`;
+      return `${TABLE_NAMES[damage.table][0]} apunta a ${TABLE_NAMES[damage.target][0]} que no está en la copia (campo «${backupFieldName(damage.field)}»)`;
   }
 }
 
@@ -94,29 +94,39 @@ export function RestoreBackup({
   const repo = useRepo();
   const navigate = useNavigate();
   const input = useRef<HTMLInputElement>(null);
-  const [read, setRead] = useState<BackupReadResult | null>(null);
+  /** The picked file read as a backup, or 'unreadable' when its text couldn't be read at all. */
+  const [read, setRead] = useState<BackupReadResult | 'unreadable' | null>(null);
   const [busy, setBusy] = useState(false);
-  const [exported, setExported] = useState(false);
+  const [exported, setExported] = useState<'done' | 'failed' | null>(null);
   const [failed, setFailed] = useState(false);
 
   async function pick(file: File) {
-    setExported(false);
+    setExported(null);
     setFailed(false);
-    setRead(repo.readBackup(await file.text()));
+    let text: string;
+    try {
+      text = await file.text();
+    } catch {
+      setRead('unreadable');
+      return;
+    }
+    setRead(repo.readBackup(text));
   }
 
   async function exportFirst() {
     setBusy(true);
     try {
       await exportCurrent!();
-      setExported(true);
+      setExported('done');
+    } catch {
+      setExported('failed');
     } finally {
       setBusy(false);
     }
   }
 
   async function restore() {
-    if (!read?.ok) return;
+    if (read === null || read === 'unreadable' || !read.ok) return;
     setBusy(true);
     try {
       await beforeRestore?.();
@@ -148,10 +158,10 @@ export function RestoreBackup({
         {label}
       </Button>
       <Sheet open={read !== null} onClose={() => !busy && setRead(null)} title="Restaurar copia">
-        {read && !read.ok && (
+        {read !== null && (read === 'unreadable' || !read.ok) && (
           <div className="flex flex-col gap-4">
             <p role="alert" className="rounded-xl border border-danger/40 bg-danger/10 px-4 py-3 text-sm">
-              {backupErrorText(read.error)}
+              {read === 'unreadable' ? 'No se ha podido leer el archivo.' : backupErrorText(read.error)}
             </p>
             <p className="text-sm text-muted">Tus datos no han cambiado.</p>
             <Button variant="secondary" onClick={() => input.current?.click()}>
@@ -159,7 +169,7 @@ export function RestoreBackup({
             </Button>
           </div>
         )}
-        {read?.ok && (
+        {read !== null && read !== 'unreadable' && read.ok && (
           <RestoreSummary
             read={read}
             busy={busy}
@@ -184,7 +194,7 @@ function RestoreSummary({
 }: {
   read: Extract<BackupReadResult, { ok: true }>;
   busy: boolean;
-  exported: boolean;
+  exported: 'done' | 'failed' | null;
   failed: boolean;
   onExport?: () => void;
   onRestore: () => void;
@@ -205,9 +215,14 @@ function RestoreSummary({
           <Button variant="secondary" disabled={busy} onClick={onExport}>
             Exportar mis datos actuales antes
           </Button>
-          {exported && (
+          {exported === 'done' && (
             <p role="status" className="text-sm text-income">
               Datos actuales exportados.
+            </p>
+          )}
+          {exported === 'failed' && (
+            <p role="alert" className="text-sm text-danger">
+              No se han podido exportar tus datos actuales.
             </p>
           )}
         </>
@@ -224,13 +239,23 @@ function RestoreSummary({
   );
 }
 
-/** Inicio's "Copia restaurada", shown once after a restore until tapped. */
+/**
+ * Inicio's "Copia restaurada", shown once after a restore until tapped. The route state that
+ * asks for it is cleared as soon as it shows: the history keeps it across reloads, which would
+ * bring it back.
+ */
 export function RestoredAlert() {
   const location = useLocation();
   const navigate = useNavigate();
-  if ((location.state as typeof RESTORED_STATE | null)?.restored !== true) return null;
+  const restored = (location.state as typeof RESTORED_STATE | null)?.restored === true;
+  const [shown, setShown] = useState(restored);
+  if (restored && !shown) setShown(true);
+  useEffect(() => {
+    if (restored) navigate('.', { replace: true, state: null });
+  }, [restored, navigate]);
+  if (!shown) return null;
   return (
-    <Alert onClick={() => navigate('.', { replace: true, state: null })}>
+    <Alert onClick={() => setShown(false)}>
       <span role="status">Copia restaurada. Tus datos son los de la copia.</span>
     </Alert>
   );

@@ -103,6 +103,84 @@ export type BackupDamage =
   | { kind: 'reference'; table: BackupTable; field: string; target: BackupTable };
 
 /**
+ * Each field of the file and its tables in Spanish, for "La copia está dañada: …". Nested
+ * fields go by their path (`match.value`); the same name means the same in every table.
+ */
+const FIELD_NAMES: Record<string, string> = {
+  // The file's own fields.
+  app: 'app',
+  format: 'formato',
+  exportedAt: 'fecha de la copia',
+  appVersion: 'versión de la app',
+  data: 'datos',
+  // Shared by several tables.
+  id: 'identificador',
+  name: 'nombre',
+  type: 'tipo',
+  kind: 'tipo',
+  color: 'color',
+  icon: 'icono',
+  archived: 'archivado',
+  order: 'orden',
+  createdAt: 'fecha de creación',
+  updatedAt: 'fecha de modificación',
+  amount: 'importe',
+  date: 'fecha',
+  accountId: 'cuenta',
+  categoryId: 'categoría',
+  // Accounts and payees.
+  openingBalance: 'saldo inicial',
+  normalized: 'nombre normalizado',
+  // Transactions.
+  toAccountId: 'cuenta destino',
+  payeeId: 'comercio',
+  note: 'nota',
+  source: 'origen',
+  importBatchId: 'importación',
+  importHash: 'huella de importación',
+  bookingDate: 'fecha contable',
+  bankConcept: 'concepto del banco',
+  bankMovement: 'movimiento del banco',
+  bankBalance: 'saldo del banco',
+  editedAt: 'fecha de edición',
+  // Rules.
+  enabled: 'activa',
+  match: 'condición',
+  'match.field': 'campo de la condición',
+  'match.op': 'comparación de la condición',
+  'match.value': 'texto de la condición',
+  'match.direction': 'sentido de la condición',
+  actions: 'acciones',
+  'actions.categoryId': 'categoría',
+  'actions.transferAccountId': 'cuenta de la transferencia',
+  'actions.payeeName': 'nombre del comercio',
+  // Budget limits and goals.
+  fromMonth: 'mes de inicio',
+  target: 'importe objetivo',
+  targetMonth: 'mes objetivo',
+  // Imports.
+  importedAt: 'fecha de importación',
+  fileName: 'nombre del archivo',
+  dateFrom: 'fecha inicial',
+  dateTo: 'fecha final',
+  rows: 'filas',
+  created: 'creados',
+  skipped: 'omitidos',
+  appBalance: 'saldo en Kuenta',
+  undone: 'deshecha',
+  // Settings.
+  key: 'clave',
+  value: 'valor',
+  importAccountId: 'cuenta de importación',
+  starterDataVersion: 'versión de los datos iniciales',
+  starterRulesOffer: 'oferta de reglas iniciales',
+  onboardingDone: 'primer uso completado',
+};
+
+/** A damaged field's name in Spanish (`amount` → "importe"); as it is in the file when Kuenta doesn't know it. */
+export const backupFieldName = (field: string) => FIELD_NAMES[field] ?? field;
+
+/**
  * Why a file can't be restored: it isn't a Kuenta backup (not JSON, or `app` isn't `kuenta`),
  * a newer Kuenta made it, or it's damaged.
  */
@@ -242,14 +320,33 @@ const backupSchema = z.object({
 
 const TABLES: readonly BackupTable[] = ['accounts', 'categories', 'payees', 'transactions', 'rules', 'budgetLimits', 'goals', 'importBatches', 'settings'];
 
-/** The first issue zod found, as the table, row and field it's in. */
-function invalidAt(path: readonly PropertyKey[]): BackupDamage {
+/**
+ * The first issue zod found in the file, as the table, row and field it's in. Rows count the
+ * file's rows: the settings Kuenta doesn't restore are dropped before the data settings are
+ * checked, so an issue there is counted back to the file's row.
+ */
+function invalidAt(path: readonly PropertyKey[], file: Record<string, unknown>): BackupDamage {
   if (path[0] !== 'data' || !TABLES.includes(path[1] as BackupTable)) {
     return { kind: 'invalid', table: null, row: null, field: path.length > 0 ? path.map(String).join('.') : null };
   }
-  const row = typeof path[2] === 'number' ? path[2] : null;
+  const table = path[1] as BackupTable;
+  let row = typeof path[2] === 'number' ? path[2] : null;
+  if (table === 'settings' && row !== null) row = fileSettingRow(file, row);
   const field = path.length > 3 ? path.slice(3).map(String).join('.') : null;
-  return { kind: 'invalid', table: path[1] as BackupTable, row, field };
+  return { kind: 'invalid', table, row, field };
+}
+
+/**
+ * The file's row of the data setting at `index` among the data settings, when they were
+ * checked: only once every row is a key and a value. Otherwise `index` is already the file's.
+ */
+function fileSettingRow(file: Record<string, unknown>, index: number): number {
+  const rows = (file.data as { settings?: unknown } | undefined)?.settings;
+  if (!Array.isArray(rows)) return index;
+  const keyed = rows.every((row) => typeof row === 'object' && row !== null && typeof (row as { key?: unknown }).key === 'string');
+  if (!keyed) return index;
+  const dataRows = rows.flatMap((row: { key: string }, i) => (BACKUP_SETTINGS.includes(row.key) ? [i] : []));
+  return dataRows[index] ?? index;
 }
 
 /**
@@ -333,7 +430,7 @@ export function readBackup(text: string): BackupReadResult {
   for (const migrate of MIGRATIONS.slice(format - 1)) file = migrate(file);
 
   const parsed = backupSchema.safeParse(file);
-  if (!parsed.success) return { ok: false, error: { reason: 'damaged', damage: invalidAt(parsed.error.issues[0].path) } };
+  if (!parsed.success) return { ok: false, error: { reason: 'damaged', damage: invalidAt(parsed.error.issues[0].path, file) } };
   const backup = parsed.data as BackupFile;
   const damage = damageIn(backup.data);
   if (damage) return { ok: false, error: { reason: 'damaged', damage } };

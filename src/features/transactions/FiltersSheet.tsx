@@ -11,8 +11,8 @@ export type SheetFilter = Pick<TransactionFilter, 'accountId' | 'categoryId' | '
 
 const TYPE_OPTIONS: Record<TxType | 'all', string> = { all: 'Todos', ...TX_TYPE_NAMES };
 
-/** Archived ones after the active ones, each in their own order. */
-const activeFirst = <T extends Account | Category>(items: T[]) => [...items.filter((item) => !item.archived), ...items.filter((item) => item.archived)];
+/** Archived accounts after the active ones, each in their own order. Categories already come that way. */
+const activeFirst = (accounts: Account[]) => [...accounts.filter((account) => !account.archived), ...accounts.filter((account) => account.archived)];
 
 /**
  * Movimientos' "Filtros": account, category ("Sin categoría" included) and type, starting from
@@ -43,7 +43,7 @@ export function FiltersSheet({
   return (
     <Sheet open={open} onClose={onClose} title="Filtros">
       {accounts && categories && (
-        <FiltersForm key={opened} filter={filter} accounts={activeFirst(accounts)} categories={activeFirst(categories)} onApply={onApply} />
+        <FiltersForm key={opened} filter={filter} accounts={activeFirst(accounts)} categories={categories} onApply={onApply} />
       )}
     </Sheet>
   );

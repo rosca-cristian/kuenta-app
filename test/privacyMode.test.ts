@@ -47,7 +47,7 @@ describe('privacy mode', () => {
 
   it("isn't in a backup, and a restore keeps this phone's", async () => {
     const source = await setup();
-    await richData(source.repo);
+    await richData(source.repo, source.db);
     await source.repo.setPrivacyMode(true);
     const backup = await source.repo.exportBackup();
     expect(backup.data.settings.map((setting) => setting.key)).not.toContain('privacyMode');

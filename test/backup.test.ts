@@ -3,7 +3,7 @@ import { createDexieRepository } from '../src/data/dexie/dexieRepository';
 import { KuentaDb } from '../src/data/dexie/db';
 import type { DataRepository } from '../src/data/repository';
 import { backupJson } from '../src/domain/backup';
-import { bbvaXlsx, type SampleMovement } from './support/bbvaXlsx';
+import { importFile, richData, transactionId } from './support/backupData';
 
 let dbCount = 0;
 
@@ -16,59 +16,10 @@ async function setup() {
   return { repo, clock, db: new KuentaDb(name) };
 }
 
-async function importFile(repo: DataRepository, movements: SampleMovement[], startBalance: number) {
-  const result = await repo.previewImport(await bbvaXlsx(movements, { startBalance }), 'movimientos.xlsx');
-  if (!result.ok) throw new Error(result.error.message);
-  return repo.commitImport(result.preview);
-}
-
-async function transactionId(repo: DataRepository, concept: string) {
-  const tx = (await repo.listTransactions(null)).find((t) => t.bankConcept === concept);
-  if (!tx) throw new Error(`No transaction ${concept}`);
-  return tx.id;
-}
-
-/**
- * Data touching every table: an import with categorizations, a note and a renamed payee; a
- * rule applied to it; a transfer to a non-imported account and a balance adjustment there; a
- * budget with two limits; a goal; and a second import, undone.
- */
-async function richData(repo: DataRepository) {
-  await importFile(
-    repo,
-    [
-      { valor: '01/10/2026', concepto: 'Abono de nómina', movimiento: 'Empresa ejemplo', importe: 1500 },
-      { valor: '02/10/2026', concepto: 'Mercadona - crta del inge', movimiento: 'Pago con tarjeta', importe: -50 },
-      { valor: '03/10/2026', concepto: 'Panaderia Pepe', movimiento: 'Pago con tarjeta', importe: -3.2 },
-      { valor: '05/10/2026', concepto: 'Revolut**5625*', movimiento: 'Pago con tarjeta', importe: -200 },
-    ],
-    1000,
-  );
-  const categories = await repo.listCategories();
-  const groceries = categories.find((c) => c.name === 'Supermercado')!.id;
-  const { id: revolutId } = (await repo.createAccount({ name: 'Revolut', type: 'bank', icon: 'banknote', color: 'cyan' })) as { id: string };
-
-  const mercadona = await transactionId(repo, 'Mercadona - crta del inge');
-  await repo.updateTransaction(mercadona, { categoryId: groceries, payeeName: 'Mercadona', note: 'compra semanal' });
-  const payee = (await repo.listPayees()).find((p) => p.name === 'Mercadona')!;
-  await repo.renamePayee(payee.id, 'Mercadona SA');
-  await repo.createRule({ name: 'Pan', match: { value: 'panaderia' }, actions: { categoryId: groceries, payeeName: 'Panadería Pepe' } });
-  await repo.applyRules();
-  await repo.updateTransaction(await transactionId(repo, 'Revolut**5625*'), { transferAccountId: revolutId });
-  // Revolut got 200 €; it really has 180 €: an adjustment of −20 € today.
-  await repo.updateAccountBalance(revolutId, 18000);
-  await repo.setBudgetLimit(groceries, 30000, '2026-09');
-  await repo.setBudgetLimit(groceries, 25000, '2026-10');
-  await repo.createGoal({ name: 'Viaje', target: 100000, targetMonth: '2027-06', accountId: revolutId, icon: 'plane', color: 'cyan' });
-
-  const second = await importFile(repo, [{ valor: '10/10/2026', concepto: 'Gasolinera', movimiento: 'Pago con tarjeta', importe: -40 }], 2246.8);
-  await repo.undoImport(second.batch.id);
-}
-
 describe('exporting a backup', () => {
   it('has every table as stored, field for field, stamped with the clock and the version', async () => {
     const { repo, db } = await setup();
-    await richData(repo);
+    await richData(repo, db);
 
     const backup = await repo.exportBackup();
     expect(backup).toMatchObject({ app: 'kuenta', format: 1, exportedAt: new Date('2026-10-20T10:00:00').toISOString(), appVersion: '1.2.3' });
@@ -82,7 +33,8 @@ describe('exporting a backup', () => {
     expect(backup.data.importBatches).toEqual(await db.importBatches.toArray());
 
     // What the data holds, to be sure the rich data really reached every table.
-    expect(backup.data.accounts.map((a) => a.name).sort()).toEqual(['BBVA', 'Revolut']);
+    expect(backup.data.accounts.map((a) => `${a.name}:${a.archived}`).sort()).toEqual(['BBVA:false', 'Hucha:true', 'Revolut:false']);
+    expect(backup.data.categories.find((c) => c.name === 'Antigua')!.archived).toBe(true);
     expect(backup.data.payees.map((p) => p.name)).toContain('Mercadona SA');
     const types = backup.data.transactions.map((tx) => `${tx.source}:${tx.type}:${tx.amount}:${tx.editedAt === null ? 'rules' : 'edited'}`);
     expect(types.sort()).toEqual([
@@ -94,14 +46,21 @@ describe('exporting a backup', () => {
     ]);
     expect(backup.data.transactions.find((tx) => tx.bankConcept === 'Mercadona - crta del inge')!.note).toBe('compra semanal');
     expect(backup.data.rules.some((rule) => rule.name === 'Pan')).toBe(true);
+    const hucha = backup.data.accounts.find((a) => a.name === 'Hucha')!.id;
+    expect(backup.data.rules.find((rule) => rule.name === 'A la hucha')).toMatchObject({ enabled: true, actions: { transferAccountId: hucha } });
+    expect(backup.data.rules.find((rule) => rule.name === 'Veterinario')).toMatchObject({ enabled: false, actions: {} });
     expect(backup.data.budgetLimits.map((limit) => [limit.fromMonth, limit.amount]).sort()).toEqual([['2026-09', 30000], ['2026-10', 25000]]);
-    expect(backup.data.goals.map((goal) => goal.name)).toEqual(['Viaje']);
+    expect(backup.data.goals.map((goal) => `${goal.name}:${goal.archived}:${goal.targetMonth}`).sort()).toEqual([
+      'Coche:true:2026-09',
+      'Colchón:false:null',
+      'Viaje:false:2027-06',
+    ]);
     expect(backup.data.importBatches.map((batch) => batch.undone).sort()).toEqual([false, true]);
   });
 
   it("keeps the data settings and leaves out the device's", async () => {
     const { repo, db } = await setup();
-    await richData(repo);
+    await richData(repo, db);
     await repo.setPersistRequested();
     await repo.markBackupMade();
     await db.settings.bulkPut([
@@ -120,8 +79,8 @@ describe('exporting a backup', () => {
   });
 
   it('writes plain JSON with 2-space indentation that reads back as the same backup', async () => {
-    const { repo } = await setup();
-    await richData(repo);
+    const { repo, db } = await setup();
+    await richData(repo, db);
     const backup = await repo.exportBackup();
 
     const json = backupJson(backup);
@@ -233,8 +192,16 @@ describe('the backup reminder', () => {
     await records(async () => (batchId = (await importFile(repo, october, 1000)).batch.id));
     await records(() => repo.undoImport(batchId));
     await records(() => importFile(repo, [...october, { valor: '03/10/2026', concepto: 'Panaderia Pepe', movimiento: 'Pago con tarjeta', importe: -3.2 }], 1000));
+    // A file that doesn't chain with the last one: the import account needs an adjustment.
+    await records(() => importFile(repo, [{ valor: '15/10/2026', concepto: 'Gasolinera', movimiento: 'Pago con tarjeta', importe: -40 }], 500));
+    await records(() => repo.createBalanceAdjustment());
     const mercadona = await transactionId(repo, 'Mercadona');
     await records(() => repo.updateTransaction(mercadona, { note: 'compra' }));
+
+    // What an update leaves when its new starter rules would categorize what's already imported.
+    await db.transactions.filter((tx) => tx.bankConcept === 'Gasolinera').modify({ categoryId: null });
+    await db.settings.put({ key: 'starterRulesOffer', value: 'pending' });
+    await records(async () => expect(await repo.acceptStarterRulesOffer()).toBe(1));
 
     let categoryId = '';
     await records(async () => (categoryId = ((await repo.createCategory({ name: 'Mascotas', kind: 'expense', icon: 'dog', color: 'amber' })) as { id: string }).id));
@@ -269,5 +236,51 @@ describe('the backup reminder', () => {
     await records(() => repo.deleteGoal(goalId));
     await records(() => repo.setAccountArchived(accountId, true));
     await records(() => repo.deleteAccount(accountId));
+  });
+
+  it("doesn't count writes that change nothing", async () => {
+    const { repo, clock, db } = await setup();
+    await importFile(repo, october, 1000);
+    const { id: accountId } = (await repo.createAccount({ name: 'Revolut', type: 'bank', icon: 'banknote', color: 'cyan' })) as { id: string };
+    const { id: goalId } = (await repo.createGoal({ name: 'Viaje', target: 100000, accountId, icon: 'plane', color: 'cyan' })) as { id: string };
+    const ruleId = await repo.createRule({ name: 'Pan', match: { value: 'panaderia' }, actions: { payeeName: 'Panadería' } });
+    const lastChangeAt = (await db.settings.get('lastChangeAt'))!.value;
+    clock.now = new Date('2026-10-20T12:00:00');
+
+    let notified = 0;
+    repo.subscribe(() => notified++);
+    const expenses = (await repo.listCategories()).filter((c) => c.kind === 'expense');
+    const rules = await repo.listRules();
+    // The first one can't go up, nor the last one down.
+    await repo.moveCategory(expenses[0].id, 'up');
+    await repo.moveCategory(expenses.at(-1)!.id, 'down');
+    await repo.moveRule(rules[0].id, 'up');
+    await repo.moveRule(rules.at(-1)!.id, 'down');
+    // Saving an edit sheet as it opened.
+    const tx = (await repo.getTransaction(await transactionId(repo, 'Mercadona')))!;
+    await repo.updateTransaction(tx.id, { categoryId: tx.categoryId, payeeName: tx.payee?.name ?? '', note: tx.note });
+    await repo.updateTransaction(tx.id, {});
+    await repo.updateAccount(accountId, { name: 'Revolut', color: 'cyan' });
+    await repo.setAccountArchived(accountId, false);
+    await repo.updateCategory(expenses[0].id, { name: expenses[0].name });
+    await repo.updateRule(ruleId, { name: 'Pan', match: { value: 'panaderia' } });
+    const payee = (await repo.listPayees())[0];
+    await repo.renamePayee(payee.id, payee.name);
+    await repo.updateGoal(goalId, { name: 'Viaje', target: 100000, targetMonth: null });
+    await repo.setGoalArchived(goalId, false);
+
+    expect(notified).toBe(0);
+    expect((await db.settings.get('lastChangeAt'))!.value).toBe(lastChangeAt);
+    // Still as the rules left it: applying them later can change it.
+    expect((await repo.getTransaction(tx.id))!.editedAt).toBeNull();
+    expect((await repo.listCategories()).filter((c) => c.kind === 'expense').map((c) => c.id)).toEqual(expenses.map((c) => c.id));
+    expect((await repo.listRules()).map((rule) => rule.id)).toEqual(rules.map((rule) => rule.id));
+
+    // Archiving twice counts once.
+    await repo.setAccountArchived(accountId, true);
+    const archivedAt = (await db.settings.get('lastChangeAt'))!.value;
+    clock.now = new Date('2026-10-20T13:00:00');
+    await repo.setAccountArchived(accountId, true);
+    expect((await db.settings.get('lastChangeAt'))!.value).toBe(archivedAt);
   });
 });

@@ -106,3 +106,28 @@ test('Inicio reminds to make a backup after an import, until one is exported', a
   await expect(page.getByTestId('total-balance')).toBeVisible();
   await expect(reminder).toHaveCount(0);
 });
+
+test('a backup that fails to download or share, or a file that cannot be read, says so', async ({ page }) => {
+  await page.clock.setFixedTime(new Date('2026-10-20T12:00:00'));
+  await openBackups(page);
+  // The browser refuses to make the download, and to read files.
+  await page.evaluate(() => {
+    URL.createObjectURL = () => {
+      throw new Error('No downloads');
+    };
+    File.prototype.text = () => Promise.reject(new Error('Unreadable'));
+  });
+
+  await page.getByRole('button', { name: 'Exportar copia' }).click();
+  await expect(page.getByRole('alert')).toHaveText('No se ha podido exportar la copia.');
+  await page.getByRole('button', { name: 'Compartir copia' }).click();
+  await expect(page.getByRole('alert')).toHaveText('No se ha podido compartir la copia.');
+  // Neither reached the user: no backup was made.
+  await expect(page.getByTestId('last-backup')).toHaveText('Última copia: Nunca');
+
+  await page.getByTestId('backup-input').setInputFiles({ name: 'copia.json', mimeType: 'application/json', buffer: Buffer.from('{}') });
+  const sheet = page.getByRole('dialog', { name: 'Restaurar copia' });
+  await expect(sheet.getByRole('alert')).toHaveText('No se ha podido leer el archivo.');
+  await expect(sheet.getByRole('button', { name: 'Sustituir todos mis datos' })).toHaveCount(0);
+  await expectNoHorizontalScroll(page);
+});
