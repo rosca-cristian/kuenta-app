@@ -506,11 +506,11 @@ All checked at a 390×844 viewport. Items marked 🧪 have a unit test.
 
 ### 5.14 PWA and storage
 - The app installs from Chrome on Android with the "Kuenta" icon and name and opens full screen.
-- After the first visit it works offline: open, import, browse, see charts and export.
+- After the first visit it works offline: open, import, browse, see charts and export (checked in `e2e/offline.spec.ts`: once the service worker controls the page, the browser goes offline, reloads, and runs first run, a BBVA import, Movimientos, every Análisis tab and the backup and CSV exports).
 - On first run `navigator.storage.persist()` is called and Ajustes shows whether it was granted.
 - When a new version is available, "Hay una versión nueva · Actualizar" is shown, without reloading behind the user's back.
 - 🧪 Dexie schema migrations keep the data (tested with data from the previous version).
-- The app makes no requests to third-party domains (checked in the Playwright test).
+- The app makes no requests to third-party domains (checked in `e2e/third-party-requests.spec.ts`: every request of the pages and the service worker during first run, import, Inicio, Movimientos, every Análisis tab, every Más screen and Copias de seguridad's exports has the app's own origin, or is a `data:`/`blob:` URL).
 
 ---
 
