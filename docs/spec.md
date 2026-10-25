@@ -337,7 +337,7 @@ Cuentas · Categorías · Comercios · Reglas · Presupuestos · Objetivos · Co
 ### 4.11 Copias de seguridad
 At `#/mas/copias`, listed in Más.
 - "Exportar copia" downloads the JSON backup (§5.13) and "Compartir copia" opens the system menu with it (Drive, email, Telegram…), or downloads it when the browser can't share files. Either counts as a backup once the file is downloaded or shared; closing the share menu doesn't.
-- "Restaurar copia": pick the JSON, see a summary ("Copia del 12/10/2026: 3 cuentas, 845 movimientos…"), confirm with "Sustituir todos mis datos", optionally exporting current data first.
+- "Restaurar copia": pick the JSON and a sheet opens with its summary ("Copia del 12/10/2026: 3 cuentas, 845 movimientos, 21 categorías…": accounts, transactions, categories, payees, rules, budgets and goals) and the current data's counts, which will be replaced. "Exportar mis datos actuales antes" downloads a backup of the current data first (it counts as a backup); the destructive "Sustituir todos mis datos" replaces everything in one transaction and lands on Inicio with "Copia restaurada". A file that can't be restored shows why inline in the sheet and changes nothing (§5.13).
 - "Exportar movimientos (CSV)" with a date range.
 - "Última copia: 12/10/2026", or "Nunca", the date of the last backup made on this phone.
 
@@ -481,9 +481,13 @@ All checked at a 390×844 viewport. Items marked 🧪 have a unit test.
   ```
   Rows are as stored in IndexedDB (same field names, cents as integers, dates as strings), read in one transaction, undone imports and each transaction's `editedAt` included. `settings` holds only the settings that describe the data: `importAccountId`, `starterDataVersion`, `starterRulesOffer` and `onboardingDone`. The device's (`persistRequested`, `lastBackupAt`, `lastChangeAt`) are left out, so restoring on another phone doesn't bring stale state.
 - 🧪 **Round trip**: exporting, wiping everything and restoring leaves the data identical, table by table and field by field.
-- 🧪 Restore validates the format (`app: "kuenta"`, `format`, each table's schema, references between tables). If anything fails, current data is untouched and the problem is explained.
+- 🧪 Restore validates the whole file before writing anything. If anything fails, current data is untouched and the sheet explains the problem:
+  - not JSON, or `app` missing or not `"kuenta"` → "El archivo no es una copia de Kuenta.";
+  - `format` higher than the app knows → "Esta copia es de una versión más nueva de Kuenta. Actualiza la app para restaurarla.";
+  - `format` lower → the format migrations run in order (`format n → n+1`; none yet, format 1 is the first) before validating;
+  - each table against its schema (integer cents, `YYYY-MM-DD` dates, `YYYY-MM` months, enums, required fields), references (transaction account, destination, category, payee and import; rule category and transfer account; budget limit category; goal account; an import's account; the `importAccountId` setting, which must be present) and uniqueness (ids per table, `importHash`, payee `normalized`, setting keys) → "La copia está dañada: …" naming the table and the field or reference.
 - 🧪 A backup from an older format version is migrated on restore; one from a newer version is rejected with a message.
-- 🧪 Restore replaces all data in one transaction.
+- 🧪 Restore replaces all data in one transaction: every table is cleared and gets the backup's rows. Settings the backup carries other than the data settings are ignored; this device's `persistRequested` stays, and `lastBackupAt` and `lastChangeAt` become the backup's `exportedAt`, so the reminder stays quiet until the next change. Every screen refreshes.
 - 🧪 **CSV**: UTF-8 with BOM, `;` separator, CRLF line endings and columns `Fecha;Tipo;Cuenta;Cuenta destino;Categoría;Comercio;Nota;Importe;Concepto banco`. Opens correctly in Spanish Excel with a double click.
   - One line per transaction, **oldest first**: by date and, within a date, in the bank's order; balance adjustments after the imported rows of their day.
   - `Fecha` as `20/10/2026`. `Tipo` is `Gasto`, `Ingreso`, `Transferencia`, or `Ajuste de saldo` for a balance adjustment.

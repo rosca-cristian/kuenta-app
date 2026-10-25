@@ -10,7 +10,7 @@ import { budgetMonth, limitFor } from '../../domain/budgets';
 import { goalProgress } from '../../domain/goals';
 import { addMonths, daysBetween, daysInMonth, isMonth, monthOf, today, type Month } from '../../domain/dates';
 import { normalizeText } from '../../domain/text';
-import { createBackup, type BackupFile } from '../../domain/backup';
+import { BACKUP_SETTINGS, countsOf, createBackup, readBackup, type BackupCounts, type BackupFile } from '../../domain/backup';
 import { shapeByBankSign, transferAccountOf } from '../../domain/transfers';
 import {
   signedAmount,
@@ -1279,6 +1279,36 @@ export function createDexieRepository(options: DexieRepositoryOptions = {}): Dat
 
     async backupStatus(): Promise<BackupStatus> {
       return { lastBackupAt: await setting<string | null>('lastBackupAt', null), due: false };
+    },
+
+    readBackup,
+
+    async dataCounts(): Promise<BackupCounts> {
+      return countsOf((await repository.exportBackup()).data);
+    },
+
+    async restoreBackup(backup: BackupFile) {
+      const { data, exportedAt } = backup;
+      const tables = [db.accounts, db.categories, db.payees, db.transactions, db.rules, db.budgetLimits, db.goals, db.importBatches, db.settings];
+      await db.transaction('rw', tables, async () => {
+        const persistRequested = await db.settings.get('persistRequested');
+        await Promise.all(tables.map((table) => table.clear()));
+        await db.accounts.bulkAdd(data.accounts);
+        await db.categories.bulkAdd(data.categories);
+        await db.payees.bulkAdd(data.payees);
+        await db.transactions.bulkAdd(data.transactions);
+        await db.rules.bulkAdd(data.rules);
+        await db.budgetLimits.bulkAdd(data.budgetLimits);
+        await db.goals.bulkAdd(data.goals);
+        await db.importBatches.bulkAdd(data.importBatches);
+        await db.settings.bulkAdd([
+          ...data.settings.filter((row) => BACKUP_SETTINGS.includes(row.key)),
+          ...(persistRequested ? [persistRequested] : []),
+          { key: 'lastBackupAt', value: exportedAt },
+          { key: 'lastChangeAt', value: exportedAt },
+        ]);
+      });
+      changed();
     },
   };
 

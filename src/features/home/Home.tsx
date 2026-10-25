@@ -8,6 +8,7 @@ import { formatMoney } from '../../domain/money';
 import { BUDGET_STATUS } from '../budgets/Budgets';
 import type { BudgetView, GoalView } from '../../data/repository';
 import { transactionsLink } from '../transactions/filters';
+import { RestoredAlert } from '../more/RestoreBackup';
 
 /** Days without importing before Inicio reminds the user. */
 export const IMPORT_REMINDER_DAYS = 8;
@@ -55,6 +56,7 @@ export function Home() {
           </div>
         </Card>
 
+        <RestoredAlert />
         {home.daysSinceLastImport === null ? (
           <Alert tone="warn" onClick={() => navigate('/importar')}>
             Aún no has importado ningún Excel. Toca aquí para empezar.

@@ -3,12 +3,13 @@ import { Button, Card, PageHeader } from '../../ui/components';
 import { useRepo, useRepoQuery, useServices } from '../../lib/repo';
 import { formatDate, today } from '../../domain/dates';
 import { backupFileName, backupJson } from '../../domain/backup';
+import { RestoreBackup } from './RestoreBackup';
 
 /**
  * Más → Copias de seguridad: "Exportar copia" downloads the JSON backup of every table,
  * "Compartir copia" opens the system's share menu with it (or downloads it where files can't
- * be shared), and the date of the last backup. Only a copy that reached the user counts as
- * one: a cancelled share doesn't.
+ * be shared), "Restaurar copia" replaces all the data with a backup's, and the date of the
+ * last backup. Only a copy that reached the user counts as one: a cancelled share doesn't.
  */
 export function Backups() {
   const repo = useRepo();
@@ -57,6 +58,7 @@ export function Backups() {
             <Button variant="secondary" disabled={busy} onClick={() => void shareCopy()}>
               Compartir copia
             </Button>
+            <RestoreBackup disabled={busy} exportCurrent={exportCopy} />
           </div>
         </Card>
       </div>
