@@ -3,6 +3,7 @@ import { Navigate, NavLink, useLocation, useParams } from 'react-router-dom';
 import { EmptyState, PageHeader } from '../../ui/components';
 import { NetWorth } from './NetWorth';
 import { Spending } from './Spending';
+import { Subscriptions } from './Subscriptions';
 
 const TABS = { gastos: 'Gastos', mensual: 'Mensual', patrimonio: 'Patrimonio', suscripciones: 'Suscripciones' } as const;
 
@@ -52,6 +53,8 @@ export function Analysis() {
           <Spending />
         ) : tab === 'patrimonio' ? (
           <NetWorth />
+        ) : tab === 'suscripciones' ? (
+          <Subscriptions />
         ) : (
           <EmptyState title="Próximamente">Esta vista llegará en una próxima versión.</EmptyState>
         )}

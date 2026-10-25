@@ -5,6 +5,7 @@ import type { ImportPlan } from '../domain/importPlan';
 import type { MonthSummary } from '../domain/stats';
 import type { BudgetStatus, BudgetTotals } from '../domain/budgets';
 import type { GoalProgress } from '../domain/goals';
+import type { Subscription, SubscriptionTotals } from '../domain/subscriptions';
 import type { Account, AccountType, Category, CategoryKind, Goal, Id, ImportBatch, Payee, Rule, RuleActions, RuleMatch, Transaction } from '../domain/model';
 import type { ReadError } from '../import/bbva/reader';
 
@@ -294,6 +295,17 @@ export type GoalSaveResult =
   | { ok: false; reason: 'empty' }
   | { ok: false; reason: 'taken'; existing: Goal };
 
+/** One row of Análisis → Suscripciones. */
+export interface SubscriptionView extends Subscription {
+  payee: Payee;
+}
+
+/** Análisis → Suscripciones: every payee with expenses in "Suscripciones", by name, and what they cost. */
+export interface SubscriptionsView {
+  subscriptions: SubscriptionView[];
+  totals: SubscriptionTotals;
+}
+
 /** The only data interface screens use. */
 export interface DataRepository {
   /** Called after every write. Returns an unsubscribe function. */
@@ -509,4 +521,11 @@ export interface DataRepository {
   setGoalArchived(id: Id, archived: boolean): Promise<GoalSaveResult>;
   /** Deletes a goal and nothing else: a goal has no history. Throws for an unknown goal. */
   deleteGoal(id: Id): Promise<void>;
+
+  /**
+   * Análisis → Suscripciones on today's date: one subscription per payee with an imported
+   * expense in the category named "Suscripciones" (ignoring case and accents), its charges
+   * being its expenses there, with the monthly and yearly totals. Empty without that category.
+   */
+  subscriptions(): Promise<SubscriptionsView>;
 }
