@@ -24,7 +24,7 @@ test('add a Restaurantes budget, import more than it allows and see it Superado 
   // Más lists Presupuestos after Reglas, then Objetivos; with no budgets it explains them.
   await page.getByRole('link', { name: 'Más' }).click();
   const sections = page.getByRole('navigation', { name: 'Gestión' }).getByRole('link');
-  await expect(sections).toHaveText(['Cuentas', 'Categorías', 'Comercios', 'Reglas', 'Presupuestos', 'Objetivos']);
+  await expect(sections).toHaveText(['Cuentas', 'Categorías', 'Comercios', 'Reglas', 'Presupuestos', 'Objetivos', 'Copias de seguridad']);
   await openBudgets(page);
   await expect(page.getByText('Aún no hay presupuestos')).toBeVisible();
 

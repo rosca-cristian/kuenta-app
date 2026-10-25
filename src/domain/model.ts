@@ -141,6 +141,12 @@ export interface ImportBatch {
   undone: boolean;
 }
 
+/** A row of the settings table: one key and its value (`docs/spec.md` §3 lists the keys). */
+export interface Setting {
+  key: string;
+  value: unknown;
+}
+
 /** Signed effect of a transaction on an account's balance. */
 export function signedAmount(tx: Pick<Transaction, 'type' | 'amount' | 'accountId' | 'toAccountId'>, accountId: Id): Cents {
   if (tx.type === 'transfer') {

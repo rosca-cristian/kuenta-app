@@ -10,6 +10,7 @@ import { budgetMonth, limitFor } from '../../domain/budgets';
 import { goalProgress } from '../../domain/goals';
 import { addMonths, daysBetween, daysInMonth, isMonth, monthOf, today, type Month } from '../../domain/dates';
 import { normalizeText } from '../../domain/text';
+import { createBackup, type BackupFile } from '../../domain/backup';
 import { shapeByBankSign, transferAccountOf } from '../../domain/transfers';
 import {
   signedAmount,
@@ -28,6 +29,7 @@ import type {
   AccountDraft,
   AccountSaveResult,
   AccountView,
+  BackupStatus,
   BalanceCheck,
   BudgetsView,
   CategoryChanges,
@@ -64,6 +66,8 @@ export interface DexieRepositoryOptions {
   name?: string;
   /** Clock, injectable for tests. */
   now?: () => Date;
+  /** The version backups say made them; the app's own by default. */
+  appVersion?: string;
 }
 
 type Link = ChainLink & { tx: Transaction };
@@ -98,6 +102,7 @@ const TOP_BUDGETS = 3;
 export function createDexieRepository(options: DexieRepositoryOptions = {}): DataRepository {
   const db = new KuentaDb(options.name);
   const now = options.now ?? (() => new Date());
+  const appVersion = options.appVersion ?? __APP_VERSION__;
   const listeners = new Set<() => void>();
   const changed = () => listeners.forEach((listener) => listener());
   const stamp = () => now().toISOString();
@@ -1246,6 +1251,34 @@ export function createDexieRepository(options: DexieRepositoryOptions = {}): Dat
           totals: subscriptionTotals(list),
         };
       });
+    },
+
+    async exportBackup(): Promise<BackupFile> {
+      const tables = [db.accounts, db.categories, db.payees, db.transactions, db.rules, db.budgetLimits, db.goals, db.importBatches, db.settings];
+      return db.transaction('r', tables, async () => {
+        const [accounts, categories, payees, transactions, rules, budgetLimits, goals, importBatches, settings] = await Promise.all([
+          db.accounts.toArray(),
+          db.categories.toArray(),
+          db.payees.toArray(),
+          db.transactions.toArray(),
+          db.rules.toArray(),
+          db.budgetLimits.toArray(),
+          db.goals.toArray(),
+          db.importBatches.toArray(),
+          db.settings.toArray(),
+        ]);
+        const data = { accounts, categories, payees, transactions, rules, budgetLimits, goals, importBatches, settings };
+        return createBackup(data, stamp(), appVersion);
+      });
+    },
+
+    async markBackupMade() {
+      await db.settings.put({ key: 'lastBackupAt', value: stamp() });
+      changed();
+    },
+
+    async backupStatus(): Promise<BackupStatus> {
+      return { lastBackupAt: await setting<string | null>('lastBackupAt', null), due: false };
     },
   };
 

@@ -68,3 +68,7 @@ _Avoid_: Savings target, pot, hucha
 **Budget**:
 A monthly spending limit for one expense category. A limit applies from a month onwards, and setting a new one replaces it from that month on without rewriting earlier months. Spending is measured as the category's expenses minus its income in the month; transfers and uncategorized transactions never count. Shown in the Spanish UI as "Presupuesto".
 _Avoid_: Spending goal, cap
+
+**Backup**:
+The full JSON copy of the user's data, every table as stored, that Kuenta can restore: what imports, rules and the user's edits produced, and the settings that describe that data. What belongs to the phone (persistent storage, the date of the last backup) stays out. A backup counts as made once it's downloaded or shared. Shown in the Spanish UI as "Copia de seguridad".
+_Avoid_: Export (for a backup), CSV (a CSV export is not a backup: it can't be restored)

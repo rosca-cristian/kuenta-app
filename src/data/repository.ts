@@ -6,6 +6,7 @@ import type { MonthlyEntry, MonthSummary } from '../domain/stats';
 import type { BudgetStatus, BudgetTotals } from '../domain/budgets';
 import type { GoalProgress } from '../domain/goals';
 import type { Subscription, SubscriptionTotals } from '../domain/subscriptions';
+import type { BackupFile } from '../domain/backup';
 import type { Account, AccountType, Category, CategoryKind, Goal, Id, ImportBatch, Payee, Rule, RuleActions, RuleMatch, Transaction, TxType } from '../domain/model';
 import type { ReadError } from '../import/bbva/reader';
 
@@ -325,6 +326,14 @@ export interface SubscriptionsView {
   totals: SubscriptionTotals;
 }
 
+/** Copias de seguridad's last backup line. */
+export interface BackupStatus {
+  /** When the user last exported or shared a backup on this device (ISO 8601); null when never. */
+  lastBackupAt: string | null;
+  /** Whether Inicio should remind the user to make a backup. Always false until the reminder arrives. */
+  due: boolean;
+}
+
 /** The only data interface screens use. */
 export interface DataRepository {
   /** Called after every write. Returns an unsubscribe function. */
@@ -557,4 +566,15 @@ export interface DataRepository {
    * being its expenses there, with the monthly and yearly totals. Empty without that category.
    */
   subscriptions(): Promise<SubscriptionsView>;
+
+  /**
+   * A backup of every table, read in one transaction so it's consistent, stamped with the
+   * clock and the app's version. Only the data settings go in it; the device's are left out.
+   * Making the backup doesn't count as one: the screen calls `markBackupMade` once the file
+   * reached the user.
+   */
+  exportBackup(): Promise<BackupFile>;
+  /** Records that a backup was downloaded or shared now. */
+  markBackupMade(): Promise<void>;
+  backupStatus(): Promise<BackupStatus>;
 }

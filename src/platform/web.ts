@@ -1,6 +1,19 @@
 import type { PlatformServices } from './platform';
 import { SHARE_CACHE, SHARED_FILE_URL, SHARED_NAME_HEADER } from './shared';
 
+/** A download of the file through a temporary link. */
+async function saveFile(file: File) {
+  const url = URL.createObjectURL(file);
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = file.name;
+  document.body.append(link);
+  link.click();
+  link.remove();
+  // Revoked once the click has handed the file to the browser's download.
+  setTimeout(() => URL.revokeObjectURL(url), 0);
+}
+
 export const webPlatform: PlatformServices = {
   async takeSharedFile() {
     if (!('caches' in window)) return null;
@@ -20,15 +33,19 @@ export const webPlatform: PlatformServices = {
     return navigator.storage?.persisted ? navigator.storage.persisted() : false;
   },
 
-  async saveFile(file) {
-    const url = URL.createObjectURL(file);
-    const link = document.createElement('a');
-    link.href = url;
-    link.download = file.name;
-    document.body.append(link);
-    link.click();
-    link.remove();
-    // Revoked once the click has handed the file to the browser's download.
-    setTimeout(() => URL.revokeObjectURL(url), 0);
+  saveFile,
+
+  async shareFile(file) {
+    if (navigator.canShare?.({ files: [file] })) {
+      try {
+        await navigator.share({ files: [file] });
+        return 'shared';
+      } catch (error) {
+        if ((error as Error | null)?.name === 'AbortError') return 'cancelled';
+        // Any other refusal (e.g. the file type isn't allowed): the download still gives the user a copy.
+      }
+    }
+    await saveFile(file);
+    return 'downloaded';
   },
 };
