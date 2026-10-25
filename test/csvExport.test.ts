@@ -129,4 +129,18 @@ describe('exporting a date range as CSV', () => {
     ]);
     expect((await repo.backupStatus()).lastBackupAt).toBeNull();
   });
+
+  it("starts from the first and last transactions' dates, a future value date and a balance adjustment included", async () => {
+    const { repo, revolutId } = await setup();
+    expect(await repo.transactionDateRange()).toBeNull();
+
+    await importFile(repo, history);
+    expect(await repo.transactionDateRange()).toEqual({ first: '2026-08-31', last: '2026-10-03' });
+    // Paid on the 23rd, booked today: the value date is ahead of today.
+    await importFile(repo, [{ valor: '23/10/2026', fecha: '20/10/2026', concepto: 'Reserva', movimiento: 'Pago con tarjeta', importe: -6 }]);
+    expect(await repo.transactionDateRange()).toEqual({ first: '2026-08-31', last: '2026-10-23' });
+    // Balance adjustments are dated today, between the two.
+    await repo.updateAccountBalance(revolutId, 1000);
+    expect(await repo.transactionDateRange()).toEqual({ first: '2026-08-31', last: '2026-10-23' });
+  });
 });

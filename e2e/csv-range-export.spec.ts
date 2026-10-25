@@ -65,3 +65,29 @@ test('export a date range as CSV from Copias de seguridad, disabled for an inver
   await expect(exportButton).toBeDisabled();
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
 });
+
+test('the range reaches a value date later than today', async ({ page }) => {
+  // Tuesday 20 October 2026.
+  await page.clock.setFixedTime(new Date('2026-10-20T12:00:00'));
+  await page.goto('./');
+  await page.getByRole('button', { name: 'Empezar' }).click();
+  await page.getByRole('button', { name: 'Continuar' }).click();
+  await page.getByTestId('file-input').setInputFiles(
+    bbvaXlsxFile(
+      [
+        { valor: '01/10/2026', concepto: 'Abono de nómina', movimiento: 'Empresa ejemplo', importe: 1500 },
+        // Booked today, paid in three days: its value date is ahead.
+        { valor: '23/10/2026', fecha: '20/10/2026', concepto: 'Reserva hotel', movimiento: 'Pago con tarjeta', importe: -90 },
+      ],
+      { startBalance: 1000 },
+    ),
+  );
+  await page.getByRole('button', { name: 'Importar 2' }).click();
+  await expect(page.getByTestId('balance-check')).toHaveText('✓ Cuadra');
+  await page.getByRole('link', { name: 'Más' }).click();
+  await page.getByRole('link', { name: 'Copias de seguridad' }).click();
+
+  await expect(page.getByLabel('Desde')).toHaveValue('2026-10-01');
+  await expect(page.getByLabel('Hasta')).toHaveValue('2026-10-23');
+  await expect(page.getByTestId('csv-range-count')).toHaveText('2 movimientos');
+});

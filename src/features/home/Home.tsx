@@ -6,7 +6,7 @@ import { useRepo, useRepoQuery } from '../../lib/repo';
 import { useMoney } from '../../lib/money';
 import { PrivacyButton } from '../../ui/PrivacyButton';
 import { formatDate, monthOf, today } from '../../domain/dates';
-import { BUDGET_STATUS } from '../budgets/Budgets';
+import { BUDGET_STATUS } from '../../ui/budgetStatus';
 import type { BudgetView, GoalView } from '../../data/repository';
 import { transactionsLink } from '../transactions/filters';
 import { RestoredAlert } from '../more/RestoreBackup';

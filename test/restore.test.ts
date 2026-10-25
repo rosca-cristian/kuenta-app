@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { createDexieRepository } from '../src/data/dexie/dexieRepository';
 import { KuentaDb } from '../src/data/dexie/db';
 import type { DataRepository } from '../src/data/repository';
-import { backupJson, type BackupFile } from '../src/domain/backup';
+import { backupFieldName, backupJson, type BackupFile } from '../src/domain/backup';
 import { importFile, richData, transactionId } from './support/backupData';
 
 let dbCount = 0;
@@ -36,7 +36,7 @@ async function tables(db: KuentaDb) {
 /** A rich backup made on 20 October 2026, as JSON text. */
 async function richBackup() {
   const source = await setup();
-  await richData(source.repo);
+  await richData(source.repo, source.db);
   const backup = await source.repo.exportBackup();
   return { source, backup, text: backupJson(backup) };
 }
@@ -64,16 +64,21 @@ describe('restoring a backup', () => {
     for (const table of ['accounts', 'categories', 'payees', 'transactions', 'rules', 'budgetLimits', 'goals', 'importBatches'] as const) {
       expect(after[table], table).toEqual(before[table]);
     }
-    const { importAccountId, starterDataVersion, onboardingDone } = before.settings;
+    const { importAccountId, starterDataVersion, starterRulesOffer, onboardingDone } = before.settings;
+    expect(starterRulesOffer).toBe('done');
     expect(after.settings).toEqual({
       importAccountId,
       starterDataVersion,
+      starterRulesOffer,
       onboardingDone,
       lastBackupAt: new Date('2026-10-20T10:00:00').toISOString(),
       lastChangeAt: new Date('2026-10-20T10:00:00').toISOString(),
     });
     // What the screens show agrees too.
     expect((await target.repo.home('2026-10')).totalBalance).toBe((await source.repo.home('2026-10')).totalBalance);
+    expect(await target.repo.listGoals()).toEqual(await source.repo.listGoals());
+    expect(await target.repo.listRules()).toEqual(await source.repo.listRules());
+    expect(await target.repo.listCategories({ withArchived: true })).toEqual(await source.repo.listCategories({ withArchived: true }));
     expect(await target.repo.getSettings()).toEqual({ onboardingDone: true, importAccountId, persistRequested: false, privacyMode: false });
   });
 
@@ -150,6 +155,22 @@ describe('restoring a backup', () => {
     expect((await target.repo.getSettings()).onboardingDone).toBe(true);
   });
 
+  it('lists a restored archived category only with `withArchived`, after the active ones', async () => {
+    // Archiving a category isn't offered: a backup is how the repository gets one.
+    const { text } = await richBackup();
+    const target = await setup({ fresh: true });
+    // Besides the rich data's "Antigua", the last one, one from the middle of the order.
+    const withRegalos = edited(text, (file) => void (file.data.categories.find((c) => c.name === 'Regalos')!.archived = true));
+    await target.repo.restoreBackup(read(target.repo, withRegalos));
+
+    const active = await target.repo.listCategories();
+    expect(active.map((c) => c.name)).not.toContain('Regalos');
+    expect(active.map((c) => c.name)).not.toContain('Antigua');
+    expect(active.every((c, i) => i === 0 || active[i - 1].order <= c.order)).toBe(true);
+    const all = await target.repo.listCategories({ withArchived: true });
+    expect(all.map((c) => c.name)).toEqual([...active.map((c) => c.name), 'Regalos', 'Antigua']);
+  });
+
   it('still lets rules skip the transactions edited by hand', async () => {
     const { text } = await richBackup();
     const target = await setup({ fresh: true });
@@ -184,13 +205,13 @@ describe('reading a backup', () => {
     const result = source.repo.readBackup(text);
     expect(result.ok && result.summary).toEqual({
       exportedAt: new Date('2026-10-20T10:00:00').toISOString(),
-      accounts: 2,
+      accounts: 3,
       transactions: 5,
       categories: (await source.repo.listCategories({ withArchived: true })).length,
       payees: (await source.repo.listPayees()).length,
       rules: (await source.repo.listRules()).length,
       budgets: 1,
-      goals: 1,
+      goals: 3,
     });
     expect(result.ok && { exportedAt: result.summary.exportedAt, ...(await source.repo.dataCounts()) }).toEqual(result.ok && result.summary);
   });
@@ -250,5 +271,40 @@ describe('reading a backup', () => {
     const result = target.repo.readBackup(damage(text));
     expect(result).toEqual({ ok: false, error });
     expect(await tables(target.db)).toEqual(before);
+  });
+
+  it("counts a setting's row among all the file's settings, the ones it doesn't restore included", async () => {
+    const { source, text } = await richBackup();
+    let row = -1;
+    const damaged = edited(text, (file) => {
+      file.data.settings.unshift({ key: 'persistRequested', value: true }, { key: 'lastBackupAt', value: '2026-10-01T00:00:00.000Z' });
+      row = file.data.settings.findIndex((s) => s.key === 'starterDataVersion');
+      file.data.settings[row].value = 'uno';
+    });
+    expect(row).toBeGreaterThan(1);
+    expect(source.repo.readBackup(damaged)).toEqual({
+      ok: false,
+      error: { reason: 'damaged', damage: { kind: 'invalid', table: 'settings', row, field: 'value' } },
+    });
+  });
+
+  it('names in Spanish every field a damaged copy can point at', async () => {
+    const { backup } = await richBackup();
+    const fields = new Set<string>(['app', 'format', 'exportedAt', 'appVersion', 'data', 'key', 'value']);
+    for (const rows of Object.values(backup.data) as Record<string, unknown>[][]) {
+      for (const row of rows) {
+        for (const [key, value] of Object.entries(row)) {
+          fields.add(key);
+          if (typeof value === 'object' && value !== null) Object.keys(value).forEach((nested) => fields.add(`${key}.${nested}`));
+        }
+      }
+    }
+    for (const setting of backup.data.settings) fields.add(setting.key);
+    // Spelled the same in Spanish.
+    const same = new Set(['app', 'color']);
+    for (const field of fields) expect(same.has(field) || backupFieldName(field) !== field, field).toBe(true);
+    expect(backupFieldName('amount')).toBe('importe');
+    expect(backupFieldName('match.value')).toBe('texto de la condición');
+    expect(backupFieldName('somethingElse')).toBe('somethingElse');
   });
 });

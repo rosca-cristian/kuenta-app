@@ -1,7 +1,8 @@
 import type { DataRepository } from '../../src/data/repository';
+import type { KuentaDb } from '../../src/data/dexie/db';
 import { bbvaXlsx, type SampleMovement } from './bbvaXlsx';
 
-// The rich data of test/backup.test.ts, shared with the restore tests.
+// The rich data and helpers shared by the backup, restore and privacy mode tests.
 
 export async function importFile(repo: DataRepository, movements: SampleMovement[], startBalance: number) {
   const result = await repo.previewImport(await bbvaXlsx(movements, { startBalance }), 'movimientos.xlsx');
@@ -18,9 +19,12 @@ export async function transactionId(repo: DataRepository, concept: string) {
 /**
  * Data touching every table: an import with categorizations, a note and a renamed payee; a
  * rule applied to it; a transfer to a non-imported account and a balance adjustment there; a
- * budget with two limits; a goal; and a second import, undone.
+ * budget with two limits; a goal, an archived one and one without target month on an archived
+ * account; a transfer rule and a rule disabled by deleting its category; an archived category
+ * and the starter-rules offer closed; and a second import, undone. The repository can't archive
+ * a category nor close an offer no update made, so those two go straight into `db`.
  */
-export async function richData(repo: DataRepository) {
+export async function richData(repo: DataRepository, db: KuentaDb) {
   await importFile(
     repo,
     [
@@ -46,7 +50,28 @@ export async function richData(repo: DataRepository) {
   await repo.updateAccountBalance(revolutId, 18000);
   await repo.setBudgetLimit(groceries, 30000, '2026-09');
   await repo.setBudgetLimit(groceries, 25000, '2026-10');
+  const { id: carId } = (await repo.createGoal({ name: 'Coche', target: 500000, targetMonth: '2026-09', accountId: revolutId, icon: 'car', color: 'cyan' })) as {
+    id: string;
+  };
+  await repo.setGoalArchived(carId, true);
   await repo.createGoal({ name: 'Viaje', target: 100000, targetMonth: '2027-06', accountId: revolutId, icon: 'plane', color: 'cyan' });
+
+  // A savings account with a goal and no target month, a rule moving money there, then archived.
+  const { id: savingsId } = (await repo.createAccount({ name: 'Hucha', type: 'savings', icon: 'piggy-bank', color: 'pink', openingBalance: 30000 })) as {
+    id: string;
+  };
+  await repo.createGoal({ name: 'Colchón', target: 300000, accountId: savingsId, icon: 'piggy-bank', color: 'pink' });
+  await repo.createRule({ name: 'A la hucha', match: { value: 'traspaso hucha', direction: 'out' }, actions: { transferAccountId: savingsId } });
+  await repo.setAccountArchived(savingsId, true);
+
+  // A rule whose category was deleted: disabled, without an action.
+  const { id: petsId } = (await repo.createCategory({ name: 'Mascotas', kind: 'expense', icon: 'dog', color: 'amber' })) as { id: string };
+  await repo.createRule({ name: 'Veterinario', match: { value: 'veterinario' }, actions: { categoryId: petsId } });
+  await repo.deleteCategory(petsId, null);
+
+  const { id: oldId } = (await repo.createCategory({ name: 'Antigua', kind: 'income', icon: 'ellipsis', color: 'gray' })) as { id: string };
+  await db.categories.update(oldId, { archived: true });
+  await db.settings.put({ key: 'starterRulesOffer', value: 'done' });
 
   const second = await importFile(repo, [{ valor: '10/10/2026', concepto: 'Gasolinera', movimiento: 'Pago con tarjeta', importe: -40 }], 2246.8);
   await repo.undoImport(second.batch.id);

@@ -3,6 +3,7 @@ import type { IsoDate, Month } from '../domain/dates';
 import type { Gap } from '../domain/chain';
 import type { ImportPlan } from '../domain/importPlan';
 import type { MonthlyEntry, MonthSummary } from '../domain/stats';
+import type { NetWorthPoint } from '../domain/balances';
 import type { BudgetStatus, BudgetTotals } from '../domain/budgets';
 import type { GoalProgress } from '../domain/goals';
 import type { Subscription, SubscriptionTotals } from '../domain/subscriptions';
@@ -263,15 +264,6 @@ export interface SpendingView {
   total: Cents;
 }
 
-/** One point of Análisis → Patrimonio. */
-export interface NetWorthPoint {
-  month: Month;
-  /** The month's last day, or today for the current month. */
-  date: IsoDate;
-  /** Every account's balance on that date, opening balances, archived and non-imported accounts included. */
-  netWorth: Cents;
-}
-
 /** Análisis → Patrimonio: net worth at the end of each of the last 12 months. */
 export interface NetWorthView {
   /** Oldest first, ending with the current month; months before the first transaction are left out. */
@@ -351,7 +343,9 @@ export interface DataRepository {
    * Called after every write. Returns an unsubscribe function. Every write that changes the
    * user's data also records when in the `lastChangeAt` setting, before calling it; settings
    * bookkeeping (`persistRequested`, `privacyMode`, `lastBackupAt`, dismissing the starter-rules offer) and
-   * onboarding's starter data don't.
+   * onboarding's starter data don't. A write that changes nothing (moving the first category up,
+   * saving an edit with what's already there, archiving an archived account…) neither records
+   * nor calls it.
    */
   subscribe(listener: () => void): () => void;
 
@@ -462,10 +456,13 @@ export interface DataRepository {
 
   /** Transactions of a month, or of all months when `period` is null, newest first; with a filter, only those matching it. */
   listTransactions(period: Month | null, filter?: TransactionFilter): Promise<TransactionView[]>;
+  /** The dates of the oldest and the newest transaction, balance adjustments included; null when there are none. */
+  transactionDateRange(): Promise<{ first: IsoDate; last: IsoDate } | null>;
   getTransaction(id: Id): Promise<TransactionView | null>;
   /**
    * Only category, payee, note and whether it's a transfer can change; amount, date and the
-   * bank's account come from the bank. Every change counts as the user's edit. Making it a
+   * bank's account come from the bank. Every change counts as the user's edit; saving what it
+   * already has changes nothing, so it isn't one. Making it a
    * transfer is refused for a balance adjustment, the import account itself, and an
    * archived or unknown account; a transfer never has a category.
    */

@@ -8,7 +8,8 @@ import { monthForecast } from '../../domain/forecast';
 import { subscriptions, subscriptionTotals } from '../../domain/subscriptions';
 import { budgetMonth, limitFor } from '../../domain/budgets';
 import { goalProgress } from '../../domain/goals';
-import { addMonths, daysBetween, daysInMonth, isMonth, monthOf, today, type Month } from '../../domain/dates';
+import { netWorthSeries } from '../../domain/balances';
+import { addMonths, daysBetween, isMonth, monthOf, today, type Month } from '../../domain/dates';
 import { normalizeText } from '../../domain/text';
 import { BACKUP_SETTINGS, countsOf, createBackup, isBackupDue, readBackup, type BackupCounts, type BackupFile } from '../../domain/backup';
 import { shapeByBankSign, transferAccountOf } from '../../domain/transfers';
@@ -46,7 +47,6 @@ import type {
   ImportOutcome,
   ImportPreview,
   MonthlyView,
-  NetWorthPoint,
   NetWorthView,
   PayeeRenameResult,
   PayeeView,
@@ -74,6 +74,13 @@ type Link = ChainLink & { tx: Transaction };
 
 /** What applying rules changes on one transaction: its type, accounts and category, and its payee. */
 type RuleChange = { id: Id; fields: Partial<Pick<Transaction, 'type' | 'accountId' | 'toAccountId' | 'categoryId'>>; payeeName?: string };
+
+/**
+ * Whether writing `update` would change the row: some field it gives differs (objects compared
+ * by their JSON). A write that changes nothing isn't a change to the user's data.
+ */
+const differs = <T extends object>(row: T, update: Partial<T>) =>
+  (Object.keys(update) as (keyof T)[]).some((key) => JSON.stringify(update[key]) !== JSON.stringify(row[key]));
 
 /** A payee name as stored: single spaces, no leading or trailing ones. */
 const tidyName = (name: string) => name.replace(/\s+/g, ' ').trim();
@@ -568,14 +575,17 @@ export function createDexieRepository(options: DexieRepositoryOptions = {}): Dat
         // The import account's opening balance follows its imports (see refreshOpeningBalance).
         if (id === (await importAccountId())) throw new Error("The import account's opening balance comes from its imports");
       }
+      let edited = false;
       const result = await db.transaction('rw', db.accounts, async (): Promise<AccountSaveResult> => {
-        if (!(await db.accounts.get(id))) throw new Error(`Account ${id} not found`);
+        const account = await db.accounts.get(id);
+        if (!account) throw new Error(`Account ${id} not found`);
         const refused = update.name === undefined ? null : await refuseAccountName(update.name, id);
         if (refused) return refused;
-        await db.accounts.update(id, { ...update, updatedAt: stamp() });
+        edited = differs(account, update);
+        if (edited) await db.accounts.update(id, { ...update, updatedAt: stamp() });
         return { ok: true, id };
       });
-      if (result.ok) await dataChanged();
+      if (edited) await dataChanged();
       return result;
     },
 
@@ -592,11 +602,13 @@ export function createDexieRepository(options: DexieRepositoryOptions = {}): Dat
     },
 
     async setAccountArchived(id, archived) {
-      await db.transaction('rw', db.accounts, db.settings, async () => {
-        await nonImportedAccount(id, 'be archived');
+      const edited = await db.transaction('rw', db.accounts, db.settings, async () => {
+        const account = await nonImportedAccount(id, 'be archived');
+        if (account.archived === archived) return false;
         await db.accounts.update(id, { archived, updatedAt: stamp() });
+        return true;
       });
-      await dataChanged();
+      if (edited) await dataChanged();
     },
 
     async deleteAccount(id) {
@@ -639,19 +651,22 @@ export function createDexieRepository(options: DexieRepositoryOptions = {}): Dat
 
     async updateCategory(id, changes: CategoryChanges): Promise<CategorySaveResult> {
       const update = changes.name === undefined ? { ...changes } : { ...changes, name: tidyName(changes.name) };
+      let edited = false;
       const result = await db.transaction('rw', db.categories, async (): Promise<CategorySaveResult> => {
-        if (!(await db.categories.get(id))) throw new Error(`Category ${id} not found`);
+        const category = await db.categories.get(id);
+        if (!category) throw new Error(`Category ${id} not found`);
         const refused = update.name === undefined ? null : await refuseCategoryName(update.name, id);
         if (refused) return refused;
-        await db.categories.update(id, update);
+        edited = differs(category, update);
+        if (edited) await db.categories.update(id, update);
         return { ok: true, id };
       });
-      if (result.ok) await dataChanged();
+      if (edited) await dataChanged();
       return result;
     },
 
     async moveCategory(id, direction) {
-      await db.transaction('rw', db.categories, async () => {
+      const moved = await db.transaction('rw', db.categories, async () => {
         const category = await db.categories.get(id);
         if (!category) throw new Error(`Category ${id} not found`);
         const sameKind = await db.categories
@@ -659,11 +674,13 @@ export function createDexieRepository(options: DexieRepositoryOptions = {}): Dat
           .filter((other) => other.kind === category.kind && !other.archived)
           .toArray();
         const neighbour = sameKind[sameKind.findIndex((other) => other.id === id) + (direction === 'up' ? -1 : 1)];
-        if (!neighbour) return;
+        // The first one can't go up, nor the last one down.
+        if (!neighbour) return false;
         await db.categories.update(id, { order: neighbour.order });
         await db.categories.update(neighbour.id, { order: category.order });
+        return true;
       });
-      await dataChanged();
+      if (moved) await dataChanged();
     },
 
     async categoryUsage(id): Promise<CategoryUsage> {
@@ -723,7 +740,7 @@ export function createDexieRepository(options: DexieRepositoryOptions = {}): Dat
     },
 
     async updateRule(id, changes: RuleChanges) {
-      await db.transaction('rw', db.rules, db.accounts, db.settings, async () => {
+      const edited = await db.transaction('rw', db.rules, db.accounts, db.settings, async () => {
         const rule = await db.rules.get(id);
         if (!rule) throw new Error(`Rule ${id} not found`);
         const updated: Rule = {
@@ -733,22 +750,26 @@ export function createDexieRepository(options: DexieRepositoryOptions = {}): Dat
           actions: tidyActions(changes.actions ?? rule.actions),
         };
         await checkRule(updated);
+        if (!differs(rule, updated)) return false;
         await db.rules.put(updated);
+        return true;
       });
-      await dataChanged();
+      if (edited) await dataChanged();
     },
 
     async moveRule(id, direction) {
-      await db.transaction('rw', db.rules, async () => {
+      const moved = await db.transaction('rw', db.rules, async () => {
         const rules = await db.rules.orderBy('order').toArray();
         const index = rules.findIndex((rule) => rule.id === id);
         if (index < 0) throw new Error(`Rule ${id} not found`);
         const neighbour = rules[index + (direction === 'up' ? -1 : 1)];
-        if (!neighbour) return;
+        // The first one can't go up, nor the last one down.
+        if (!neighbour) return false;
         await db.rules.update(id, { order: neighbour.order });
         await db.rules.update(neighbour.id, { order: rules[index].order });
+        return true;
       });
-      await dataChanged();
+      if (moved) await dataChanged();
     },
 
     async deleteRule(id) {
@@ -850,25 +871,35 @@ export function createDexieRepository(options: DexieRepositoryOptions = {}): Dat
       );
     },
 
+    async transactionDateRange() {
+      return db.transaction('r', db.transactions, async () => {
+        const [first, last] = await Promise.all([db.transactions.orderBy('date').first(), db.transactions.orderBy('date').last()]);
+        return first && last ? { first: first.date, last: last.date } : null;
+      });
+    },
+
     async getTransaction(id) {
       const tx = await db.transactions.get(id);
       return tx ? (await toViews([tx]))[0] : null;
     },
 
     async updateTransaction(id, changes: TransactionChanges) {
-      await db.transaction('rw', [db.transactions, db.payees, db.accounts, db.settings], async () => {
+      const edited = await db.transaction('rw', [db.transactions, db.payees, db.accounts, db.settings], async () => {
         const tx = await db.transactions.get(id);
         if (!tx) throw new Error(`Transaction ${id} not found`);
-        const update: Partial<Transaction> = { updatedAt: stamp(), editedAt: stamp() };
+        const update: Partial<Transaction> = {};
         if (changes.transferAccountId !== undefined) Object.assign(update, await transferChange(tx, changes.transferAccountId));
         // A transfer never has a category; one that stops being a transfer may get one in the same change.
         if ((update.type ?? tx.type) === 'transfer') update.categoryId = null;
         else if (changes.categoryId !== undefined) update.categoryId = changes.categoryId;
         if (changes.note !== undefined) update.note = changes.note;
         if (changes.payeeName !== undefined) update.payeeId = await payeeIdFor(changes.payeeName);
-        await db.transactions.update(id, update);
+        // Saving what it already has isn't an edit: the transaction stays as rules left it.
+        if (!differs(tx, update)) return false;
+        await db.transactions.update(id, { ...update, updatedAt: stamp(), editedAt: stamp() });
+        return true;
       });
-      await dataChanged();
+      if (edited) await dataChanged();
     },
 
     async deleteAdjustment(id) {
@@ -901,15 +932,18 @@ export function createDexieRepository(options: DexieRepositoryOptions = {}): Dat
       const name = tidyName(newName);
       if (name === '') return { ok: false, reason: 'empty' };
       const normalized = normalizeText(name);
+      let edited = false;
       const result = await db.transaction('rw', db.payees, db.rules, async (): Promise<PayeeRenameResult> => {
         const existing = await db.payees.where('normalized').equals(normalized).first();
         if (existing && existing.id !== id) return { ok: false, reason: 'exists', existing };
         const payee = await db.payees.get(id);
+        if (payee?.name === name) return { ok: true };
+        edited = true;
         await db.payees.update(id, { name, normalized });
         if (payee) await renameInRules([payee.normalized], name);
         return { ok: true };
       });
-      if (result.ok) await dataChanged();
+      if (edited) await dataChanged();
       return result;
     },
 
@@ -1083,26 +1117,7 @@ export function createDexieRepository(options: DexieRepositoryOptions = {}): Dat
     async netWorth(): Promise<NetWorthView> {
       return db.transaction('r', db.accounts, db.transactions, async () => {
         const [accounts, txs] = await Promise.all([db.accounts.toArray(), db.transactions.toArray()]);
-        const first = txs.reduce<string | null>((oldest, tx) => (oldest === null || tx.date < oldest ? tx.date : oldest), null);
-        const byAccount = new Map(accounts.map((account) => [account.id, [] as Transaction[]]));
-        for (const tx of txs) {
-          byAccount.get(tx.accountId)?.push(tx);
-          if (tx.toAccountId) byAccount.get(tx.toAccountId)?.push(tx);
-        }
-
-        const date = today(now());
-        const currentMonth = monthOf(date);
-        const points: NetWorthPoint[] = [];
-        // The last 12 months, the current one included.
-        for (let back = 11; back >= 0; back--) {
-          const month = addMonths(currentMonth, -back);
-          if (first === null || month < monthOf(first)) continue;
-          const end = back === 0 ? date : `${month}-${daysInMonth(month)}`;
-          const balances = await Promise.all(
-            accounts.map((account) => balanceOf(account, byAccount.get(account.id)!.filter((tx) => tx.date <= end))),
-          );
-          points.push({ month, date: end, netWorth: balances.reduce((sum, balance) => sum + balance, 0) });
-        }
+        const points = netWorthSeries(accounts, txs, today(now()));
         const latest = points.at(-1)?.netWorth ?? null;
         const previous = points.at(-2)?.netWorth ?? null;
         return { points, latest, change: latest !== null && previous !== null ? latest - previous : null };
@@ -1214,6 +1229,7 @@ export function createDexieRepository(options: DexieRepositoryOptions = {}): Dat
       };
       if (target !== undefined) checkGoalTarget(target);
       if (targetMonth !== undefined && targetMonth !== null) checkMonth(targetMonth);
+      let edited = false;
       const result = await db.transaction('rw', db.accounts, db.goals, async (): Promise<GoalSaveResult> => {
         const goal = await db.goals.get(id);
         if (!goal) throw new Error(`Goal ${id} not found`);
@@ -1224,23 +1240,27 @@ export function createDexieRepository(options: DexieRepositoryOptions = {}): Dat
           const refused = await refuseGoalAccount(accountId, id);
           if (refused) return refused;
         }
-        await db.goals.update(id, update);
+        edited = differs(goal, update);
+        if (edited) await db.goals.update(id, update);
         return { ok: true, id };
       });
-      if (result.ok) await dataChanged();
+      if (edited) await dataChanged();
       return result;
     },
 
     async setGoalArchived(id, archived): Promise<GoalSaveResult> {
+      let edited = false;
       const result = await db.transaction('rw', db.goals, async (): Promise<GoalSaveResult> => {
         const goal = await db.goals.get(id);
         if (!goal) throw new Error(`Goal ${id} not found`);
+        if (goal.archived === archived) return { ok: true, id };
         const refused = archived ? null : await refuseGoalAccount(goal.accountId, id);
         if (refused) return refused;
+        edited = true;
         await db.goals.update(id, { archived });
         return { ok: true, id };
       });
-      if (result.ok) await dataChanged();
+      if (edited) await dataChanged();
       return result;
     },
 

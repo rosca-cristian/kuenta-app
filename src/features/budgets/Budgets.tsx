@@ -8,16 +8,9 @@ import { useRepo, useRepoQuery } from '../../lib/repo';
 import { formatMonth, monthOf, today, type Month } from '../../domain/dates';
 import { formatTypedAmount, parseTypedAmount } from '../../domain/money';
 import { useMoney } from '../../lib/money';
-import type { BudgetStatus } from '../../domain/budgets';
+import { BUDGET_STATUS } from '../../ui/budgetStatus';
 import type { Category, Id } from '../../domain/model';
 import type { BudgetView } from '../../data/repository';
-
-/** Each status's label and colours, here and on Inicio. */
-export const BUDGET_STATUS: Record<BudgetStatus, { label: string; text: string; bar: string }> = {
-  onTrack: { label: 'En camino', text: 'text-muted', bar: 'bg-accent' },
-  near: { label: 'Cerca', text: 'text-warn', bar: 'bg-warn' },
-  over: { label: 'Superado', text: 'text-danger', bar: 'bg-danger' },
-};
 
 /** The filter's *En camino* is every budget not *Superado*, *Cerca* included. */
 type Filter = 'all' | 'over' | 'notOver';
