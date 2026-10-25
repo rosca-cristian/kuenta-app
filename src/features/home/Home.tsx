@@ -1,10 +1,12 @@
 import { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
-import { Alert, Amount, Button, Card, MonthSelector, PageHeader } from '../../ui/components';
-import { IconBadge } from '../../ui/icons';
+import { Link, useNavigate } from 'react-router-dom';
+import { Alert, Amount, Button, Card, MonthSelector, PageHeader, formatPercent } from '../../ui/components';
+import { IconBadge, colorFor } from '../../ui/icons';
 import { useRepo, useRepoQuery } from '../../lib/repo';
 import { formatDate, monthOf, today } from '../../domain/dates';
 import { formatMoney } from '../../domain/money';
+import { BUDGET_STATUS } from '../budgets/Budgets';
+import type { BudgetView, GoalView } from '../../data/repository';
 
 /** Days without importing before Inicio reminds the user. */
 export const IMPORT_REMINDER_DAYS = 8;
@@ -90,8 +92,93 @@ export function Home() {
             ))}
           </ul>
         </Card>
+        {home.topBudgets.length > 0 && <TopBudgets budgets={home.topBudgets} />}
+        {home.goals.length > 0 && <GoalsProgress goals={home.goals} />}
       </div>
     </>
+  );
+}
+
+/** The current month's budgets with the highest percentage used, whatever month the card shows. */
+function TopBudgets({ budgets }: { budgets: BudgetView[] }) {
+  return (
+    <Card>
+      <div className="mb-2 flex items-center justify-between gap-2">
+        <h2 className="font-medium">Presupuestos</h2>
+        <Link to="/mas/presupuestos" className="-my-3 -mr-2 flex min-h-11 items-center px-2 text-sm text-accent">
+          Ver todos
+        </Link>
+      </div>
+      <ul aria-label="Presupuestos" className="flex flex-col gap-3">
+        {budgets.map(({ category, limit, spent, percent, status }) => (
+          <li key={category.id}>
+            <div className="flex items-baseline justify-between gap-2 text-sm">
+              <span className="min-w-0 truncate">{category.name}</span>
+              <span className={`shrink-0 tabular-nums ${BUDGET_STATUS[status].text}`} data-testid="budget-spent">
+                {formatMoney(spent)} <span className="text-muted">/ {formatMoney(limit)}</span>
+              </span>
+            </div>
+            <div
+              role="progressbar"
+              aria-label={`Gastado en ${category.name}`}
+              aria-valuemin={0}
+              aria-valuemax={100}
+              aria-valuenow={Math.min(100, Math.floor(percent))}
+              aria-valuetext={`${formatPercent(percent)} · ${BUDGET_STATUS[status].label}`}
+              className="mt-1.5 h-2 rounded-full bg-card-2"
+            >
+              <div className={`h-full rounded-full ${BUDGET_STATUS[status].bar}`} style={{ width: `${Math.min(100, percent)}%` }} />
+            </div>
+          </li>
+        ))}
+      </ul>
+    </Card>
+  );
+}
+
+/** A progress bar for each active goal; tapping one opens Objetivos. */
+function GoalsProgress({ goals }: { goals: GoalView[] }) {
+  return (
+    <Card>
+      <h2 className="mb-2 font-medium">Objetivos</h2>
+      <ul aria-label="Objetivos" className="-mx-2 flex flex-col">
+        {goals.map(({ id, name, color, current, target, percent, reached }) => (
+          <li key={id}>
+            <Link to="/mas/objetivos" className="block rounded-xl px-2 py-1.5 active:bg-card-2">
+              <span className="flex items-baseline justify-between gap-2 text-sm">
+                <span className="min-w-0 truncate">{name}</span>
+                {reached ? (
+                  <span className="shrink-0 font-medium text-income" data-testid="goal-reached">
+                    Conseguido
+                  </span>
+                ) : (
+                  <span className="shrink-0 tabular-nums text-muted" data-testid="goal-percent">
+                    {formatPercent(percent)}
+                  </span>
+                )}
+              </span>
+              <span className="block text-xs tabular-nums text-muted" data-testid="goal-progress">
+                {formatMoney(current)} / {formatMoney(target)}
+              </span>
+              <span
+                role="progressbar"
+                aria-label={`Progreso de ${name}`}
+                aria-valuemin={0}
+                aria-valuemax={100}
+                aria-valuenow={Math.min(100, Math.floor(percent))}
+                aria-valuetext={reached ? 'Conseguido' : formatPercent(percent)}
+                className="mt-1.5 block h-2 rounded-full bg-card-2"
+              >
+                <span
+                  className={`block h-full rounded-full ${reached ? 'bg-income' : ''}`}
+                  style={{ width: `${reached ? 100 : Math.min(100, percent)}%`, background: reached ? undefined : colorFor(color) }}
+                />
+              </span>
+            </Link>
+          </li>
+        ))}
+      </ul>
+    </Card>
   );
 }
 

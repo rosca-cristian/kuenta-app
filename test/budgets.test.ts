@@ -30,6 +30,18 @@ async function transactionId(repo: DataRepository, month: string, movement: stri
   return tx.id;
 }
 
+/** Imports one purchase per category on `date`, each categorized by hand. */
+async function spend(repo: DataRepository, spending: [string, number][], date = '02/10/2026') {
+  await importFile(
+    repo,
+    spending.map(([name, importe]) => ({ valor: date, concepto: 'Tienda', movimiento: name, importe })),
+  );
+  const month = `${date.slice(6)}-${date.slice(3, 5)}`;
+  for (const [name] of spending) {
+    await repo.updateTransaction(await transactionId(repo, month, name), { categoryId: await categoryId(repo, name) });
+  }
+}
+
 /** Each budgeted category's name and limit in a month, in category order. */
 const limitsIn = async (repo: DataRepository, month: string) =>
   Object.fromEntries((await repo.budgets(month)).budgets.map((budget) => [budget.category.name, budget.limit]));
@@ -308,18 +320,6 @@ describe('the "today" marker and the totals', () => {
 });
 
 describe('budgets over on Inicio', () => {
-  /** Imports one purchase per category on `date`, each categorized by hand. */
-  async function spend(repo: DataRepository, spending: [string, number][], date = '02/10/2026') {
-    await importFile(
-      repo,
-      spending.map(([name, importe]) => ({ valor: date, concepto: 'Tienda', movimiento: name, importe })),
-    );
-    const month = `${date.slice(6)}-${date.slice(3, 5)}`;
-    for (const [name] of spending) {
-      await repo.updateTransaction(await transactionId(repo, month, name), { categoryId: await categoryId(repo, name) });
-    }
-  }
-
   it('counts none without budgets, or when every budget is at most at its limit', async () => {
     const repo = await setup();
     expect((await repo.home('2026-10')).budgetsOver).toBe(0);
@@ -371,5 +371,67 @@ describe('budgets over on Inicio', () => {
     await november.setBudgetLimit(await categoryId(november, 'Ocio'), 10000, '2026-10');
     expect((await november.home('2026-10')).budgetsOver).toBe(0);
     expect((await november.home('2026-11')).budgetsOver).toBe(0);
+  });
+});
+
+describe('the top budgets on Inicio', () => {
+  const topOn = async (repo: DataRepository, month: string) =>
+    (await repo.home(month)).topBudgets.map((budget) => [budget.category.name, budget.spent, budget.limit, budget.status]);
+
+  it('shows none without budgets this month', async () => {
+    const repo = await setup();
+    expect((await repo.home('2026-10')).topBudgets).toEqual([]);
+  });
+
+  it('shows the 3 with the highest percentage, ties broken by the most spent', async () => {
+    const repo = await setup();
+    await spend(repo, [['Ocio', -50], ['Viajes', -100], ['Regalos', -120], ['Compras', -90], ['Restaurantes', -10]]);
+    await repo.setBudgetLimit(await categoryId(repo, 'Ocio'), 10000);
+    await repo.setBudgetLimit(await categoryId(repo, 'Viajes'), 20000);
+    await repo.setBudgetLimit(await categoryId(repo, 'Regalos'), 10000);
+    await repo.setBudgetLimit(await categoryId(repo, 'Compras'), 10000);
+    await repo.setBudgetLimit(await categoryId(repo, 'Restaurantes'), 10000);
+
+    // Ocio and Viajes are both at 50 %: Viajes spent more. Restaurantes, at 10 %, is left out.
+    expect(await topOn(repo, '2026-10')).toEqual([
+      ['Regalos', 12000, 10000, 'over'],
+      ['Compras', 9000, 10000, 'near'],
+      ['Viajes', 10000, 20000, 'onTrack'],
+    ]);
+  });
+
+  it('shows fewer when there are fewer budgets', async () => {
+    const repo = await setup();
+    await spend(repo, [['Ocio', -30]]);
+    await repo.setBudgetLimit(await categoryId(repo, 'Ocio'), 10000);
+    await repo.setBudgetLimit(await categoryId(repo, 'Viajes'), 10000);
+
+    expect(await topOn(repo, '2026-10')).toEqual([
+      ['Ocio', 3000, 10000, 'onTrack'],
+      ['Viajes', 0, 10000, 'onTrack'],
+    ]);
+  });
+
+  it("goes by the clock's current month whatever month Inicio shows", async () => {
+    const repo = await setup();
+    await spend(repo, [['Ocio', -150]], '10/09/2026');
+    await spend(repo, [['Viajes', -20]]);
+    await repo.setBudgetLimit(await categoryId(repo, 'Ocio'), 10000, '2026-09');
+    await repo.setBudgetLimit(await categoryId(repo, 'Viajes'), 10000, '2026-10');
+
+    // Ocio's spending was in September, and Viajes had no budget then: October is shown all the same.
+    const october = [
+      ['Viajes', 2000, 10000, 'onTrack'],
+      ['Ocio', 0, 10000, 'onTrack'],
+    ];
+    expect(await topOn(repo, '2026-10')).toEqual(october);
+    expect(await topOn(repo, '2026-09')).toEqual(october);
+    expect(await topOn(repo, '2026-08')).toEqual(october);
+
+    // In November there's nothing spent yet.
+    const november = await setup(() => new Date('2026-11-02T10:00:00'));
+    await spend(november, [['Ocio', -150]]);
+    await november.setBudgetLimit(await categoryId(november, 'Ocio'), 10000, '2026-10');
+    expect(await topOn(november, '2026-10')).toEqual([['Ocio', 0, 10000, 'onTrack']]);
   });
 });

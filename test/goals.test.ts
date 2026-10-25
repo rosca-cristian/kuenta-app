@@ -325,6 +325,28 @@ describe('editing a goal', () => {
   });
 });
 
+describe('goals on Inicio', () => {
+  it('shows the non-archived goals with their progress, in the goals list order', async () => {
+    const { repo, bbvaId, revolutId } = await setup();
+    await importFile(repo, october);
+    expect((await repo.home('2026-10')).goals).toEqual([]);
+
+    await createGoal(repo, { name: 'Colchón', target: 100000, accountId: bbvaId, icon: 'landmark', color: 'blue' });
+    const japanId = await createGoal(repo, japan(revolutId));
+    await repo.setGoalArchived(japanId, true);
+    await createGoal(repo, { ...japan(revolutId), name: 'Coche', target: 50000 });
+
+    const goals = (await repo.home('2026-10')).goals;
+    expect(goals.map((goal) => [goal.name, goal.current, goal.percent, goal.reached])).toEqual([
+      ['Colchón', 190000, 190, true],
+      ['Coche', 0, 0, false],
+    ]);
+    expect(goals).toEqual((await repo.listGoals()).filter((goal) => !goal.archived));
+    // Whatever month Inicio shows: a goal's progress is its account's balance today.
+    expect((await repo.home('2026-08')).goals).toEqual(goals);
+  });
+});
+
 describe('archiving a goal', () => {
   it('frees its account for a new goal, and unarchiving it is refused while that account has another active goal', async () => {
     const { repo, bbvaId, revolutId } = await setup();

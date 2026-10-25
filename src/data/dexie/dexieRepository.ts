@@ -84,6 +84,9 @@ function tidyActions(actions: RuleActions): RuleActions {
 const STARTER_RULES_OFFER = 'starterRulesOffer';
 type StarterRulesOffer = 'pending' | 'done';
 
+/** How many budgets Inicio shows. */
+const TOP_BUDGETS = 3;
+
 export function createDexieRepository(options: DexieRepositoryOptions = {}): DataRepository {
   const db = new KuentaDb(options.name);
   const now = options.now ?? (() => new Date());
@@ -976,13 +979,14 @@ export function createDexieRepository(options: DexieRepositoryOptions = {}): Dat
     async home(month): Promise<HomeData> {
       const allAccounts = await repository.listAccounts();
       const accountId = await importAccountId();
-      const [monthTxs, lastImport, uncategorized, chain, currentBudgets] = await Promise.all([
+      const [monthTxs, lastImport, uncategorized, chain, currentBudgets, goals] = await Promise.all([
         transactionsIn(month),
         db.importBatches.orderBy('importedAt').reverse().filter((batch) => !batch.undone).first(),
         db.transactions.filter((tx) => tx.source === 'import' && tx.type !== 'transfer' && tx.categoryId === null).count(),
         chainOf(accountId),
-        // Overspending can only be acted on in the current month, whichever month Inicio shows.
+        // Budgets can only be acted on in the current month, whichever month Inicio shows.
         repository.budgets(monthOf(today(now()))),
+        repository.listGoals(),
       ]);
       return {
         // Archived accounts still hold money: they count in the total, but aren't listed.
@@ -993,6 +997,8 @@ export function createDexieRepository(options: DexieRepositoryOptions = {}): Dat
         uncategorized,
         gaps: findGaps(chain),
         budgetsOver: currentBudgets.budgets.filter((budget) => budget.status === 'over').length,
+        topBudgets: [...currentBudgets.budgets].sort((a, b) => b.percent - a.percent || b.spent - a.spent).slice(0, TOP_BUDGETS),
+        goals: goals.filter((goal) => !goal.archived),
       };
     },
 
