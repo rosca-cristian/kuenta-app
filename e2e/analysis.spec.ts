@@ -45,13 +45,10 @@ test('see the month’s spending by category and open its transactions in Movimi
   await page.getByRole('button', { name: 'Importar 6' }).click();
   await expect(page.getByTestId('balance-check')).toHaveText('✓ Cuadra');
 
-  // Análisis opens on Gastos, with the tab in the URL; the other tabs are still to come.
+  // Análisis opens on Gastos, with the tab in the URL.
   await page.getByRole('link', { name: 'Análisis' }).click();
   await expect(page).toHaveURL(/#\/analisis\/gastos$/);
   await expect(page.getByRole('tab', { name: 'Gastos' })).toHaveAttribute('aria-selected', 'true');
-  await page.getByRole('tab', { name: 'Mensual' }).click();
-  await expect(page.getByText('Próximamente')).toBeVisible();
-  await page.getByRole('tab', { name: 'Gastos' }).click();
 
   // The donut with the total in its centre, and the list highest first: the uncategorized Bizum doesn't count.
   await expect(page.getByText(monthName(), { exact: true })).toBeVisible();

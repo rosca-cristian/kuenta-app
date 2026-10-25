@@ -1,5 +1,5 @@
 import type { Cents } from './money';
-import { monthOf, type Month } from './dates';
+import { addMonths, monthOf, type Month } from './dates';
 import type { Id, Transaction } from './model';
 import { spendingByCategory } from './budgets';
 
@@ -70,4 +70,34 @@ export function monthSpending(transactions: Transaction[], month: Month, categor
   const kept = spent.filter((entry) => entry.amount > 0).sort((a, b) => b.amount - a.amount || rank(a.categoryId) - rank(b.categoryId));
   const total = kept.reduce((sum, entry) => sum + entry.amount, 0);
   return { entries: kept.map((entry) => ({ ...entry, percent: (entry.amount * 100) / total })), total };
+}
+
+/** One month of Análisis → Mensual: its `monthSummary`. */
+export interface MonthlyEntry {
+  month: Month;
+  income: Cents;
+  expenses: Cents;
+  /** income − expenses: negative when more went out than came in. */
+  net: Cents;
+  /** The current month, still under way. */
+  inProgress: boolean;
+}
+
+/**
+ * Income and expenses of each of the `count` months ending at `currentMonth`, oldest first,
+ * as `monthSummary` counts them. The months before `firstMonth`, the first one with an
+ * imported transaction, are left out, so the series starts where the data starts; with no
+ * data (null) it's empty.
+ */
+export function monthlySeries(transactions: Transaction[], currentMonth: Month, count: number, firstMonth: Month | null): MonthlyEntry[] {
+  if (firstMonth === null || firstMonth > currentMonth) return [];
+  const from = addMonths(currentMonth, 1 - count);
+  const first = firstMonth > from ? firstMonth : from;
+
+  const entries: MonthlyEntry[] = [];
+  for (let month = first; month <= currentMonth; month = addMonths(month, 1)) {
+    const { income, expenses, savings } = monthSummary(transactions, month);
+    entries.push({ month, income, expenses, net: savings, inProgress: month === currentMonth });
+  }
+  return entries;
 }

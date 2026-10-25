@@ -300,7 +300,7 @@ Fixed bottom navigation: **Inicio · Movimientos · Importar · Análisis · Má
 ### 4.5 Análisis
 Tabs:
 - **Gastos**: the month's donut by category with the total in the centre, and below it the categories with amount and percentage (acting as the legend). Categories whose net spending (§3.2) is zero or negative are left out; uncategorized expenses form a grey "Sin categoría" slice. Tapping a category (or "Sin categoría") opens Movimientos filtered by that month and category.
-- **Mensual**: income vs expenses bars for the last 6 or 12 months, with each month's net.
+- **Mensual**: income vs expenses bars for the last 6 or 12 months, with each month's net. Each month matches its summary on Inicio; months before the first month with imported transactions are left out, so the series starts where the data starts, and the current month is marked "en curso".
 - **Patrimonio**: net worth (§3.2) at the end of each of the last 12 months as a line, the current month's point being today's; months before the first transaction are left out. Above it, today's net worth and its change since the end of last month, green or red by sign.
 - **Suscripciones**: one row per subscription (payee): name, last amount, frequency (mensual / anual, deduced from the dates of its charges), monthly equivalent, last charge and expected next charge. Totals per month and per year at the top. Notices: "Ha subido de precio" (last charge higher than the previous one) and "No ha llegado el cargo de este mes" (an expected charge that hasn't arrived). Nothing is entered by hand: a subscription is any payee with expenses in the "Suscripciones" category. Tapping a row opens Movimientos filtered by that payee.
 
