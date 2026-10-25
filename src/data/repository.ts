@@ -6,7 +6,7 @@ import type { MonthlyEntry, MonthSummary } from '../domain/stats';
 import type { BudgetStatus, BudgetTotals } from '../domain/budgets';
 import type { GoalProgress } from '../domain/goals';
 import type { Subscription, SubscriptionTotals } from '../domain/subscriptions';
-import type { BackupFile } from '../domain/backup';
+import type { BackupCounts, BackupFile, BackupReadResult } from '../domain/backup';
 import type { Account, AccountType, Category, CategoryKind, Goal, Id, ImportBatch, Payee, Rule, RuleActions, RuleMatch, Transaction, TxType } from '../domain/model';
 import type { ReadError } from '../import/bbva/reader';
 
@@ -591,4 +591,19 @@ export interface DataRepository {
   /** Records that a backup was downloaded or shared now. */
   markBackupMade(): Promise<void>;
   backupStatus(): Promise<BackupStatus>;
+  /**
+   * Reads a backup file's text without writing anything: the backup and its summary (date
+   * and counts), or why it can't be restored (not a Kuenta backup, from a newer format, or
+   * damaged, naming what's wrong). Older formats are migrated first.
+   */
+  readBackup(text: string): BackupReadResult;
+  /** What the app holds now, counted as a backup's summary counts it. */
+  dataCounts(): Promise<BackupCounts>;
+  /**
+   * Replaces all the data with the backup's in one transaction: every table is cleared and
+   * gets the backup's rows. Of the device's settings only `persistRequested` stays, and
+   * `lastBackupAt` and `lastChangeAt` become the backup's `exportedAt`, since the data now
+   * equals a copy the user has. Every screen refreshes.
+   */
+  restoreBackup(backup: BackupFile): Promise<void>;
 }

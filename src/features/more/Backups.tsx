@@ -4,12 +4,14 @@ import { useRepo, useRepoQuery, useServices } from '../../lib/repo';
 import { formatDate, today } from '../../domain/dates';
 import { backupFileName, backupJson } from '../../domain/backup';
 import { CsvRangeExport } from './CsvRangeExport';
+import { RestoreBackup } from './RestoreBackup';
 
 /**
  * Más → Copias de seguridad: "Exportar copia" downloads the JSON backup of every table,
  * "Compartir copia" opens the system's share menu with it (or downloads it where files can't
- * be shared), the date of the last backup and the CSV export of a date range. Only a copy that reached the user counts as
- * one: a cancelled share doesn't.
+ * be shared), "Restaurar copia" replaces all the data with a backup's, the date of the last
+ * backup and the CSV export of a date range. Only a copy that reached the user counts as one:
+ * a cancelled share doesn't.
  */
 export function Backups() {
   const repo = useRepo();
@@ -58,6 +60,7 @@ export function Backups() {
             <Button variant="secondary" disabled={busy} onClick={() => void shareCopy()}>
               Compartir copia
             </Button>
+            <RestoreBackup disabled={busy} exportCurrent={exportCopy} />
           </div>
         </Card>
         <CsvRangeExport />

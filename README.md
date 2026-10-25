@@ -27,7 +27,15 @@ Data is stored in the browser's IndexedDB on the phone, and Kuenta asks Chrome t
 - **Exportar copia** downloads all your data as `kuenta-copia-AAAA-MM-DD.json`: accounts, categories, payees, transactions with your categorizations, notes and transfers, rules, budgets, goals and the import history.
 - **Compartir copia** opens Android's share menu with that file, to save it to Drive or send it by email or Telegram. Where the browser can't share files, it downloads it instead.
 
-The screen shows the date of your last backup. The file is plain JSON, readable without Kuenta, and never leaves the phone unless you share it. Restoring a backup arrives in a later update.
+- **Restaurar copia** brings a backup back, on this phone or a new one:
+  1. Tap **Restaurar copia** and pick the `kuenta-copia-….json` file (from Downloads, Drive…).
+  2. Check the summary: the copy's date and how many accounts, transactions, categories, payees, rules, budgets and goals it has, next to what you have now.
+  3. Optionally tap **Exportar mis datos actuales antes** to keep a copy of your current data.
+  4. Tap **Sustituir todos mis datos**. All your data is replaced by the copy's in one go, and Inicio says **Copia restaurada**.
+
+  A file that can't be restored is refused and nothing changes: "El archivo no es una copia de Kuenta" (not a Kuenta backup), "Esta copia es de una versión más nueva de Kuenta. Actualiza la app para restaurarla." (update Kuenta first), or "La copia está dañada: …" naming what's wrong.
+
+The screen shows the date of your last backup. The file is plain JSON, readable without Kuenta, and never leaves the phone unless you share it.
 
 ## Development
 
