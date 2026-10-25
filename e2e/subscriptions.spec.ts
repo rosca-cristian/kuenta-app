@@ -7,7 +7,7 @@ async function expectNoHorizontalScroll(page: Page) {
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
 }
 
-test('categorize a payee’s charges as Suscripciones, see it monthly with the totals and open its transactions', async ({ page }) => {
+test('categorize a payee’s charges as Suscripciones, see it monthly with the totals and open all its charges', async ({ page }) => {
   // Tuesday 20 October 2026.
   await page.clock.setFixedTime(new Date('2026-10-20T12:00:00'));
   await page.goto('./');
@@ -54,12 +54,14 @@ test('categorize a payee’s charges as Suscripciones, see it monthly with the t
   await expect(page.getByTestId('subscriptions-yearly')).toHaveText('155,88 €');
   await expectNoHorizontalScroll(page);
 
-  // Tapping it opens Movimientos with that payee, in the month of its last charge.
+  // Tapping it opens Movimientos with all that payee's charges, over all months.
   await rows.first().getByRole('button').click();
   await expect(page.getByRole('heading', { name: 'Movimientos' })).toBeVisible();
+  await expect(page).toHaveURL(/mes=todos/);
   await expect(page.getByTestId('filter-chip')).toHaveText('Netflix');
-  await expect(page.getByText('octubre 2026', { exact: true })).toBeVisible();
-  await expect(transactionRows(page)).toHaveCount(1);
-  await expect(transactionRows(page)).toContainText('Netflix');
+  await expect(page.getByRole('radio', { name: 'Todos los meses' })).toBeChecked();
+  await expect(transactionRows(page)).toHaveCount(2);
+  await expect(transactionRows(page)).toHaveText([/Netflix/, /Netflix/]);
+  await expect(page.locator('main section h2')).toHaveText([/15 de octubre/, /15 de septiembre/]);
   await expectNoHorizontalScroll(page);
 });

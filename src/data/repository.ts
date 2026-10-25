@@ -49,10 +49,16 @@ export interface TransactionView extends Transaction {
 }
 
 /**
- * What Movimientos shows of a month when opened from Análisis or Inicio: one category, the
- * transactions without one, or one payee. Absent fields don't filter.
+ * What Movimientos shows of its period: a search, and the category, the transactions without
+ * one, or the payee Análisis and Inicio open it with. Absent fields don't filter; present ones
+ * must all hold.
  */
 export interface TransactionFilter {
+  /**
+   * Found, ignoring case and accents, inside the payee's name, the note, the bank concept or the
+   * bank movement. Blank doesn't filter.
+   */
+  text?: string;
   /** A category's id, or null for "sin categoría": the imported expenses and income without a category. */
   categoryId?: Id | null;
   payeeId?: Id;
@@ -421,8 +427,8 @@ export interface DataRepository {
   /** Closes the offer for good, changing nothing. */
   dismissStarterRulesOffer(): Promise<void>;
 
-  /** Transactions of a month, newest first; with a filter, only those matching it. */
-  listTransactions(month: Month, filter?: TransactionFilter): Promise<TransactionView[]>;
+  /** Transactions of a month, or of all months when `period` is null, newest first; with a filter, only those matching it. */
+  listTransactions(period: Month | null, filter?: TransactionFilter): Promise<TransactionView[]>;
   getTransaction(id: Id): Promise<TransactionView | null>;
   /**
    * Only category, payee, note and whether it's a transfer can change; amount, date and the

@@ -193,4 +193,51 @@ describe('filtering Movimientos', () => {
     expect(await movementsOf(repo, '2026-10', { payeeId: mercadona, categoryId: await categoryId(repo, 'Supermercado') })).toEqual(['Compra 1']);
     expect(await movementsOf(repo, '2026-10', { payeeId: mercadona, categoryId: await categoryId(repo, 'Restaurantes') })).toEqual([]);
   });
+
+  it('searches the payee, note, bank concept and bank movement, ignoring case and accents', async () => {
+    const repo = await setup();
+    await importFile(repo, movements);
+    await repo.updateTransaction(await transactionId(repo, '2026-10', 'Compra 1'), { payeeName: 'Súper Lola' });
+    await repo.updateTransaction(await transactionId(repo, '2026-10', 'Cena'), { note: 'Cumpleaños de Ana' });
+
+    // The payee, the note, the concept and the movement.
+    expect(await movementsOf(repo, '2026-10', { text: 'super lola' })).toEqual(['Compra 1']);
+    expect(await movementsOf(repo, '2026-10', { text: 'cumpleanos' })).toEqual(['Cena']);
+    expect(await movementsOf(repo, '2026-10', { text: 'barrio' })).toEqual(['Sin categoría 1']);
+    expect(await movementsOf(repo, '2026-10', { text: 'parte de' })).toEqual(['Parte de la cena']);
+    // "nomina" finds "Nómina" whatever the case; a substring is enough.
+    expect(await movementsOf(repo, '2026-10', { text: 'nomina' })).toEqual(['Nómina octubre']);
+    expect(await movementsOf(repo, '2026-10', { text: '  NÓMINA ' })).toEqual(['Nómina octubre']);
+    expect(await movementsOf(repo, '2026-10', { text: 'cena' })).toEqual(['Parte de la cena', 'Cena']);
+    // Nothing matches; a blank search doesn't filter.
+    expect(await movementsOf(repo, '2026-10', { text: 'ikea' })).toEqual([]);
+    expect(await movementsOf(repo, '2026-10', { text: ' ' })).toHaveLength(8);
+  });
+
+  it('searches one month or all months, newest first', async () => {
+    const repo = await setup();
+    await importFile(repo, movements);
+
+    expect(await movementsOf(repo, '2026-10', { text: 'mercadona' })).toEqual(['Compra 2', 'Compra 1']);
+    expect(await movementsOf(repo, '2026-09', { text: 'mercadona' })).toEqual(['Septiembre']);
+    expect(await movementsOf(repo, null, { text: 'mercadona' })).toEqual(['Compra 2', 'Compra 1', 'Septiembre']);
+    expect(await movementsOf(repo, null)).toHaveLength(9);
+    expect(await movementsOf(repo, '2026-08', { text: 'mercadona' })).toEqual([]);
+  });
+
+  it('combines the search with the category and the payee: all must hold', async () => {
+    const repo = await setup();
+    await importFile(repo, movements);
+    await repo.updateTransaction(await transactionId(repo, '2026-09', 'Septiembre'), { payeeName: 'Mercadona Centro' });
+    const centro = (await repo.listPayees()).find((payee) => payee.name === 'Mercadona Centro')!.id;
+    const supermercado = await categoryId(repo, 'Supermercado');
+
+    expect(await movementsOf(repo, null, { text: 'mercadona', categoryId: supermercado })).toEqual(['Compra 2', 'Compra 1', 'Septiembre']);
+    expect(await movementsOf(repo, null, { text: 'compra', categoryId: supermercado })).toEqual(['Compra 2', 'Compra 1']);
+    expect(await movementsOf(repo, null, { text: 'mercadona', categoryId: await categoryId(repo, 'Restaurantes') })).toEqual([]);
+    expect(await movementsOf(repo, null, { text: 'mercadona', payeeId: centro })).toEqual(['Septiembre']);
+    expect(await movementsOf(repo, '2026-10', { text: 'mercadona', payeeId: centro })).toEqual([]);
+    expect(await movementsOf(repo, null, { text: 'cena', categoryId: null })).toEqual(['Parte de la cena']);
+    expect(await movementsOf(repo, null, { text: 'compra', payeeId: centro, categoryId: supermercado })).toEqual([]);
+  });
 });
