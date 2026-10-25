@@ -88,3 +88,21 @@ test('a cancelled share is not a backup; a completed one is', async ({ page }) =
   await expect(lastBackup).toHaveText('Última copia: 20/10/2026');
   expect(await page.evaluate(() => (window as unknown as { sharedName: string }).sharedName)).toBe('kuenta-copia-2026-10-20.json');
 });
+
+test('Inicio reminds to make a backup after an import, until one is exported', async ({ page }) => {
+  await page.clock.setFixedTime(new Date('2026-10-20T12:00:00'));
+  await openBackups(page);
+  await page.getByRole('link', { name: 'Inicio' }).click();
+  const reminder = page.getByRole('button', { name: 'Haz una copia de seguridad' });
+  await expect(reminder).toBeVisible();
+  await expectNoHorizontalScroll(page);
+
+  await reminder.click();
+  await expect(page.getByRole('heading', { name: 'Copias de seguridad' })).toBeVisible();
+  await download(page, 'Exportar copia');
+  await expect(page.getByTestId('last-backup')).toHaveText('Última copia: 20/10/2026');
+
+  await page.getByRole('link', { name: 'Inicio' }).click();
+  await expect(page.getByTestId('total-balance')).toBeVisible();
+  await expect(reminder).toHaveCount(0);
+});
