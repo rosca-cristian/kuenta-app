@@ -22,7 +22,12 @@ Overlapping periods are fine: rows already imported are recognized and skipped. 
 
 ## Backups
 
-Data is stored in the browser's IndexedDB on the phone, and Kuenta asks Chrome to keep it persistently. Uninstalling the app or clearing Chrome's site data deletes it. JSON backups arrive in a later part of the build plan; until then, everything except your categorizations can be rebuilt by re-importing the statements.
+Data is stored in the browser's IndexedDB on the phone, and Kuenta asks Chrome to keep it persistently. Uninstalling the app or clearing Chrome's site data deletes it, so keep a copy outside the phone: in **Más → Copias de seguridad**,
+
+- **Exportar copia** downloads all your data as `kuenta-copia-AAAA-MM-DD.json`: accounts, categories, payees, transactions with your categorizations, notes and transfers, rules, budgets, goals and the import history.
+- **Compartir copia** opens Android's share menu with that file, to save it to Drive or send it by email or Telegram. Where the browser can't share files, it downloads it instead.
+
+The screen shows the date of your last backup. The file is plain JSON, readable without Kuenta, and never leaves the phone unless you share it. Restoring a backup arrives in a later update.
 
 ## Development
 

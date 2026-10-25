@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { ChevronRight, Gauge, Goal, ListOrdered, Shapes, Store, Wallet, type LucideIcon } from 'lucide-react';
+import { ChevronRight, DatabaseBackup, Gauge, Goal, ListOrdered, Shapes, Store, Wallet, type LucideIcon } from 'lucide-react';
 import { Card, PageHeader } from '../../ui/components';
 import { useRepoQuery, useServices } from '../../lib/repo';
 
@@ -12,6 +12,7 @@ const SECTIONS: { to: string; label: string; icon: LucideIcon }[] = [
   { to: '/mas/reglas', label: 'Reglas', icon: ListOrdered },
   { to: '/mas/presupuestos', label: 'Presupuestos', icon: Gauge },
   { to: '/mas/objetivos', label: 'Objetivos', icon: Goal },
+  { to: '/mas/copias', label: 'Copias de seguridad', icon: DatabaseBackup },
 ];
 
 export function More() {
@@ -48,10 +49,6 @@ export function More() {
             <dt className="text-muted">Versión</dt>
             <dd>{__APP_VERSION__}</dd>
           </dl>
-        </Card>
-        <Card>
-          <h2 className="mb-1 font-medium">Próximamente</h2>
-          <p className="text-sm text-muted">Copias de seguridad.</p>
         </Card>
       </div>
     </>

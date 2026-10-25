@@ -1,10 +1,5 @@
 import Dexie, { type EntityTable } from 'dexie';
-import type { Account, BudgetLimit, Category, Goal, ImportBatch, Payee, Rule, Transaction } from '../../domain/model';
-
-export interface SettingRow {
-  key: string;
-  value: unknown;
-}
+import type { Account, BudgetLimit, Category, Goal, ImportBatch, Payee, Rule, Setting, Transaction } from '../../domain/model';
 
 export class KuentaDb extends Dexie {
   accounts!: EntityTable<Account, 'id'>;
@@ -15,7 +10,7 @@ export class KuentaDb extends Dexie {
   budgetLimits!: EntityTable<BudgetLimit, 'id'>;
   goals!: EntityTable<Goal, 'id'>;
   importBatches!: EntityTable<ImportBatch, 'id'>;
-  settings!: EntityTable<SettingRow, 'key'>;
+  settings!: EntityTable<Setting, 'key'>;
 
   constructor(name = 'kuenta') {
     super(name);

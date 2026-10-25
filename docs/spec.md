@@ -335,10 +335,11 @@ Cuentas · Categorías · Comercios · Reglas · Presupuestos · Objetivos · Co
 - Archive and unarchive non-imported accounts. The import account can't be archived (changing the import account is out of v1). An account with no transactions can be deleted; rules that transfer to it lose that action and are disabled.
 
 ### 4.11 Copias de seguridad
-- "Exportar copia" (downloads the JSON) and "Compartir copia" (system menu: Drive, email, Telegram…).
+At `#/mas/copias`, listed in Más.
+- "Exportar copia" downloads the JSON backup (§5.13) and "Compartir copia" opens the system menu with it (Drive, email, Telegram…), or downloads it when the browser can't share files. Either counts as a backup once the file is downloaded or shared; closing the share menu doesn't.
 - "Restaurar copia": pick the JSON, see a summary ("Copia del 12/10/2026: 3 cuentas, 845 movimientos…"), confirm with "Sustituir todos mis datos", optionally exporting current data first.
 - "Exportar movimientos (CSV)" with a date range.
-- Date of the last backup.
+- "Última copia: 12/10/2026", or "Nunca", the date of the last backup made on this phone.
 
 ### Design (dark only)
 - Near-black background, cards one shade lighter, subtle borders. One accent colour for primary actions. Green for income, amber for *Cerca*, red only for *Superado* and errors.
@@ -464,6 +465,21 @@ All checked at a 390×844 viewport. Items marked 🧪 have a unit test.
 - 🧪 Creating a second non-archived goal on the same account is refused; an archived goal doesn't block it. Moving a non-archived goal to, or unarchiving one on, an account that already has another non-archived goal is refused too.
 
 ### 5.13 Backups and CSV
+- **Backup format**: one JSON file with 2-space indentation:
+  ```ts
+  interface BackupFile {
+    app: 'kuenta';
+    format: 1;               // backup format version, independent of the Dexie schema version
+    exportedAt: string;      // ISO 8601, from the app's clock
+    appVersion: string;
+    data: {
+      accounts: Account[]; categories: Category[]; payees: Payee[]; transactions: Transaction[];
+      rules: Rule[]; budgetLimits: BudgetLimit[]; goals: Goal[]; importBatches: ImportBatch[];
+      settings: Setting[];
+    };
+  }
+  ```
+  Rows are as stored in IndexedDB (same field names, cents as integers, dates as strings), read in one transaction, undone imports and each transaction's `editedAt` included. `settings` holds only the settings that describe the data: `importAccountId`, `starterDataVersion`, `starterRulesOffer` and `onboardingDone`. The device's (`persistRequested`, `lastBackupAt`, `lastChangeAt`) are left out, so restoring on another phone doesn't bring stale state.
 - 🧪 **Round trip**: exporting, wiping everything and restoring leaves the data identical, table by table and field by field.
 - 🧪 Restore validates the format (`app: "kuenta"`, `format`, each table's schema, references between tables). If anything fails, current data is untouched and the problem is explained.
 - 🧪 A backup from an older format version is migrated on restore; one from a newer version is rejected with a message.
@@ -476,7 +492,7 @@ All checked at a 390×844 viewport. Items marked 🧪 have a unit test.
   - A field with `;`, `"`, CR or LF goes in quotes, with `"` doubled. **Formula guard**: a text field starting with `=`, `+`, `-` or `@` gets a leading `'`, so Excel never runs it as a formula; amounts are left alone.
   - Movimientos' "Exportar CSV" exports exactly the list shown (period, search and filters), and is disabled when it's empty.
 - File names: `kuenta-copia-AAAA-MM-DD.json` and `kuenta-movimientos-AAAA-MM-DD.csv`.
-- "Compartir copia" opens the system menu with the JSON file. If the browser can't share files, it downloads it.
+- "Compartir copia" opens the system menu with the JSON file. If the browser can't share files, it downloads it. A download or a share sets `lastBackupAt`; a cancelled share doesn't.
 - The reminder appears on Inicio when more than 7 days have passed since the last backup (or none was ever made) and data has changed since. It disappears after exporting or sharing.
 
 ### 5.14 PWA and storage
