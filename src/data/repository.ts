@@ -601,9 +601,10 @@ export interface DataRepository {
   dataCounts(): Promise<BackupCounts>;
   /**
    * Replaces all the data with the backup's in one transaction: every table is cleared and
-   * gets the backup's rows. Of the device's settings only `persistRequested` stays, and
-   * `lastBackupAt` and `lastChangeAt` become the backup's `exportedAt`, since the data now
-   * equals a copy the user has. Every screen refreshes.
+   * gets the backup's rows. This device's own settings (those that aren't data settings, such
+   * as `persistRequested`) stay, onboarding counts as done, and `lastBackupAt` and
+   * `lastChangeAt` become the backup's `exportedAt`, since the data now equals a copy the user
+   * has. Every screen refreshes.
    */
   restoreBackup(backup: BackupFile): Promise<void>;
 }

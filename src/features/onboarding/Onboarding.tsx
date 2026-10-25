@@ -47,7 +47,7 @@ export function Onboarding() {
           </div>
           <div className="flex flex-col gap-2">
             <Button onClick={() => setStep('account')}>Empezar</Button>
-            <RestoreBackup label="Restaurar una copia" onRestored={requestPersistence} />
+            <RestoreBackup label="Restaurar una copia" beforeRestore={requestPersistence} />
           </div>
         </>
       ) : (

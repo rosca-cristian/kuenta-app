@@ -36,9 +36,10 @@ export const webPlatform: PlatformServices = {
   saveFile,
 
   async shareFile(file) {
-    if (navigator.canShare?.({ files: [file] })) {
+    const shareable = shareableCopy(file);
+    if (shareable) {
       try {
-        await navigator.share({ files: [file] });
+        await navigator.share({ files: [shareable] });
         return 'shared';
       } catch (error) {
         if ((error as Error | null)?.name === 'AbortError') return 'cancelled';
@@ -49,3 +50,15 @@ export const webPlatform: PlatformServices = {
     return 'downloaded';
   },
 };
+
+/**
+ * The file as the browser will share it, or null when it can't. Chrome only shares some file
+ * types, and JSON isn't one of them, so a file it refuses goes as plain text with a `.txt` name,
+ * which "Restaurar copia" also accepts.
+ */
+function shareableCopy(file: File): File | null {
+  if (!navigator.canShare) return null;
+  if (navigator.canShare({ files: [file] })) return file;
+  const text = new File([file], file.name.replace(/\.[^.]*$/, '') + '.txt', { type: 'text/plain' });
+  return navigator.canShare({ files: [text] }) ? text : null;
+}

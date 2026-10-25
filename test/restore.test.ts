@@ -94,7 +94,7 @@ describe('restoring a backup', () => {
     expect(byId(await target.db.categories.toArray())).toEqual(byId(backup.data.categories));
   });
 
-  it('replaces different data without leaving anything of it, keeping only whether persistence was requested', async () => {
+  it("replaces different data without leaving anything of it, keeping this phone's own settings", async () => {
     const { text } = await richBackup();
     const target = await setup();
     await importFile(target.repo, [{ valor: '15/09/2026', concepto: 'Otro banco', movimiento: 'Pago con tarjeta', importe: -7 }], 300);
@@ -135,6 +135,19 @@ describe('restoring a backup', () => {
     const { settings } = await tables(target.db);
     expect(settings.persistRequested).toBeUndefined();
     expect(settings.lastBackupAt).toBe(new Date('2026-10-20T10:00:00').toISOString());
+  });
+
+  it("keeps any setting of this phone's that isn't data, and never sends the app back to the first run", async () => {
+    const { text } = await richBackup();
+    const target = await setup();
+    await target.db.settings.put({ key: 'privacyMode', value: true });
+    const notDone = edited(text, (file) => {
+      file.data.settings = file.data.settings.filter((row) => row.key !== 'onboardingDone');
+    });
+    await target.repo.restoreBackup(read(target.repo, notDone));
+    const { settings } = await tables(target.db);
+    expect(settings.privacyMode).toBe(true);
+    expect((await target.repo.getSettings()).onboardingDone).toBe(true);
   });
 
   it('still lets rules skip the transactions edited by hand', async () => {

@@ -78,15 +78,18 @@ export function RestoreBackup({
   variant = 'secondary',
   disabled = false,
   exportCurrent,
-  onRestored,
+  beforeRestore,
 }: {
   label?: string;
   variant?: 'primary' | 'secondary';
   disabled?: boolean;
   /** Downloads a backup of the current data, counting as one. */
   exportCurrent?: () => Promise<void>;
-  /** Runs after the restore, before going to Inicio (e.g. requesting persistent storage). */
-  onRestored?: () => Promise<void>;
+  /**
+   * Runs once the user confirms, before the restore (e.g. requesting persistent storage): on
+   * the first run, restoring finishes onboarding and takes the welcome screen away.
+   */
+  beforeRestore?: () => Promise<void>;
 }) {
   const repo = useRepo();
   const navigate = useNavigate();
@@ -116,8 +119,8 @@ export function RestoreBackup({
     if (!read?.ok) return;
     setBusy(true);
     try {
+      await beforeRestore?.();
       await repo.restoreBackup(read.backup);
-      await onRestored?.();
       setRead(null);
       navigate('/', { replace: true, state: RESTORED_STATE });
     } catch {
@@ -132,7 +135,7 @@ export function RestoreBackup({
       <input
         ref={input}
         type="file"
-        accept=".json,application/json"
+        accept=".json,.txt,application/json,text/plain"
         className="hidden"
         data-testid="backup-input"
         onChange={(event) => {

@@ -1307,7 +1307,8 @@ export function createDexieRepository(options: DexieRepositoryOptions = {}): Dat
       const { data, exportedAt } = backup;
       const tables = [db.accounts, db.categories, db.payees, db.transactions, db.rules, db.budgetLimits, db.goals, db.importBatches, db.settings];
       await db.transaction('rw', tables, async () => {
-        const persistRequested = await db.settings.get('persistRequested');
+        // This phone's own settings stay (whether persistence was requested…); the backup's data settings replace the rest.
+        const device = (await db.settings.toArray()).filter((row) => !BACKUP_SETTINGS.includes(row.key));
         await Promise.all(tables.map((table) => table.clear()));
         await db.accounts.bulkAdd(data.accounts);
         await db.categories.bulkAdd(data.categories);
@@ -1317,9 +1318,11 @@ export function createDexieRepository(options: DexieRepositoryOptions = {}): Dat
         await db.budgetLimits.bulkAdd(data.budgetLimits);
         await db.goals.bulkAdd(data.goals);
         await db.importBatches.bulkAdd(data.importBatches);
-        await db.settings.bulkAdd([
+        await db.settings.bulkPut([
+          ...device,
           ...data.settings.filter((row) => BACKUP_SETTINGS.includes(row.key)),
-          ...(persistRequested ? [persistRequested] : []),
+          // A backup is only made once onboarding is done; a hand-edited one mustn't send the app back to it.
+          { key: 'onboardingDone', value: true },
           { key: 'lastBackupAt', value: exportedAt },
           { key: 'lastChangeAt', value: exportedAt },
         ]);

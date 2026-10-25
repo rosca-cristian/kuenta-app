@@ -2,14 +2,14 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { webPlatform } from '../src/platform/web';
 
 /** Stands in for the browser: the share API given, and a document whose download links are recorded. */
-function browser(share?: { canShare: boolean; share?: () => Promise<void> }) {
+function browser(share?: { canShare: boolean | ((file: File) => boolean); share?: () => Promise<void> }) {
   const downloads: string[] = [];
   const shared: File[][] = [];
   vi.stubGlobal(
     'navigator',
     share
       ? {
-          canShare: () => share.canShare,
+          canShare: ({ files }: { files: File[] }) => (typeof share.canShare === 'function' ? share.canShare(files[0]) : share.canShare),
           share: async ({ files }: { files: File[] }) => {
             shared.push(files);
             await share.share?.();
@@ -40,6 +40,14 @@ describe('sharing a file', () => {
     const { downloads, shared } = browser({ canShare: true });
     expect(await webPlatform.shareFile(file())).toBe('shared');
     expect(shared.map((files) => files.map((f) => f.name))).toEqual([['kuenta-copia-2026-10-20.json']]);
+    expect(downloads).toEqual([]);
+  });
+
+  it("shares the file as plain text where the browser doesn't share JSON (Chrome)", async () => {
+    const { downloads, shared } = browser({ canShare: (f) => f.type === 'text/plain' });
+    expect(await webPlatform.shareFile(file())).toBe('shared');
+    expect(shared.map((files) => files.map((f) => [f.name, f.type]))).toEqual([[['kuenta-copia-2026-10-20.txt', 'text/plain']]]);
+    expect(await shared[0][0].text()).toBe('{}');
     expect(downloads).toEqual([]);
   });
 

@@ -18,16 +18,20 @@ export function CsvRangeExport() {
   const [picked, setPicked] = useState<{ from?: IsoDate; to?: IsoDate }>({});
   const from = picked.from ?? firstDate ?? today();
   const to = picked.to ?? today();
+  // Until the first date is known, "Desde" isn't its default yet: nothing to count or complain about.
+  const loading = picked.from === undefined && firstDate === undefined;
   const valid = from !== '' && to !== '' && from <= to;
   const transactions = useRepoQuery((r) => (valid ? r.listTransactions(null, { from, to }) : Promise.resolve([])), [from, to, valid]);
 
-  const problem = !valid
-    ? from === '' || to === ''
-      ? 'Elige las dos fechas.'
-      : '«Desde» es posterior a «Hasta».'
-    : transactions?.length === 0
-      ? 'No hay movimientos entre esas fechas.'
-      : null;
+  const problem = loading
+    ? null
+    : !valid
+      ? from === '' || to === ''
+        ? 'Elige las dos fechas.'
+        : '«Desde» es posterior a «Hasta».'
+      : transactions?.length === 0
+        ? 'No hay movimientos entre esas fechas.'
+        : null;
 
   async function exportCsv() {
     if (!transactions?.length) return;
@@ -49,9 +53,9 @@ export function CsvRangeExport() {
         </label>
       </div>
       <p className="mt-3 text-sm" data-testid="csv-range-count" role={problem ? 'alert' : undefined}>
-        {problem ?? (transactions === undefined ? '…' : `${transactions.length} ${transactions.length === 1 ? 'movimiento' : 'movimientos'}`)}
+        {problem ?? (loading || transactions === undefined ? '…' : `${transactions.length} ${transactions.length === 1 ? 'movimiento' : 'movimientos'}`)}
       </p>
-      <Button variant="secondary" className="mt-3 w-full" disabled={!transactions?.length} onClick={() => void exportCsv()}>
+      <Button variant="secondary" className="mt-3 w-full" disabled={loading || !transactions?.length} onClick={() => void exportCsv()}>
         Exportar movimientos (CSV)
       </Button>
     </Card>
