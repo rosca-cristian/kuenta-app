@@ -64,3 +64,10 @@ export function formatTypedAmount(cents: Cents): string {
 export function formatSignedMoney(cents: Cents): string {
   return cents > 0 ? `+${formatMoney(cents)}` : formatMoney(cents);
 }
+
+const compactEuros = new Intl.NumberFormat('es-ES', { notation: 'compact', maximumFractionDigits: 1 });
+
+/** Cents as a short Spanish amount for chart axes: 123456 → "1,2 mil €", −150000000 → "−1,5 M €". */
+export function formatCompactMoney(cents: Cents): string {
+  return `${compactEuros.format(cents / 100).replace(/\s/g, ' ').replace('-', MINUS)} €`;
+}

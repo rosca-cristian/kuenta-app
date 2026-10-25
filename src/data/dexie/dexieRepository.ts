@@ -7,7 +7,7 @@ import { isUncategorized, monthSpending, monthSummary } from '../../domain/stats
 import { monthForecast } from '../../domain/forecast';
 import { budgetMonth, limitFor } from '../../domain/budgets';
 import { goalProgress } from '../../domain/goals';
-import { addMonths, daysBetween, isMonth, monthOf, today, type Month } from '../../domain/dates';
+import { addMonths, daysBetween, daysInMonth, isMonth, monthOf, today, type Month } from '../../domain/dates';
 import { normalizeText } from '../../domain/text';
 import { shapeByBankSign, transferAccountOf } from '../../domain/transfers';
 import {
@@ -42,6 +42,8 @@ import type {
   HomeData,
   ImportOutcome,
   ImportPreview,
+  NetWorthPoint,
+  NetWorthView,
   PayeeRenameResult,
   PayeeView,
   PreviewResult,
@@ -1023,6 +1025,35 @@ export function createDexieRepository(options: DexieRepositoryOptions = {}): Dat
           entries: entries.map(({ categoryId, ...entry }) => ({ category: categoryId === null ? null : byId.get(categoryId)!, ...entry })),
           total,
         };
+      });
+    },
+
+    async netWorth(): Promise<NetWorthView> {
+      return db.transaction('r', db.accounts, db.transactions, async () => {
+        const [accounts, txs] = await Promise.all([db.accounts.toArray(), db.transactions.toArray()]);
+        const first = txs.reduce<string | null>((oldest, tx) => (oldest === null || tx.date < oldest ? tx.date : oldest), null);
+        const byAccount = new Map(accounts.map((account) => [account.id, [] as Transaction[]]));
+        for (const tx of txs) {
+          byAccount.get(tx.accountId)?.push(tx);
+          if (tx.toAccountId) byAccount.get(tx.toAccountId)?.push(tx);
+        }
+
+        const date = today(now());
+        const currentMonth = monthOf(date);
+        const points: NetWorthPoint[] = [];
+        // The last 12 months, the current one included.
+        for (let back = 11; back >= 0; back--) {
+          const month = addMonths(currentMonth, -back);
+          if (first === null || month < monthOf(first)) continue;
+          const end = back === 0 ? date : `${month}-${daysInMonth(month)}`;
+          const balances = await Promise.all(
+            accounts.map((account) => balanceOf(account, byAccount.get(account.id)!.filter((tx) => tx.date <= end))),
+          );
+          points.push({ month, date: end, netWorth: balances.reduce((sum, balance) => sum + balance, 0) });
+        }
+        const latest = points.at(-1)?.netWorth ?? null;
+        const previous = points.at(-2)?.netWorth ?? null;
+        return { points, latest, change: latest !== null && previous !== null ? latest - previous : null };
       });
     },
 
