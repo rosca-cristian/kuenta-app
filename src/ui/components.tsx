@@ -1,6 +1,6 @@
 import type { ButtonHTMLAttributes, ReactNode } from 'react';
 import { Link } from 'react-router-dom';
-import { ChevronLeft, ChevronRight } from 'lucide-react';
+import { ChevronLeft, ChevronRight, X } from 'lucide-react';
 import { addMonths, formatMonth, type Month } from '../domain/dates';
 import { formatMoney, type Cents } from '../domain/money';
 
@@ -143,5 +143,17 @@ export function Choice<T extends string>({
         ))}
       </div>
     </fieldset>
+  );
+}
+
+/** An active filter, with a button that removes it. */
+export function FilterChip({ label, onRemove }: { label: string; onRemove: () => void }) {
+  return (
+    <span className="inline-flex min-w-0 max-w-full items-center gap-1 rounded-full border border-accent/40 bg-accent/15 pl-3 text-sm" data-testid="filter-chip">
+      <span className="truncate">{label}</span>
+      <button type="button" aria-label={`Quitar filtro ${label}`} className="flex size-11 shrink-0 items-center justify-center text-muted" onClick={onRemove}>
+        <X size={16} aria-hidden />
+      </button>
+    </span>
   );
 }

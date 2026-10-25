@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { ChevronRight, Gauge, Goal, ListOrdered, Shapes, Store, Wallet, type LucideIcon } from 'lucide-react';
-import { Card, EmptyState, PageHeader } from '../../ui/components';
+import { Card, PageHeader } from '../../ui/components';
 import { useRepoQuery, useServices } from '../../lib/repo';
 
 /** Management screens reachable from Más, in the order of the spec (§4.8). */
@@ -54,15 +54,6 @@ export function More() {
           <p className="text-sm text-muted">Copias de seguridad.</p>
         </Card>
       </div>
-    </>
-  );
-}
-
-export function ComingSoon({ title }: { title: string }) {
-  return (
-    <>
-      <PageHeader title={title} />
-      <EmptyState title="Próximamente">Esta sección llegará en una próxima versión.</EmptyState>
     </>
   );
 }

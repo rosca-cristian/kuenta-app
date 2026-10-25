@@ -47,6 +47,16 @@ export interface TransactionView extends Transaction {
   toAccount: Account | null;
 }
 
+/**
+ * What Movimientos shows of a month when opened from Análisis or Inicio: one category, the
+ * transactions without one, or one payee. Absent fields don't filter.
+ */
+export interface TransactionFilter {
+  /** A category's id, or null for "sin categoría": the imported expenses and income without a category. */
+  categoryId?: Id | null;
+  payeeId?: Id;
+}
+
 export interface Settings {
   onboardingDone: boolean;
   importAccountId: Id | null;
@@ -215,6 +225,24 @@ export interface BudgetsView {
   today: number | null;
 }
 
+/** One entry of Análisis → Gastos. */
+export interface SpendingEntryView {
+  /** Null for "Sin categoría": the month's uncategorized expenses. */
+  category: Category | null;
+  /** Above 0: expenses − income in the category, as budgets measure it. */
+  amount: Cents;
+  /** amount / total × 100, unrounded. */
+  percent: number;
+}
+
+/** Análisis → Gastos for one month: the donut's slices and the list below it. */
+export interface SpendingView {
+  /** Highest first; categories whose spending is 0 or negative are left out. */
+  entries: SpendingEntryView[];
+  /** The sum of the entries: the donut's centre. */
+  total: Cents;
+}
+
 /** A goal with its account and how far it is. */
 export interface GoalView extends Goal, GoalProgress {
   /** The linked account with its balance today, archived or not: a goal keeps showing an archived account's balance. */
@@ -352,8 +380,8 @@ export interface DataRepository {
   /** Closes the offer for good, changing nothing. */
   dismissStarterRulesOffer(): Promise<void>;
 
-  /** Transactions of a month, newest first. */
-  listTransactions(month: Month): Promise<TransactionView[]>;
+  /** Transactions of a month, newest first; with a filter, only those matching it. */
+  listTransactions(month: Month, filter?: TransactionFilter): Promise<TransactionView[]>;
   getTransaction(id: Id): Promise<TransactionView | null>;
   /**
    * Only category, payee, note and whether it's a transfer can change; amount, date and the
@@ -398,6 +426,13 @@ export interface DataRepository {
   undoImport(batchId: Id): Promise<void>;
 
   home(month: Month): Promise<HomeData>;
+
+  /**
+   * Análisis → Gastos: each category's spending in the month by transaction date, as
+   * `budgets` measures it (expenses − income), leaving out those at 0 or below, plus the
+   * uncategorized expenses as "Sin categoría". Transfers and balance adjustments never count.
+   */
+  spending(month: Month): Promise<SpendingView>;
 
   /**
    * The budgets of a month with their spending by transaction date. Transfers, balance

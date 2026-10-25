@@ -7,6 +7,7 @@ import { formatDate, monthOf, today } from '../../domain/dates';
 import { formatMoney } from '../../domain/money';
 import { BUDGET_STATUS } from '../budgets/Budgets';
 import type { BudgetView, GoalView } from '../../data/repository';
+import { transactionsLink } from '../transactions/filters';
 
 /** Days without importing before Inicio reminds the user. */
 export const IMPORT_REMINDER_DAYS = 8;
@@ -72,7 +73,7 @@ export function Home() {
         ))}
         <StarterRulesOffer />
         {home.uncategorized > 0 && (
-          <Alert onClick={() => navigate('/movimientos')}>
+          <Alert onClick={() => navigate(transactionsLink(month, { categoryId: null }))}>
             {home.uncategorized === 1 ? '1 movimiento sin categoría' : `${home.uncategorized} movimientos sin categoría`}
           </Alert>
         )}
