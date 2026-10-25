@@ -435,11 +435,12 @@ All checked at a 390×844 viewport. Items marked 🧪 have a unit test.
 
 ### 5.10b Subscriptions
 - 🧪 Every payee with expenses in "Suscripciones" appears once, with its last charge amount; payees in other categories don't.
-- 🧪 A payee charged in each of several consecutive months is monthly; one charged about 12 months apart is yearly; one with a single charge shows that charge with frequency "—" until more history exists.
-- 🧪 Monthly equivalent: monthly = last amount; yearly = last amount / 12, rounded to the cent. Totals per month and per year are the sums of the monthly equivalents (× 12 for the year).
+- 🧪 The frequency comes from the last two charges: monthly when they are in consecutive months; yearly when they are 11–13 months apart; otherwise "—" (a single charge or irregular dates), which shows the last charge until more history exists.
+- 🧪 Monthly equivalent: monthly = last amount; yearly = last amount / 12, rounded to the cent. Totals per month and per year are the sums of the monthly equivalents (× 12 for the year); subscriptions with frequency "—" have no monthly equivalent and don't count in the totals.
+- 🧪 Next charge: the last charge's date plus a month (monthly) or a year (yearly); none for "—".
 - 🧪 "Ha subido de precio" appears when the last charge is higher than the one before.
 - 🧪 "No ha llegado el cargo de este mes" uses the expected charge rule (§3.2) for monthly subscriptions.
-- Subscriptions charged through PayPal or another intermediary are told apart by the payee the user's rules give them (e.g. a rule `mullvad` → payee "Mullvad"), not by the bank concept.
+- 🧪 Subscriptions charged through PayPal or another intermediary are told apart by the payee the user's rules give them (e.g. a rule `mullvad` → payee "Mullvad"), not by the bank concept.
 
 ### 5.11 Budgets
 - 🧪 With a 300 € limit on "Restaurantes" from 2026-09 and a change to 250 € from 2026-11, October uses 300 € and November and December 250 €.

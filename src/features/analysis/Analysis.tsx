@@ -2,6 +2,7 @@ import { useEffect } from 'react';
 import { Navigate, NavLink, useLocation, useParams } from 'react-router-dom';
 import { EmptyState, PageHeader } from '../../ui/components';
 import { Spending } from './Spending';
+import { Subscriptions } from './Subscriptions';
 
 const TABS = { gastos: 'Gastos', mensual: 'Mensual', patrimonio: 'Patrimonio', suscripciones: 'Suscripciones' } as const;
 
@@ -49,6 +50,8 @@ export function Analysis() {
       <div role="tabpanel" aria-label={TABS[tab]}>
         {tab === 'gastos' ? (
           <Spending />
+        ) : tab === 'suscripciones' ? (
+          <Subscriptions />
         ) : (
           <EmptyState title="Próximamente">Esta vista llegará en una próxima versión.</EmptyState>
         )}

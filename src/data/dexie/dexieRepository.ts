@@ -5,6 +5,7 @@ import { planImport, reapplyRules } from '../../domain/importPlan';
 import { applyRules as firstMatchActions, hasAction, ruleMatches, suggestedRuleText, type RuleSubject } from '../../domain/rules';
 import { isUncategorized, monthSpending, monthSummary } from '../../domain/stats';
 import { monthForecast } from '../../domain/forecast';
+import { subscriptions, subscriptionTotals } from '../../domain/subscriptions';
 import { budgetMonth, limitFor } from '../../domain/budgets';
 import { goalProgress } from '../../domain/goals';
 import { addMonths, daysBetween, isMonth, monthOf, today, type Month } from '../../domain/dates';
@@ -49,6 +50,7 @@ import type {
   RuleDraft,
   Settings,
   SpendingView,
+  SubscriptionsView,
   TransactionChanges,
   TransactionFilter,
   TransactionView,
@@ -1155,6 +1157,28 @@ export function createDexieRepository(options: DexieRepositoryOptions = {}): Dat
         await db.goals.delete(id);
       });
       changed();
+    },
+
+    async subscriptions(): Promise<SubscriptionsView> {
+      return db.transaction('r', db.categories, db.transactions, db.payees, async () => {
+        // The category whose payees are the subscriptions, by name: it survives being recreated or seeded again.
+        const category = await db.categories.filter((c) => normalizeText(c.name) === 'suscripciones').first();
+        if (!category) return { subscriptions: [], totals: subscriptionTotals([]) };
+        const date = today(now());
+        const [charges, recent] = await Promise.all([
+          db.transactions.where('categoryId').equals(category.id).toArray(),
+          // Missing charges look at the two months before this one, whatever their category.
+          db.transactions.where('date').between(`${addMonths(monthOf(date), -2)}-01`, `${addMonths(monthOf(date), 1)}-01`).toArray(),
+        ]);
+        const list = subscriptions([...new Map([...charges, ...recent].map((tx) => [tx.id, tx])).values()], category.id, date);
+        const payees = await db.payees.bulkGet(list.map((subscription) => subscription.payeeId));
+        return {
+          subscriptions: list
+            .map((subscription, i) => ({ ...subscription, payee: payees[i]! }))
+            .sort((a, b) => a.payee.name.localeCompare(b.payee.name, 'es-ES')),
+          totals: subscriptionTotals(list),
+        };
+      });
     },
   };
 
