@@ -243,6 +243,25 @@ export interface SpendingView {
   total: Cents;
 }
 
+/** One point of Análisis → Patrimonio. */
+export interface NetWorthPoint {
+  month: Month;
+  /** The month's last day, or today for the current month. */
+  date: IsoDate;
+  /** Every account's balance on that date, opening balances, archived and non-imported accounts included. */
+  netWorth: Cents;
+}
+
+/** Análisis → Patrimonio: net worth at the end of each of the last 12 months. */
+export interface NetWorthView {
+  /** Oldest first, ending with the current month; months before the first transaction are left out. */
+  points: NetWorthPoint[];
+  /** The last point's net worth; null when there are no points. */
+  latest: Cents | null;
+  /** latest − the previous point's net worth; null with fewer than two points. */
+  change: Cents | null;
+}
+
 /** A goal with its account and how far it is. */
 export interface GoalView extends Goal, GoalProgress {
   /** The linked account with its balance today, archived or not: a goal keeps showing an archived account's balance. */
@@ -433,6 +452,14 @@ export interface DataRepository {
    * uncategorized expenses as "Sin categoría". Transfers and balance adjustments never count.
    */
   spending(month: Month): Promise<SpendingView>;
+
+  /**
+   * Análisis → Patrimonio: the sum of every account's balance, archived and non-imported
+   * ones included, on the last day of each of the last 12 months, the current month's
+   * being today's. Months before the first transaction are left out. Transfers move money
+   * between accounts, so they don't change it; balance adjustments do.
+   */
+  netWorth(): Promise<NetWorthView>;
 
   /**
    * The budgets of a month with their spending by transaction date. Transfers, balance

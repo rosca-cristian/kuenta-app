@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { formatMoney, formatSignedMoney, parseBankAmount, parseTypedAmount } from './money';
+import { formatCompactMoney, formatMoney, formatSignedMoney, parseBankAmount, parseTypedAmount } from './money';
 import { formatDate, formatDayHeader, formatMonth, isMonth, parseBankDate } from './dates';
 import { formatPercent } from '../ui/components';
 
@@ -10,6 +10,14 @@ describe('money formatting', () => {
     expect(formatMoney(0)).toBe('0,00 €');
     expect(formatMoney(123456789)).toBe('1.234.567,89 €');
     expect(formatSignedMoney(1250)).toBe('+12,50 €');
+  });
+
+  it('formats compact amounts for chart axes', () => {
+    expect(formatCompactMoney(0)).toBe('0 €');
+    expect(formatCompactMoney(95000)).toBe('950 €');
+    expect(formatCompactMoney(123456)).toBe('1,2 mil €');
+    expect(formatCompactMoney(-150000)).toBe('−1,5 mil €');
+    expect(formatCompactMoney(150000000)).toBe('1,5 M €');
   });
 
   it('reads Spanish text amounts', () => {
