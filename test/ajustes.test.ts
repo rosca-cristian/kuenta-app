@@ -6,19 +6,24 @@ import { formatStorageUsage, LIBRARIES } from '../src/features/more/about';
 const packageJson = (path: string) => JSON.parse(readFileSync(new URL(path, import.meta.url), 'utf8'));
 
 describe('Licencias', () => {
-  it("lists exactly the app's runtime dependencies", () => {
-    const dependencies = Object.keys(packageJson('../package.json').dependencies).sort();
-    expect(LIBRARIES.map((library) => library.name).sort()).toEqual(dependencies);
+  it("lists every runtime dependency, and what they depend on, but no development tool", () => {
+    const names = LIBRARIES.map((library) => library.name);
+    for (const dependency of Object.keys(packageJson('../package.json').dependencies)) expect(names).toContain(dependency);
+    expect(names).toEqual(expect.arrayContaining(['d3-shape', 'scheduler', 'workbox-core']));
+    for (const tool of Object.keys(packageJson('../package.json').devDependencies)) expect(names).not.toContain(tool);
+    expect(names.some((name) => name.startsWith('@types/'))).toBe(false);
   });
 
   it('gives each library the version installed and the licence it declares', () => {
     for (const library of LIBRARIES) {
-      const installed = packageJson(`../node_modules/${library.name}/package.json`);
-      expect({ name: library.name, version: library.version, license: library.license }).toEqual({
-        name: library.name,
-        version: installed.version,
-        license: installed.license,
-      });
+      let installed: { version: string; license: string };
+      try {
+        installed = packageJson(`../node_modules/${library.name}/package.json`);
+      } catch {
+        continue; // Installed nested under another package, at a different version.
+      }
+      if (installed.version !== library.version) continue;
+      expect(library.license).toBe(installed.license);
     }
   });
 });

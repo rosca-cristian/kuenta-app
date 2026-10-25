@@ -12,7 +12,7 @@ export function Licenses() {
         </p>
         <ul aria-label="Bibliotecas" className="overflow-hidden rounded-2xl border border-line bg-card">
           {LIBRARIES.map(({ name, version, license }) => (
-            <li key={name} className="flex min-h-14 items-center gap-3 border-b border-line px-4 py-2 last:border-b-0">
+            <li key={`${name}@${version}`} className="flex min-h-14 items-center gap-3 border-b border-line px-4 py-2 last:border-b-0">
               <div className="min-w-0 flex-1">
                 <p className="break-words">{name}</p>
                 <p className="text-sm text-muted">{version}</p>

@@ -242,11 +242,12 @@ function AccountForm({
 /** "Actualizar saldo": the user types the real balance and Kuenta adds an adjustment for the difference. */
 function BalanceForm({ account, onDone }: { account: AccountView; onDone: () => void }) {
   const repo = useRepo();
-  const [text, setText] = useState(() => formatTypedAmount(account.balance));
+  const { hidden, money, signedMoney } = useMoney();
+  // In privacy mode the field starts empty rather than giving the hidden balance away.
+  const [text, setText] = useState(() => (hidden ? '' : formatTypedAmount(account.balance)));
   const [error, setError] = useState<string | null>(null);
   const typed = parseTypedAmount(text);
   const difference = typed === null ? null : typed - account.balance;
-  const { money, signedMoney } = useMoney();
 
   async function save(event: FormEvent) {
     event.preventDefault();

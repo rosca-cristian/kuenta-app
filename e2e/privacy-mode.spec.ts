@@ -7,7 +7,7 @@ const MASK = '•••• €';
 const EURO_AMOUNT = /\d[\d.,]*\s*(mil\s*|M\s*)?€/;
 
 const sheet = (page: Page) => page.getByRole('dialog');
-const eye = (page: Page) => page.getByRole('button', { name: /^(Ocultar|Mostrar) importes$/ });
+const eye = (page: Page) => page.getByRole('button', { name: 'Ocultar importes' });
 
 /** The screen shows the mask and no amount anywhere, chart axes and open sheets included. */
 async function expectMasked(page: Page) {
@@ -76,7 +76,6 @@ test('hide every amount with the eye button, keep it after a reload, and show th
 
   // On from Inicio: every amount is the mask, signs included; percentages stay.
   await eye(page).click();
-  await expect(eye(page)).toHaveAccessibleName('Mostrar importes');
   await expect(eye(page)).toHaveAttribute('aria-pressed', 'true');
   await expect(page.getByTestId('total-balance')).toHaveText(MASK);
   await expect(page.getByTestId('month-income')).toHaveText(MASK);
@@ -136,6 +135,18 @@ test('hide every amount with the eye button, keep it after a reload, and show th
   await expect(page.getByRole('heading', { name: 'Objetivos' })).toBeVisible();
   await expectMasked(page);
 
+  // "Actualizar saldo" starts empty instead of giving the hidden balance away.
+  await openMore(page, 'Cuentas');
+  await page.getByRole('button', { name: 'Nueva' }).click();
+  await sheet(page).getByLabel('Nombre').fill('Revolut');
+  await sheet(page).getByLabel('Saldo inicial').fill('700');
+  await sheet(page).getByRole('button', { name: 'Crear cuenta' }).click();
+  await page.getByRole('list', { name: 'Cuentas' }).getByRole('listitem').filter({ hasText: 'Revolut' }).getByRole('button').click();
+  await sheet(page).getByRole('button', { name: 'Actualizar saldo' }).click();
+  await expect(sheet(page).getByLabel('Saldo real')).toHaveValue('');
+  await expectMasked(page);
+  await page.keyboard.press('Escape');
+
   // Off from Movimientos: the amounts are back.
   await page.getByRole('link', { name: 'Movimientos' }).click();
   await expect(eye(page)).toHaveAttribute('aria-pressed', 'true');
@@ -144,5 +155,6 @@ test('hide every amount with the eye button, keep it after a reload, and show th
   await expect(page.getByTestId('summary')).toHaveText('3 movimientos · neto +1.457,01 €');
   await expect(page.getByText(MASK)).toHaveCount(0);
   await page.getByRole('link', { name: 'Inicio' }).click();
-  await expect(page.getByTestId('total-balance')).toHaveText('2.444,02 €');
+  // Revolut's 700 € included.
+  await expect(page.getByTestId('total-balance')).toHaveText('3.144,02 €');
 });

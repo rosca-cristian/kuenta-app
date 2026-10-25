@@ -72,3 +72,7 @@ _Avoid_: Spending goal, cap
 **Backup**:
 The full JSON copy of the user's data, every table as stored, that Kuenta can restore: what imports, rules and the user's edits produced, and the settings that describe that data. What belongs to the phone (persistent storage, the date of the last backup) stays out. A backup counts as made once it's downloaded or shared. Shown in the Spanish UI as "Copia de seguridad".
 _Avoid_: Export (for a backup), CSV (a CSV export is not a backup: it can't be restored)
+
+**Privacy mode**:
+A setting of the phone that hides every amount on screen as "•••• €", signs included, while percentages, counts and dates stay. It isn't part of a backup, a restore keeps it, and toggling it isn't a change to the data. Exports always carry the real amounts. Shown in the Spanish UI as the eye button, "Ocultar importes".
+_Avoid_: Hidden mode, incognito

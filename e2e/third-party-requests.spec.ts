@@ -8,7 +8,7 @@ function dayOf(day: number, offset = 0): string {
   return `${String(day).padStart(2, '0')}/${String(date.getMonth() + 1).padStart(2, '0')}/${date.getFullYear()}`;
 }
 
-const MORE_SCREENS = ['Cuentas', 'Categorías', 'Comercios', 'Reglas', 'Presupuestos', 'Objetivos', 'Copias de seguridad'];
+const MORE_SCREENS = ['Cuentas', 'Categorías', 'Comercios', 'Reglas', 'Presupuestos', 'Objetivos', 'Licencias', 'Copias de seguridad'];
 
 async function exportFile(page: Page, button: string) {
   const downloading = page.waitForEvent('download');

@@ -264,7 +264,7 @@ Format, confirmed with real exports (October 2026). The file is what Google Shee
 
 ## 4. Screens
 
-Fixed bottom navigation: **Inicio · Movimientos · Importar · Análisis · Más**. Every screen with a period uses the same `‹ octubre 2026 ›` selector. The eye icon for privacy mode (open eye "Ocultar importes", crossed-out eye "Mostrar importes") sits in the header of Inicio and Movimientos; it turns the mode on or off for the whole app.
+Fixed bottom navigation: **Inicio · Movimientos · Importar · Análisis · Más**. Every screen with a period uses the same `‹ octubre 2026 ›` selector. The eye icon for privacy mode (a toggle named "Ocultar importes": an open eye, or a crossed-out eye while pressed) sits in the header of Inicio and Movimientos; it turns the mode on or off for the whole app.
 
 ### 4.1 First run
 1. Welcome: what Kuenta is, that data only lives on this phone, and the weekly import routine. "Empezar" goes on; the secondary "Restaurar una copia" brings a backup back instead (below).
@@ -326,7 +326,7 @@ Tabs:
 ### 4.8 Más
 Cuentas · Categorías · Comercios · Reglas · Presupuestos · Objetivos · Copias de seguridad · Ajustes (import account, persistent storage status, space used, version, library licences).
 - **Ajustes**: the import account, whether persistent storage was granted (§5.14), "Espacio usado", the space Kuenta's data takes on this phone as the browser estimates it (`navigator.storage.estimate()`), in MB with one decimal ("2,3 MB"), or "—" when the browser can't tell, and the version.
-- **Licencias** (`#/mas/licencias`, from Ajustes): the open-source libraries the app ships, the runtime dependencies in `package.json`, each with its version and licence. The list is static in the source and a test fails when it and `dependencies` differ; the licence texts aren't bundled (they are in each library's repository).
+- **Licencias** (`#/mas/licencias`, from Ajustes): the open-source libraries the app ships, each with its version and licence: every production package in `package-lock.json` (the runtime dependencies and what they depend on, type-only `@types/…` aside), read at build time so it can't go stale. The licence texts aren't bundled (they are in each library's repository).
 
 ### 4.9 Reglas, Categorías y Comercios
 - **Reglas**: list in order, with enable/disable, move up/down, edit and delete. A search box filters the list by the rule's text or name, or the category, transfer account or payee name it sets (ignoring case and accents); while searching, rules can't be moved. A transfer rule shows "→ Revolut". The editor shows "Concepto o movimiento contiene ___" and the action: a choice between "Categoría" and "Transferencia a cuenta" (non-imported, non-archived accounts; a rule's archived account stays selectable and keeps working), plus an optional payee name, with field, operator and direction under "Opciones avanzadas", plus a live count of matching transactions. Saving offers "Aplicar también a N movimientos" (those never edited by the user). Deleting explains that already categorized transactions keep their category.
@@ -362,7 +362,7 @@ All checked at a 390×844 viewport. Items marked 🧪 have a unit test.
 - 🧪 Text amounts are also accepted: "1.234,56" → 123456, "-0,5" → −50.
 - 🧪 Formatting: 123456 → "1.234,56 €" (4-digit thousands are grouped too); −500 → "−5,00 €".
 - 🧪 Dates show as "20/10/2026" in tables and CSV, and "lunes, 20 de octubre" in headers.
-- 🧪 In privacy mode every amount on every screen (lists, totals, sheets, Importar, chart axes and tooltips included) shows exactly as "•••• €", with no sign or "+"/"−"; percentages, counts, dates, colours and chart shapes stay. Amount inputs being edited show their value, and exports (backup, CSV) keep the real amounts.
+- 🧪 In privacy mode every amount on every screen (lists, totals, sheets, Importar, chart axes and tooltips included) shows exactly as "•••• €", with no sign or "+"/"−"; percentages, counts, dates, colours and chart shapes stay. Amount inputs show their value: an edit sheet's fields (a budget limit, a goal target, an opening balance) start with the stored amount, as editing it is deliberate, but "Actualizar saldo" starts empty, since the real balance is typed anyway. Exports (backup, CSV) keep the real amounts.
 - 🧪 Privacy mode belongs to the phone: it persists across restarts, applies from the first frame, isn't in backups, survives a restore and doesn't count as a data change (no backup reminder).
 
 ### 5.2 Reading the BBVA file
