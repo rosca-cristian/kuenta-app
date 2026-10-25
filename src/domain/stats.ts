@@ -1,6 +1,6 @@
 import type { Cents } from './money';
 import { addMonths, monthOf, type Month } from './dates';
-import type { Id, Transaction } from './model';
+import { signedAmount, type Id, type Transaction } from './model';
 import { spendingByCategory } from './budgets';
 
 export interface MonthSummary {
@@ -25,6 +25,15 @@ export function monthSummary(transactions: Transaction[], month: Month): MonthSu
   }
   const savings = income - expenses;
   return { income, expenses, savings, savingsRate: income > 0 ? savings / income : null };
+}
+
+/**
+ * The net of the transactions Movimientos lists, as its day headers and its summary line show
+ * it: income − expenses, each on its own account. Transfers move money between the user's own
+ * accounts, so they don't count; balance adjustments change what an account holds, so they do.
+ */
+export function listNet(transactions: Transaction[]): Cents {
+  return transactions.reduce((sum, tx) => (tx.type === 'transfer' ? sum : sum + signedAmount(tx, tx.accountId)), 0);
 }
 
 /**
