@@ -98,6 +98,8 @@ export interface HomeData {
   gaps: Gap[];
   /** Budgets above 100 % in the current month, whatever month Inicio shows. */
   budgetsOver: number;
+  /** Where the month's spending is heading, with its expected charges; null for other months than the current one and before the 3rd. */
+  forecast: Cents | null;
 }
 
 export interface TransactionChanges {

@@ -44,6 +44,11 @@ export function Home() {
                 </dd>
               </div>
             </dl>
+            {home.forecast !== null && (
+              <p className="mt-2 text-sm text-muted" data-testid="month-forecast">
+                A este ritmo gastarás {formatMoney(home.forecast)} este mes
+              </p>
+            )}
           </div>
         </Card>
 
