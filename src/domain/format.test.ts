@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { formatCompactMoney, formatMoney, formatSignedMoney, parseBankAmount, parseTypedAmount } from './money';
+import { formatCompactMoney, formatMoney, formatSignedMoney, MASKED_MONEY, moneyFormatters, parseBankAmount, parseTypedAmount } from './money';
 import { formatDate, formatDayHeader, formatMonth, isMonth, parseBankDate } from './dates';
 import { formatPercent } from '../ui/components';
 
@@ -18,6 +18,24 @@ describe('money formatting', () => {
     expect(formatCompactMoney(123456)).toBe('1,2 mil €');
     expect(formatCompactMoney(-150000)).toBe('−1,5 mil €');
     expect(formatCompactMoney(150000000)).toBe('1,5 M €');
+  });
+
+  it('masks every amount in privacy mode, sign included', () => {
+    const { money, signedMoney, compactMoney } = moneyFormatters(true);
+    expect(MASKED_MONEY).toBe('•••• €');
+    for (const cents of [123456, -500, 0, 1250, -150000000]) {
+      expect(money(cents)).toBe('•••• €');
+      expect(signedMoney(cents)).toBe('•••• €');
+      expect(compactMoney(cents)).toBe('•••• €');
+    }
+  });
+
+  it('formats as usual with privacy mode off', () => {
+    const { money, signedMoney, compactMoney } = moneyFormatters(false);
+    expect(money(-500)).toBe('−5,00 €');
+    expect(signedMoney(1250)).toBe('+12,50 €');
+    expect(signedMoney(-1250)).toBe('−12,50 €');
+    expect(compactMoney(123456)).toBe('1,2 mil €');
   });
 
   it('reads Spanish text amounts', () => {

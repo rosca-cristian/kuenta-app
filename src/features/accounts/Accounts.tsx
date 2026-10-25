@@ -4,7 +4,8 @@ import { Sheet } from '../../ui/Sheet';
 import { IconBadge } from '../../ui/icons';
 import { ColorPicker, IconPicker } from '../../ui/pickers';
 import { useRepo, useRepoQuery } from '../../lib/repo';
-import { formatMoney, formatSignedMoney, formatTypedAmount, parseTypedAmount } from '../../domain/money';
+import { formatTypedAmount, parseTypedAmount } from '../../domain/money';
+import { useMoney } from '../../lib/money';
 import type { AccountType } from '../../domain/model';
 import type { AccountDraft, AccountSaveResult, AccountView } from '../../data/repository';
 
@@ -88,6 +89,7 @@ export function Accounts() {
 }
 
 function AccountList({ title, accounts, onEdit }: { title: string; accounts: AccountView[]; onEdit: (account: AccountView) => void }) {
+  const { money } = useMoney();
   return (
     <ul aria-label={title} className="overflow-hidden rounded-2xl border border-line bg-card">
       {accounts.map((account) => (
@@ -104,7 +106,7 @@ function AccountList({ title, accounts, onEdit }: { title: string; accounts: Acc
               </span>
             </span>
             <span className="shrink-0 tabular-nums" data-testid="account-balance">
-              {formatMoney(account.balance)}
+              {money(account.balance)}
             </span>
           </button>
         </li>
@@ -244,6 +246,7 @@ function BalanceForm({ account, onDone }: { account: AccountView; onDone: () => 
   const [error, setError] = useState<string | null>(null);
   const typed = parseTypedAmount(text);
   const difference = typed === null ? null : typed - account.balance;
+  const { money, signedMoney } = useMoney();
 
   async function save(event: FormEvent) {
     event.preventDefault();
@@ -258,7 +261,7 @@ function BalanceForm({ account, onDone }: { account: AccountView; onDone: () => 
   return (
     <form onSubmit={save} className="flex flex-col gap-4">
       <p className="text-sm text-muted">
-        Saldo en Kuenta de «{account.name}»: <span className="tabular-nums text-text">{formatMoney(account.balance)}</span>
+        Saldo en Kuenta de «{account.name}»: <span className="tabular-nums text-text">{money(account.balance)}</span>
       </p>
       <label className="flex flex-col gap-1 text-sm text-muted">
         Saldo real
@@ -277,7 +280,7 @@ function BalanceForm({ account, onDone }: { account: AccountView; onDone: () => 
         <p className="text-sm text-muted" data-testid="balance-difference">
           {difference === 0
             ? 'Ya coincide: no se creará ningún ajuste.'
-            : `Se creará un ajuste de saldo de ${formatSignedMoney(difference)} con fecha de hoy. No cuenta como ingreso ni gasto.`}
+            : `Se creará un ajuste de saldo de ${signedMoney(difference)} con fecha de hoy. No cuenta como ingreso ni gasto.`}
         </p>
       )}
       {error && (

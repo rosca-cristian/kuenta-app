@@ -71,3 +71,23 @@ const compactEuros = new Intl.NumberFormat('es-ES', { notation: 'compact', maxim
 export function formatCompactMoney(cents: Cents): string {
   return `${compactEuros.format(cents / 100).replace(/\s/g, ' ').replace('-', MINUS)} €`;
 }
+
+/** What every amount shows in privacy mode: no digits and no sign, so it tells nothing. */
+export const MASKED_MONEY = '•••• €';
+
+export interface MoneyFormatters {
+  /** Privacy mode is on: callers drop any sign or "+"/"−" they add around an amount. */
+  hidden: boolean;
+  money: (cents: Cents) => string;
+  signedMoney: (cents: Cents) => string;
+  compactMoney: (cents: Cents) => string;
+}
+
+const shownFormatters: MoneyFormatters = { hidden: false, money: formatMoney, signedMoney: formatSignedMoney, compactMoney: formatCompactMoney };
+const mask = () => MASKED_MONEY;
+const hiddenFormatters: MoneyFormatters = { hidden: true, money: mask, signedMoney: mask, compactMoney: mask };
+
+/** The on-screen money formatters: the plain ones, or, when `hidden` (privacy mode), ones that always mask. */
+export function moneyFormatters(hidden: boolean): MoneyFormatters {
+  return hidden ? hiddenFormatters : shownFormatters;
+}

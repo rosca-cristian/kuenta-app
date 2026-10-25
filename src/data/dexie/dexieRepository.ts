@@ -477,11 +477,17 @@ export function createDexieRepository(options: DexieRepositoryOptions = {}): Dat
         onboardingDone: await setting('onboardingDone', false),
         importAccountId: await setting<Id | null>('importAccountId', null),
         persistRequested: await setting('persistRequested', false),
+        privacyMode: await setting('privacyMode', false),
       };
     },
 
     async setPersistRequested() {
       await db.settings.put({ key: 'persistRequested', value: true });
+      changed();
+    },
+
+    async setPrivacyMode(on) {
+      await db.settings.put({ key: 'privacyMode', value: on });
       changed();
     },
 

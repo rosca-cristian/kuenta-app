@@ -5,8 +5,8 @@ import { EmptyState, MonthSelector } from '../../ui/components';
 import { IconBadge, colorFor } from '../../ui/icons';
 import { usePrefersReducedMotion } from '../../ui/motion';
 import { useRepoQuery } from '../../lib/repo';
+import { useMoney } from '../../lib/money';
 import { formatMonth, monthOf, today, type Month } from '../../domain/dates';
-import { formatMoney } from '../../domain/money';
 import type { SpendingEntryView } from '../../data/repository';
 import { monthParam, transactionsLink } from '../transactions/filters';
 
@@ -33,6 +33,7 @@ export function Spending() {
   const month: Month = asked !== null && asked <= currentMonth ? asked : currentMonth;
   const view = useRepoQuery((repo) => repo.spending(month), [month]);
   const reducedMotion = usePrefersReducedMotion();
+  const { money } = useMoney();
 
   const open = (entry: SpendingEntryView) => navigate(transactionsLink(month, { categoryId: entry.category?.id ?? null }));
 
@@ -73,7 +74,7 @@ export function Spending() {
               </ResponsiveContainer>
               <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center">
                 <span className="text-xs text-muted">Total</span>
-                <span className="text-xl font-semibold tabular-nums" data-testid="spending-total">{formatMoney(view.total)}</span>
+                <span className="text-xl font-semibold tabular-nums" data-testid="spending-total">{money(view.total)}</span>
               </div>
             </div>
 
@@ -84,7 +85,7 @@ export function Spending() {
                     <IconBadge icon={entry.category?.icon} color={entry.category?.color} size={36} />
                     <span className="min-w-0 flex-1 truncate">{entryName(entry)}</span>
                     <span className="text-xs text-muted tabular-nums" data-testid="spending-percent">{formatShare(entry.percent)}</span>
-                    <span className="tabular-nums" data-testid="spending-amount">{formatMoney(entry.amount)}</span>
+                    <span className="tabular-nums" data-testid="spending-amount">{money(entry.amount)}</span>
                     <ChevronRight size={16} className="shrink-0 text-muted" aria-hidden />
                   </button>
                 </li>

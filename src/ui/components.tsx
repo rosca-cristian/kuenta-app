@@ -2,7 +2,8 @@ import type { ButtonHTMLAttributes, ReactNode } from 'react';
 import { Link } from 'react-router-dom';
 import { ChevronLeft, ChevronRight, X } from 'lucide-react';
 import { addMonths, formatMonth, type Month } from '../domain/dates';
-import { formatMoney, type Cents } from '../domain/money';
+import type { Cents } from '../domain/money';
+import { useMoney } from '../lib/money';
 
 export function Button({
   variant = 'primary',
@@ -76,11 +77,12 @@ export function MonthSelector({ month, onChange, max }: { month: Month; onChange
   );
 }
 
-/** An amount; income in green, expenses in the normal text colour. */
+/** An amount; income in green, expenses in the normal text colour. Privacy mode masks it, sign included. */
 export function Amount({ cents, kind, className = '' }: { cents: Cents; kind?: 'income' | 'expense' | 'neutral'; className?: string }) {
+  const { hidden, money } = useMoney();
   const colour = kind === 'income' ? 'text-income' : '';
-  const sign = kind === 'income' ? '+' : kind === 'expense' ? '−' : '';
-  return <span className={`tabular-nums ${colour} ${className}`}>{sign}{formatMoney(kind ? Math.abs(cents) : cents)}</span>;
+  const sign = hidden ? '' : kind === 'income' ? '+' : kind === 'expense' ? '−' : '';
+  return <span className={`tabular-nums ${colour} ${className}`}>{sign}{money(kind ? Math.abs(cents) : cents)}</span>;
 }
 
 export function EmptyState({ title, children }: { title: string; children?: ReactNode }) {

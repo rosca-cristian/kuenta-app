@@ -2,8 +2,8 @@ import { useNavigate } from 'react-router-dom';
 import { ChevronRight } from 'lucide-react';
 import { Card, EmptyState } from '../../ui/components';
 import { useRepoQuery } from '../../lib/repo';
+import { useMoney } from '../../lib/money';
 import { formatDate } from '../../domain/dates';
-import { formatMoney } from '../../domain/money';
 import type { SubscriptionFrequency } from '../../domain/subscriptions';
 import type { SubscriptionView } from '../../data/repository';
 import { transactionsLink } from '../transactions/filters';
@@ -20,6 +20,7 @@ const frequencyLabel = (frequency: SubscriptionFrequency | null) => (frequency =
 export function Subscriptions() {
   const navigate = useNavigate();
   const view = useRepoQuery((repo) => repo.subscriptions(), []);
+  const { money } = useMoney();
 
   if (!view) return null;
   if (view.subscriptions.length === 0) {
@@ -39,11 +40,11 @@ export function Subscriptions() {
         <dl className="grid grid-cols-2 gap-2">
           <div>
             <dt className="text-xs text-muted">Al mes</dt>
-            <dd className="text-xl font-semibold tabular-nums" data-testid="subscriptions-monthly">{formatMoney(view.totals.monthly)}</dd>
+            <dd className="text-xl font-semibold tabular-nums" data-testid="subscriptions-monthly">{money(view.totals.monthly)}</dd>
           </div>
           <div>
             <dt className="text-xs text-muted">Al año</dt>
-            <dd className="text-xl font-semibold tabular-nums" data-testid="subscriptions-yearly">{formatMoney(view.totals.yearly)}</dd>
+            <dd className="text-xl font-semibold tabular-nums" data-testid="subscriptions-yearly">{money(view.totals.yearly)}</dd>
           </div>
         </dl>
         {uncounted && <p className="mt-2 text-xs text-muted">Las que aún no tienen frecuencia (—) no cuentan en los totales.</p>}
@@ -56,12 +57,12 @@ export function Subscriptions() {
               <div className="flex min-w-0 flex-1 flex-col gap-0.5">
                 <div className="flex items-baseline justify-between gap-2">
                   <span className="min-w-0 truncate">{subscription.payee.name}</span>
-                  <span className="shrink-0 tabular-nums" data-testid="subscription-amount">{formatMoney(subscription.lastAmount)}</span>
+                  <span className="shrink-0 tabular-nums" data-testid="subscription-amount">{money(subscription.lastAmount)}</span>
                 </div>
                 <div className="flex items-baseline justify-between gap-2 text-xs text-muted">
                   <span data-testid="subscription-frequency">{frequencyLabel(subscription.frequency)}</span>
                   <span className="tabular-nums" data-testid="subscription-monthly">
-                    {subscription.monthlyAmount === null ? '—' : `${formatMoney(subscription.monthlyAmount)}/mes`}
+                    {subscription.monthlyAmount === null ? '—' : `${money(subscription.monthlyAmount)}/mes`}
                   </span>
                 </div>
                 <div className="text-xs text-muted tabular-nums">

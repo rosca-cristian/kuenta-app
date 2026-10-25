@@ -3,8 +3,8 @@ import { Bar, BarChart, CartesianGrid, Cell, ResponsiveContainer, XAxis, YAxis }
 import { Choice, EmptyState } from '../../ui/components';
 import { usePrefersReducedMotion } from '../../ui/motion';
 import { useRepoQuery } from '../../lib/repo';
+import { useMoney } from '../../lib/money';
 import { formatMonth } from '../../domain/dates';
-import { formatCompactMoney, formatMoney, formatSignedMoney } from '../../domain/money';
 import type { MonthlyRange } from '../../data/repository';
 import { AXIS_TICK, shortMonth } from './chart';
 
@@ -27,6 +27,7 @@ export function Monthly() {
   const [range, setRange] = useState<MonthlyRange>(lastRange);
   const view = useRepoQuery((repo) => repo.monthly(range), [range]);
   const reducedMotion = usePrefersReducedMotion();
+  const { hidden, money, signedMoney, compactMoney } = useMoney();
 
   const choose = (next: MonthlyRange) => {
     lastRange = next;
@@ -53,7 +54,7 @@ export function Monthly() {
                 <BarChart data={view.entries} margin={{ top: 8, right: 0, bottom: 0, left: 0 }} barGap={2} barCategoryGap="20%">
                   <CartesianGrid vertical={false} stroke="var(--color-line)" />
                   <XAxis dataKey="month" tickFormatter={shortMonth} tick={AXIS_TICK} axisLine={false} tickLine={false} interval={0} />
-                  <YAxis tickFormatter={formatCompactMoney} tick={yTick} axisLine={false} tickLine={false} width={64} />
+                  <YAxis tickFormatter={compactMoney} tick={yTick} axisLine={false} tickLine={false} width={64} />
                   {(['income', 'expenses'] as const).map((key) => (
                     <Bar
                       key={key}
@@ -90,11 +91,11 @@ export function Monthly() {
                       {entry.inProgress && <span className="ml-2 rounded-full bg-card-2 px-2 py-0.5 text-xs text-muted">en curso</span>}
                     </p>
                     <p className="truncate text-xs text-muted tabular-nums">
-                      <span className="text-income">+{formatMoney(entry.income)}</span> · −{formatMoney(entry.expenses)}
+                      <span className="text-income">{hidden ? '' : '+'}{money(entry.income)}</span> · {hidden ? '' : '−'}{money(entry.expenses)}
                     </p>
                   </div>
                   <span className={`tabular-nums ${entry.net > 0 ? 'text-income' : ''}`} data-testid="monthly-net">
-                    {formatSignedMoney(entry.net)}
+                    {signedMoney(entry.net)}
                   </span>
                 </li>
               ))}

@@ -74,7 +74,7 @@ describe('restoring a backup', () => {
     });
     // What the screens show agrees too.
     expect((await target.repo.home('2026-10')).totalBalance).toBe((await source.repo.home('2026-10')).totalBalance);
-    expect(await target.repo.getSettings()).toEqual({ onboardingDone: true, importAccountId, persistRequested: false });
+    expect(await target.repo.getSettings()).toEqual({ onboardingDone: true, importAccountId, persistRequested: false, privacyMode: false });
   });
 
   it("sets up a new phone from the first-run screen: onboarding done with the backup's import account", async () => {
@@ -87,7 +87,7 @@ describe('restoring a backup', () => {
     await target.repo.setPersistRequested();
 
     const importAccountId = backup.data.settings.find((s) => s.key === 'importAccountId')!.value;
-    expect(await target.repo.getSettings()).toEqual({ onboardingDone: true, importAccountId, persistRequested: true });
+    expect(await target.repo.getSettings()).toEqual({ onboardingDone: true, importAccountId, persistRequested: true, privacyMode: false });
     expect(await target.repo.listAccounts()).toEqual(await source.repo.listAccounts());
     expect(await target.repo.listTransactions(null)).toEqual(await source.repo.listTransactions(null));
     // No starter data of its own: the categories are exactly the backup's.
