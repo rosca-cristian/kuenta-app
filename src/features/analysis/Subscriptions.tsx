@@ -2,7 +2,7 @@ import { useNavigate } from 'react-router-dom';
 import { ChevronRight } from 'lucide-react';
 import { Card, EmptyState } from '../../ui/components';
 import { useRepoQuery } from '../../lib/repo';
-import { formatDate, monthOf } from '../../domain/dates';
+import { formatDate } from '../../domain/dates';
 import { formatMoney } from '../../domain/money';
 import type { SubscriptionFrequency } from '../../domain/subscriptions';
 import type { SubscriptionView } from '../../data/repository';
@@ -14,8 +14,8 @@ const frequencyLabel = (frequency: SubscriptionFrequency | null) => (frequency =
 
 /**
  * Análisis → Suscripciones: every payee with expenses in "Suscripciones", with what it costs
- * per month and per year at the top. Tapping a row opens Movimientos with that payee's
- * transactions, in the month of its last charge.
+ * per month and per year at the top. Tapping a row opens Movimientos with all that payee's
+ * transactions, over all months.
  */
 export function Subscriptions() {
   const navigate = useNavigate();
@@ -30,8 +30,7 @@ export function Subscriptions() {
     );
   }
 
-  const open = (subscription: SubscriptionView) =>
-    navigate(transactionsLink(monthOf(subscription.lastDate), { payeeId: subscription.payeeId }));
+  const open = (subscription: SubscriptionView) => navigate(transactionsLink(null, { payeeId: subscription.payeeId }));
   const uncounted = view.subscriptions.some((subscription) => subscription.monthlyAmount === null);
 
   return (

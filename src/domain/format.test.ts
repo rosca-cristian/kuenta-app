@@ -45,6 +45,7 @@ describe('date formatting', () => {
   it('formats dates for tables, day headers and the month selector', () => {
     expect(formatDate('2026-10-20')).toBe('20/10/2026');
     expect(formatDayHeader('2026-10-20')).toBe('martes, 20 de octubre');
+    expect(formatDayHeader('2025-10-20', true)).toBe('lunes, 20 de octubre de 2025');
     expect(formatMonth('2026-10')).toBe('octubre 2026');
   });
 

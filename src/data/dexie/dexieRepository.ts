@@ -792,15 +792,20 @@ export function createDexieRepository(options: DexieRepositoryOptions = {}): Dat
       changed();
     },
 
-    async listTransactions(month, filter: TransactionFilter = {}) {
-      const txs = await db.transactions.where('date').between(`${month}-01`, `${month}-31￿`).toArray();
+    async listTransactions(period, filter: TransactionFilter = {}) {
+      const txs = await (period === null ? db.transactions.toArray() : transactionsIn(period));
       const { categoryId, payeeId } = filter;
+      const text = normalizeText(filter.text ?? '');
       const matching = txs.filter(
         (tx) =>
           (categoryId === undefined || (categoryId === null ? isUncategorized(tx) : tx.categoryId === categoryId)) &&
           (payeeId === undefined || tx.payeeId === payeeId),
       );
-      return toViews(matching.sort(newestFirst));
+      const views = await toViews(matching.sort(newestFirst));
+      if (text === '') return views;
+      return views.filter((tx) =>
+        [tx.payee?.name, tx.note, tx.bankConcept, tx.bankMovement].some((field) => field && normalizeText(field).includes(text)),
+      );
     },
 
     async getTransaction(id) {

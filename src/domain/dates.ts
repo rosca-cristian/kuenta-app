@@ -88,9 +88,10 @@ export function formatDate(date: IsoDate): string {
   return `${date.slice(8, 10)}/${date.slice(5, 7)}/${date.slice(0, 4)}`;
 }
 
-/** "lunes, 20 de octubre", for day headers. */
-export function formatDayHeader(date: IsoDate): string {
-  return `${weekday(date)}, ${Number(date.slice(8, 10))} de ${MONTHS[Number(date.slice(5, 7)) - 1]}`;
+/** "lunes, 20 de octubre", for day headers; with `withYear`, "lunes, 20 de octubre de 2026". */
+export function formatDayHeader(date: IsoDate, withYear = false): string {
+  const day = `${weekday(date)}, ${Number(date.slice(8, 10))} de ${MONTHS[Number(date.slice(5, 7)) - 1]}`;
+  return withYear ? `${day} de ${date.slice(0, 4)}` : day;
 }
 
 /** "octubre 2026", for the month selector. */

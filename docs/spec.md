@@ -281,7 +281,11 @@ Fixed bottom navigation: **Inicio · Movimientos · Importar · Análisis · Má
 - Goals: a progress bar for each.
 
 ### 4.3 Movimientos
-- Text search (payee, note, bank concept and movement) and filters: month, account, category, type and "sin categoría".
+- **Search box** under the header: finds text in the payee, note, bank concept and movement, ignoring case and accents (§5.8). Results update as you type; a button clears it. Combined with the filters below (all must hold).
+- **Period**: "Un mes" (default, with the `‹ octubre 2026 ›` selector) or "Todos los meses"; going back to "Un mes" lands on the current month. All months are still grouped by day, with the year in the headers of days outside the current year.
+- Filters: account, category, type and "sin categoría". The category or payee Análisis and Inicio open it with shows as a removable chip.
+- When nothing matches a search or filter, an empty state says how to widen it ("Todos los meses", other words, removing the filter).
+- **URL parameters**, the single source of truth for the screen's state, so reloads and the edit sheet keep it: `mes` (`YYYY-MM`, or `todos` for all months; the current month without it), `q` (the search, written with `replace` about 150 ms after typing stops), `categoria` (a category's id or `sin-categoria`) and `comercio` (a payee's id).
 - List grouped by day with a header such as "lunes, 20 oct · −45,30 €" (date and day's net).
 - Row: circle with the category's icon and colour; payee or note; category · account in grey; amount on the right (income in green, expenses in normal text colour).
 - Tapping a row opens the **edit sheet**: amount, date and account shown read-only; category, payee and note editable; "Convertir en transferencia" (pick the other account) and, on a transfer, "Quitar transferencia" (back to expense or income by the bank's sign, uncategorized); both count as the user's edit; the original bank concept and movement. For an incoming amount, the category picker shows first the **expense** categories used that same day.
@@ -302,7 +306,7 @@ Tabs:
 - **Gastos**: the month's donut by category with the total in the centre, and below it the categories with amount and percentage (acting as the legend). Categories whose net spending (§3.2) is zero or negative are left out; uncategorized expenses form a grey "Sin categoría" slice. Tapping a category (or "Sin categoría") opens Movimientos filtered by that month and category.
 - **Mensual**: income vs expenses bars for the last 6 or 12 months, with each month's net. Each month matches its summary on Inicio; months before the first month with imported transactions are left out, so the series starts where the data starts, and the current month is marked "en curso".
 - **Patrimonio**: net worth (§3.2) at the end of each of the last 12 months as a line, the current month's point being today's; months before the first transaction are left out. Above it, today's net worth and its change since the end of last month, green or red by sign.
-- **Suscripciones**: one row per subscription (payee): name, last amount, frequency (mensual / anual, deduced from the dates of its charges), monthly equivalent, last charge and expected next charge. Totals per month and per year at the top. Notices: "Ha subido de precio" (last charge higher than the previous one) and "No ha llegado el cargo de este mes" (an expected charge that hasn't arrived). Nothing is entered by hand: a subscription is any payee with expenses in the "Suscripciones" category. Tapping a row opens Movimientos filtered by that payee.
+- **Suscripciones**: one row per subscription (payee): name, last amount, frequency (mensual / anual, deduced from the dates of its charges), monthly equivalent, last charge and expected next charge. Totals per month and per year at the top. Notices: "Ha subido de precio" (last charge higher than the previous one) and "No ha llegado el cargo de este mes" (an expected charge that hasn't arrived). Nothing is entered by hand: a subscription is any payee with expenses in the "Suscripciones" category. Tapping a row opens Movimientos filtered by that payee, over all months.
 
 ### 4.6 Presupuestos
 - Month selector, up to the current month (no future months). Total budgeted, spent (budgeted categories only) and remaining; when spending exceeds the total, "X € por encima".
@@ -418,7 +422,7 @@ All checked at a 390×844 viewport. Items marked 🧪 have a unit test.
 ### 5.8 Search and filters
 - 🧪 Search finds text in the payee, note, bank concept and movement, ignoring case and accents.
 - Filters combine and show as removable chips.
-- A month with 500 transactions scrolls smoothly on a mid-range phone.
+- A month with 500 transactions scrolls smoothly on a mid-range phone: day sections use `content-visibility: auto` with an intrinsic size, so off-screen days aren't laid out.
 
 ### 5.9 Inicio and statistics
 - 🧪 Savings rate = (income − expenses) / income for the month, without transfers; with no income it shows "—".
