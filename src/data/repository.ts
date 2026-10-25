@@ -98,6 +98,13 @@ export interface HomeData {
   gaps: Gap[];
   /** Budgets above 100 % in the current month, whatever month Inicio shows. */
   budgetsOver: number;
+  /**
+   * Up to 3 of the current month's budgets, whatever month Inicio shows: the highest
+   * percentage first, ties by the most spent.
+   */
+  topBudgets: BudgetView[];
+  /** The non-archived goals, in the goals list's order, with their progress. */
+  goals: GoalView[];
 }
 
 export interface TransactionChanges {

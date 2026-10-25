@@ -11,7 +11,8 @@ import type { BudgetStatus } from '../../domain/budgets';
 import type { Category, Id } from '../../domain/model';
 import type { BudgetView } from '../../data/repository';
 
-const STATUS: Record<BudgetStatus, { label: string; text: string; bar: string }> = {
+/** Each status's label and colours, here and on Inicio. */
+export const BUDGET_STATUS: Record<BudgetStatus, { label: string; text: string; bar: string }> = {
   onTrack: { label: 'En camino', text: 'text-muted', bar: 'bg-accent' },
   near: { label: 'Cerca', text: 'text-warn', bar: 'bg-warn' },
   over: { label: 'Superado', text: 'text-danger', bar: 'bg-danger' },
@@ -131,7 +132,7 @@ function Totals({ budgeted, spent, remaining }: { budgeted: number; spent: numbe
  */
 function BudgetCard({ budget, today, onEdit }: { budget: BudgetView; today: number | null; onEdit: () => void }) {
   const { category, limit, spent, percent, status } = budget;
-  const style = STATUS[status];
+  const style = BUDGET_STATUS[status];
   return (
     <li>
       <button onClick={onEdit} className="block w-full rounded-2xl border border-line bg-card p-4 text-left active:bg-card-2">
