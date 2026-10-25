@@ -53,7 +53,9 @@ test('export what Movimientos shows as a CSV for Spanish Excel, disabled for an 
 
   // A search over all months exports only its matches.
   await page.getByRole('searchbox', { name: 'Buscar movimientos' }).fill('mercadona');
-  await page.getByRole('radio', { name: 'Todos los meses' }).check();
+  // The period lives in the URL, which the router applies in a transition: click, then wait for it.
+  await page.getByRole('radio', { name: 'Todos los meses' }).click();
+  await expect(page.getByRole('radio', { name: 'Todos los meses' })).toBeChecked();
   await expect(page.locator('main').getByRole('listitem')).toHaveCount(2);
   const search = await exportCsv(page);
   expect(search.bytes.subarray(3).toString('utf8').split('\r\n')).toEqual([

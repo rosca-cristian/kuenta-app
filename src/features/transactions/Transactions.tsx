@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { Check, Search, SlidersHorizontal, X } from 'lucide-react';
 import { Amount, Button, Choice, EmptyState, FilterChip, MonthSelector, PageHeader } from '../../ui/components';
@@ -37,6 +37,19 @@ function subtitle(tx: TransactionView): string {
  */
 export function Transactions() {
   const [params, setParams] = useSearchParams();
+  // Writes build on the newest parameters, even ones not rendered yet: a search's delayed
+  // write and a tap on the period mustn't undo each other.
+  const latest = useRef(params);
+  useLayoutEffect(() => {
+    latest.current = params;
+  }, [params]);
+  const update = useCallback(
+    (change: (current: URLSearchParams) => URLSearchParams) => {
+      latest.current = change(latest.current);
+      setParams(latest.current, { replace: true });
+    },
+    [setParams],
+  );
   const currentMonth = monthOf(today());
   const period = periodParam(params, currentMonth);
   const text = textParam(params);
@@ -46,7 +59,7 @@ export function Transactions() {
   const transactions = useLatest(
     useRepoQuery((repo) => repo.listTransactions(period, { ...filter, text }), [period, filter, text]),
   );
-  const search = useCallback((next: string) => setParams((current) => withText(current, next), { replace: true }), [setParams]);
+  const search = useCallback((next: string) => update((current) => withText(current, next)), [update]);
   const searching = text.trim() !== '' || filter !== null;
 
   const days = useMemo(() => {
@@ -70,11 +83,11 @@ export function Transactions() {
           name="period"
           value={period === null ? 'all' : 'month'}
           options={{ month: 'Un mes', all: 'Todos los meses' }}
-          onChange={(choice) => setParams(withPeriod(params, choice === 'all' ? null : currentMonth), { replace: true })}
+          onChange={(choice) => update((current) => withPeriod(current, choice === 'all' ? null : currentMonth))}
         />
       </div>
-      {period !== null && <MonthSelector month={period} onChange={(next) => setParams(withPeriod(params, next), { replace: true })} />}
-      <FilterBar filter={filter} onOpen={() => setFiltering(true)} onRemove={(field) => setParams(withoutFilter(params, field), { replace: true })} />
+      {period !== null && <MonthSelector month={period} onChange={(next) => update((current) => withPeriod(current, next))} />}
+      <FilterBar filter={filter} onOpen={() => setFiltering(true)} onRemove={(field) => update((current) => withoutFilter(current, field))} />
       {transactions && transactions.length > 0 && (
         <p className="px-5 pb-3 text-sm text-muted" data-testid="summary">
           {transactions.length === 1 ? '1 movimiento' : `${transactions.length} movimientos`} · neto{' '}
@@ -131,7 +144,7 @@ export function Transactions() {
         filter={filter ?? {}}
         onApply={(next) => {
           setFiltering(false);
-          setParams(withFilter(params, { ...next, payeeId: filter?.payeeId }), { replace: true });
+          update((current) => withFilter(current, { ...next, payeeId: filter?.payeeId }));
         }}
         onClose={() => setFiltering(false)}
       />

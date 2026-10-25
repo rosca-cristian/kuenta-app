@@ -43,7 +43,9 @@ test('search Movimientos in one month and across all months, keep it in the URL 
   await expect(transactionRows(page)).toContainText('Amazon');
 
   // All months: every Amazon charge, newest first, still grouped by day.
-  await page.getByRole('radio', { name: 'Todos los meses' }).check();
+  // The period lives in the URL, which the router applies in a transition: click, then wait for it.
+  await page.getByRole('radio', { name: 'Todos los meses' }).click();
+  await expect(page.getByRole('radio', { name: 'Todos los meses' })).toBeChecked();
   await expect(page).toHaveURL(/mes=todos/);
   await expect(page.getByRole('button', { name: 'Mes anterior' })).toHaveCount(0);
   await expect(page.locator('main section h2')).toHaveText([/10 de octubre/, /12 de septiembre/, /5 de agosto/]);
@@ -71,7 +73,8 @@ test('search Movimientos in one month and across all months, keep it in the URL 
   await expect(page.getByText('Prueba con otras palabras.')).toBeVisible();
 
   // Leaving all months lands on the current month, keeping the search.
-  await page.getByRole('radio', { name: 'Un mes' }).check();
+  await page.getByRole('radio', { name: 'Un mes' }).click();
+  await expect(page.getByRole('radio', { name: 'Un mes' })).toBeChecked();
   await expect(page.getByText('octubre 2026', { exact: true })).toBeVisible();
   await expect(page.getByText('Busca en «Todos los meses» o prueba con otras palabras.')).toBeVisible();
 
