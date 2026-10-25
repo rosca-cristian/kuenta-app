@@ -7,7 +7,7 @@ import { useRepoQuery } from '../../lib/repo';
 import { formatDayHeader, monthOf, today, type Month } from '../../domain/dates';
 import { formatSignedMoney } from '../../domain/money';
 import { listNet } from '../../domain/stats';
-import type { TxType } from '../../domain/model';
+import { TX_TYPE_NAMES } from '../../domain/model';
 import type { TransactionFilter, TransactionView } from '../../data/repository';
 import { EditTransactionSheet } from './EditTransactionSheet';
 import { ExportCsvButton } from './ExportCsvButton';
@@ -56,9 +56,9 @@ export function Transactions() {
   const filter = filterParams(params);
   const [editing, setEditing] = useState<string | null>(null);
   const [filtering, setFiltering] = useState(false);
-  const transactions = useLatest(
-    useRepoQuery((repo) => repo.listTransactions(period, { ...filter, text }), [period, filter, text]),
-  );
+  const current = useRepoQuery((repo) => repo.listTransactions(period, { ...filter, text }), [period, filter, text]);
+  // The list keeps the previous results while new ones load; the export waits for them.
+  const transactions = useLatest(current);
   const search = useCallback((next: string) => update((current) => withText(current, next)), [update]);
   const searching = text.trim() !== '' || filter !== null;
 
@@ -74,7 +74,7 @@ export function Transactions() {
 
   return (
     <>
-      <PageHeader title="Movimientos" action={<ExportCsvButton />} />
+      <PageHeader title="Movimientos" action={<ExportCsvButton transactions={current} />} />
       <div className="flex flex-col gap-2 px-4 pb-2">
         <SearchBox value={text} onChange={search} />
         <Choice
@@ -220,8 +220,6 @@ function SearchBox({ value, onChange }: { value: string; onChange: (value: strin
   );
 }
 
-const TYPE_LABELS: Record<TxType, string> = { expense: 'Gasto', income: 'Ingreso', transfer: 'Transferencia' };
-
 /**
  * The "Filtros" button and a removable chip for each field of the URL's filter: category ("Sin
  * categoría"), payee, account and type; with two or more, "Quitar filtros" removes them all.
@@ -254,7 +252,7 @@ function FilterBar({
     if (filter.categoryId !== undefined) chips.push(['categoryId', filter.categoryId === null ? 'Sin categoría' : names.category ?? 'Categoría borrada']);
     if (filter.payeeId !== undefined) chips.push(['payeeId', names.payee ?? 'Comercio borrado']);
     if (filter.accountId !== undefined) chips.push(['accountId', names.account ?? 'Cuenta borrada']);
-    if (filter.type !== undefined) chips.push(['type', TYPE_LABELS[filter.type]]);
+    if (filter.type !== undefined) chips.push(['type', TX_TYPE_NAMES[filter.type]]);
   }
   return (
     <div className="flex flex-wrap items-center gap-2 px-4 pb-3">

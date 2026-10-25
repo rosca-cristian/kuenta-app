@@ -14,10 +14,7 @@ function tx(overrides: Partial<CsvTransaction> = {}): CsvTransaction {
     toAccountId: null,
     note: '',
     source: 'import',
-    bookingDate: '2026-10-20',
     bankConcept: 'Mercadona',
-    bankBalance: 100000,
-    createdAt: '2026-10-20T10:00:00.000Z',
     account: { name: 'BBVA' },
     toAccount: null,
     category: { name: 'Supermercado' },
@@ -27,11 +24,11 @@ function tx(overrides: Partial<CsvTransaction> = {}): CsvTransaction {
 }
 
 /** The CSV's lines after the header, without the BOM or line endings. */
-const lines = (transactions: CsvTransaction[]) => transactionsCsv(transactions, BBVA).split('\r\n').slice(1, -1);
+const lines = (transactions: CsvTransaction[]) => transactionsCsv(transactions).split('\r\n').slice(1, -1);
 
 describe('the CSV export', () => {
   it('starts with a UTF-8 BOM and the header, and ends every line, the last one too, with CRLF', () => {
-    const csv = transactionsCsv([tx(), tx({ date: '2026-10-21' })], BBVA);
+    const csv = transactionsCsv([tx(), tx({ date: '2026-10-21' })]);
     expect(csv.startsWith(`\uFEFF${HEADER}\r\n`)).toBe(true);
     expect(csv.endsWith('\r\n')).toBe(true);
     expect(csv.split('\r\n')).toHaveLength(4);
@@ -39,7 +36,7 @@ describe('the CSV export', () => {
   });
 
   it('is only the BOM and the header without transactions', () => {
-    expect(transactionsCsv([], BBVA)).toBe(`\uFEFF${HEADER}\r\n`);
+    expect(transactionsCsv([])).toBe(`\uFEFF${HEADER}\r\n`);
   });
 
   it('writes the date as dd/mm/aaaa and the signed amount with a decimal comma, no thousands separator or "€"', () => {
@@ -52,9 +49,9 @@ describe('the CSV export', () => {
   });
 
   it('names the type: Gasto, Ingreso, Transferencia, or Ajuste de saldo for an adjustment', () => {
-    const adjustment = tx({ type: 'income', source: 'adjustment', note: 'Ajuste de saldo', category: null, payee: null, bookingDate: null, bankConcept: null, bankBalance: null });
+    const adjustment = tx({ type: 'income', source: 'adjustment', note: 'Ajuste de saldo', category: null, payee: null, bankConcept: null });
     expect(lines([adjustment])).toEqual(['20/10/2026;Ajuste de saldo;BBVA;;;;Ajuste de saldo;12,50;']);
-    expect(lines([tx({ type: 'expense', source: 'adjustment', category: null, bookingDate: null, bankBalance: null })])[0]).toMatch(/^20\/10\/2026;Ajuste de saldo;.*;-12,50;/);
+    expect(lines([tx({ type: 'expense', source: 'adjustment', category: null })])[0]).toMatch(/^20\/10\/2026;Ajuste de saldo;.*;-12,50;/);
   });
 
   it("writes a transfer's other account and signs it from its account, so it's negative whichever way it went", () => {
@@ -69,7 +66,6 @@ describe('the CSV export', () => {
       category: null,
       payee: null,
       date: '2026-10-21',
-      bookingDate: '2026-10-21',
       bankConcept: 'Transferencia recibida',
     });
     expect(lines([incoming, outgoing])).toEqual([
@@ -83,31 +79,10 @@ describe('the CSV export', () => {
     expect(lines([bare])).toEqual(['20/10/2026;Gasto;BBVA;;;;;-12,50;']);
   });
 
-  it('puts the oldest first: by date, then in bank order within a day, then what wasn’t imported', () => {
-    // Bank order on the 20th: the salary (1000 → 2500), then Mercadona (2500 → 2487,50), whatever the booking times.
-    const salary = tx({ type: 'income', amount: 150000, bankConcept: 'Nómina', bankBalance: 250000, createdAt: '2026-10-25T09:00:00.000Z' });
-    const shop = tx({ bankConcept: 'Mercadona', bankBalance: 248750, createdAt: '2026-10-21T09:00:00.000Z' });
-    const earlierBooked = tx({ date: '2026-10-21', bookingDate: '2026-10-21', bankConcept: 'Ahorro', bankBalance: 247500 });
-    const laterBooked = tx({ date: '2026-10-21', bookingDate: '2026-10-22', bankConcept: 'Lidl', bankBalance: 246250 });
-    const adjustment = tx({ date: '2026-10-20', source: 'adjustment', bookingDate: null, bankBalance: null, bankConcept: null, note: 'Ajuste de saldo' });
-    const older = tx({ date: '2026-09-30', bookingDate: '2026-10-01', bankConcept: 'Septiembre', bankBalance: 100000 });
-    const concepts = lines([laterBooked, adjustment, shop, earlierBooked, salary, older]).map((line) => line.split(';').slice(1, 9).join('|'));
-    expect(concepts).toEqual([
-      'Gasto|BBVA||Supermercado|Mercadona||-12,50|Septiembre',
-      'Ingreso|BBVA||Supermercado|Mercadona||1500,00|Nómina',
-      'Gasto|BBVA||Supermercado|Mercadona||-12,50|Mercadona',
-      'Ajuste de saldo|BBVA||Supermercado|Mercadona|Ajuste de saldo|-12,50|',
-      'Gasto|BBVA||Supermercado|Mercadona||-12,50|Ahorro',
-      'Gasto|BBVA||Supermercado|Mercadona||-12,50|Lidl',
-    ]);
-  });
-
-  it('follows the bank chain through transfers, in or out of the import account', () => {
-    // 1000 → 800 (top-up out) → 880 (back in) on the same day.
-    const out = tx({ type: 'transfer', amount: 20000, toAccountId: 'revolut', toAccount: { name: 'Revolut' }, bankConcept: 'Recarga', bankBalance: 80000 });
-    const back = tx({ type: 'transfer', amount: 8000, accountId: 'revolut', account: { name: 'Revolut' }, toAccountId: BBVA, toAccount: { name: 'BBVA' }, bankConcept: 'Devolución', bankBalance: 88000 });
-    const first = tx({ bankConcept: 'Café', amount: 250, bankBalance: 100000 });
-    expect(lines([back, out, first]).map((line) => line.split(';')[8])).toEqual(['Café', 'Recarga', 'Devolución']);
+  it('writes them oldest first: Movimientos’ newest-first order reversed', () => {
+    const newest = tx({ date: '2026-10-21', bankConcept: 'Lidl' });
+    const oldest = tx({ date: '2026-09-30', bankConcept: 'Septiembre' });
+    expect(lines([newest, tx(), oldest]).map((line) => line.split(';')[8])).toEqual(['Septiembre', 'Mercadona', 'Lidl']);
   });
 
   it('quotes a field with a semicolon, a quote or a line break, doubling its quotes', () => {
@@ -118,7 +93,7 @@ describe('the CSV export', () => {
     expect(note('Línea 1\rlínea 2')).toBe('"Línea 1\rlínea 2"');
     expect(note('Sin nada raro')).toBe('Sin nada raro');
     // CRLF inside a quoted note, so the line itself isn't split by it.
-    expect(transactionsCsv([tx({ note: 'a\r\nb' })], BBVA)).toContain(';"a\r\nb";-12,50;');
+    expect(transactionsCsv([tx({ note: 'a\r\nb' })])).toContain(';"a\r\nb";-12,50;');
   });
 
   it('puts a quote mark before text a spreadsheet would run as a formula, but leaves amounts alone', () => {

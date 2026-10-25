@@ -3,13 +3,13 @@ import { Sheet } from '../../ui/Sheet';
 import { Button, Choice } from '../../ui/components';
 import { AccountPicker, CategoryGrid } from '../../ui/pickers';
 import { useRepoQuery } from '../../lib/repo';
-import type { Account, Category, TxType } from '../../domain/model';
+import { TX_TYPE_NAMES, type Account, type Category, type TxType } from '../../domain/model';
 import type { TransactionFilter } from '../../data/repository';
 
 /** What the sheet sets; the payee comes from Análisis and only its chip removes it. */
 export type SheetFilter = Pick<TransactionFilter, 'accountId' | 'categoryId' | 'type'>;
 
-const TYPE_OPTIONS: Record<TxType | 'all', string> = { all: 'Todos', expense: 'Gasto', income: 'Ingreso', transfer: 'Transferencia' };
+const TYPE_OPTIONS: Record<TxType | 'all', string> = { all: 'Todos', ...TX_TYPE_NAMES };
 
 /** Archived ones after the active ones, each in their own order. */
 const activeFirst = <T extends Account | Category>(items: T[]) => [...items.filter((item) => !item.archived), ...items.filter((item) => item.archived)];

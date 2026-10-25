@@ -38,6 +38,9 @@ export interface Payee {
 }
 
 export type TxType = 'expense' | 'income' | 'transfer';
+
+/** Each type's name in the Spanish UI and the CSV. */
+export const TX_TYPE_NAMES: Record<TxType, string> = { expense: 'Gasto', income: 'Ingreso', transfer: 'Transferencia' };
 export type TxSource = 'import' | 'adjustment';
 
 export interface Transaction {

@@ -435,8 +435,22 @@ export function createDexieRepository(options: DexieRepositoryOptions = {}): Dat
   /** A category's budget limits, of every month. */
   const limitsOf = (categoryId: Id) => db.budgetLimits.where('[categoryId+fromMonth]').between([categoryId, ''], [categoryId, '￿']);
 
-  const newestFirst = (a: Transaction, b: Transaction) =>
-    b.date.localeCompare(a.date) || (b.bookingDate ?? '').localeCompare(a.bookingDate ?? '') || b.createdAt.localeCompare(a.createdAt);
+  /**
+   * Newest first: by date and, within a date, imported transactions in reverse bank order. The
+   * bank order comes from the import account's whole chain, so it holds for a filtered list too.
+   */
+  async function newestFirst(txs: Transaction[]): Promise<Transaction[]> {
+    const accountId = await setting<Id | null>('importAccountId', null);
+    const bankIndex = new Map((accountId ? await chainOf(accountId) : []).map((link, index) => [link.tx.id, index]));
+    const position = (tx: Transaction) => bankIndex.get(tx.id) ?? -1;
+    return txs.sort(
+      (a, b) =>
+        b.date.localeCompare(a.date) ||
+        (b.bookingDate ?? '').localeCompare(a.bookingDate ?? '') ||
+        position(b) - position(a) ||
+        b.createdAt.localeCompare(a.createdAt),
+    );
+  }
 
   const repository: DataRepository = {
     subscribe(listener) {
@@ -805,7 +819,7 @@ export function createDexieRepository(options: DexieRepositoryOptions = {}): Dat
           (type === undefined || tx.type === type) &&
           (payeeId === undefined || tx.payeeId === payeeId),
       );
-      const views = await toViews(matching.sort(newestFirst));
+      const views = await toViews(await newestFirst(matching));
       if (text === '') return views;
       return views.filter((tx) =>
         [tx.payee?.name, tx.note, tx.bankConcept, tx.bankMovement].some((field) => field && normalizeText(field).includes(text)),

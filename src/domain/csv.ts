@@ -1,12 +1,11 @@
 import type { Cents } from './money';
-import { bankOrder } from './chain';
 import { formatDate, type IsoDate } from './dates';
-import { signedAmount, type Id, type Transaction } from './model';
+import { signedAmount, TX_TYPE_NAMES, type Transaction } from './model';
 
 /** What the CSV needs of a transaction: the repository's transaction views have it all. */
 export type CsvTransaction = Pick<
   Transaction,
-  'type' | 'amount' | 'date' | 'accountId' | 'toAccountId' | 'note' | 'source' | 'bookingDate' | 'bankConcept' | 'bankBalance' | 'createdAt'
+  'type' | 'amount' | 'date' | 'accountId' | 'toAccountId' | 'note' | 'source' | 'bankConcept'
 > & {
   account: { name: string };
   toAccount: { name: string } | null;
@@ -35,37 +34,18 @@ const escaped = (field: string) => (/[;"\r\n]/.test(field) ? `"${field.replace(/
 
 function typeLabel(tx: CsvTransaction): string {
   if (tx.source === 'adjustment') return 'Ajuste de saldo';
-  return { expense: 'Gasto', income: 'Ingreso', transfer: 'Transferencia' }[tx.type];
-}
-
-/**
- * Oldest first: by date and, within a date, imported transactions in bank order (booking date,
- * then the running-balance chain as seen from the import account), then the rest by creation.
- */
-function ledgerOrder<T extends CsvTransaction>(transactions: T[], importAccountId: Id | null): T[] {
-  const byCreation = [...transactions].sort((a, b) => a.createdAt.localeCompare(b.createdAt));
-  const ordered: T[] = [];
-  for (const date of [...new Set(byCreation.map((tx) => tx.date))].sort()) {
-    const day = byCreation.filter((tx) => tx.date === date);
-    const imported = day.filter((tx) => tx.bookingDate !== null && tx.bankBalance !== null);
-    const links = imported.map((tx) => ({
-      bookingDate: tx.bookingDate!,
-      amount: importAccountId === null ? 0 : signedAmount(tx, importAccountId),
-      balance: tx.bankBalance!,
-      tx,
-    }));
-    ordered.push(...bankOrder(links).map((link) => link.tx), ...day.filter((tx) => !imported.includes(tx)));
-  }
-  return ordered;
+  return TX_TYPE_NAMES[tx.type];
 }
 
 /**
  * The CSV export of `docs/spec.md` §5.13, for Spanish Excel: UTF-8 with BOM, `;` separator,
- * CRLF after every line, one line per transaction, oldest first. The amount is signed from
- * the transaction's account, so a transfer is negative (the money leaves that account).
+ * CRLF after every line, one line per transaction. It takes the transactions in Movimientos'
+ * order, newest first as `listTransactions` returns them, and writes them oldest first. The
+ * amount is signed from the transaction's account, so a transfer is negative (the money
+ * leaves that account).
  */
-export function transactionsCsv(transactions: CsvTransaction[], importAccountId: Id | null): string {
-  const lines = ledgerOrder(transactions, importAccountId).map((tx) =>
+export function transactionsCsv(transactions: CsvTransaction[]): string {
+  const lines = [...transactions].reverse().map((tx) =>
     [
       formatDate(tx.date),
       typeLabel(tx),

@@ -44,9 +44,8 @@ describe('exporting Movimientos as CSV', () => {
     await repo.updateTransaction(await transactionId(repo, 'Revolut**5625*'), { transferAccountId: revolutId });
     // Revolut has the 200 € top-up; it really has 180 €: an adjustment of −20 € today.
     await repo.updateAccountBalance(revolutId, 18000);
-    const { importAccountId } = await repo.getSettings();
 
-    const all = transactionsCsv(await repo.listTransactions('2026-10'), importAccountId);
+    const all = transactionsCsv(await repo.listTransactions('2026-10'));
     expect(all.split('\r\n')).toEqual([
       '\uFEFFFecha;Tipo;Cuenta;Cuenta destino;Categoría;Comercio;Nota;Importe;Concepto banco',
       '01/10/2026;Ingreso;BBVA;;Nómina;Abono De Nómina;;1500,00;Abono de nómina',
@@ -57,11 +56,29 @@ describe('exporting Movimientos as CSV', () => {
       '',
     ]);
 
-    const filtered = transactionsCsv(await repo.listTransactions('2026-10', { categoryId: groceries }), importAccountId);
+    const filtered = transactionsCsv(await repo.listTransactions('2026-10', { categoryId: groceries }));
     expect(filtered.split('\r\n').slice(1)).toEqual([
       `02/10/2026;Gasto;BBVA;;Supermercado;Mercadona;'=compra;-50,00;Mercadona - crta del inge`,
       '02/10/2026;Gasto;BBVA;;Supermercado;Mercadona;;-12,50;"Mercadona; Valencia"',
       '',
     ]);
+  });
+
+  it('keeps the bank order within a day when a filter leaves out the rows in between', async () => {
+    const { repo } = await setup();
+    await importFile(repo, [
+      { valor: '02/10/2026', concepto: 'Tienda A', movimiento: 'Pago con tarjeta', importe: -1 },
+      { valor: '02/10/2026', concepto: 'Otra', movimiento: 'Pago con tarjeta', importe: -2 },
+      { valor: '02/10/2026', concepto: 'Tienda B', movimiento: 'Pago con tarjeta', importe: -3 },
+      { valor: '02/10/2026', concepto: 'Otra 2', movimiento: 'Pago con tarjeta', importe: -4 },
+      { valor: '02/10/2026', concepto: 'Tienda C', movimiento: 'Pago con tarjeta', importe: -5 },
+    ]);
+    const concepts = (csv: string) => csv.split('\r\n').slice(1, -1).map((line) => line.split(';')[8]);
+
+    // Movimientos lists the newest first, in the bank's order, filtered or not.
+    expect((await repo.listTransactions('2026-10')).map((tx) => tx.bankConcept)).toEqual(['Tienda C', 'Otra 2', 'Tienda B', 'Otra', 'Tienda A']);
+    const shops = await repo.listTransactions('2026-10', { text: 'tienda' });
+    expect(shops.map((tx) => tx.bankConcept)).toEqual(['Tienda C', 'Tienda B', 'Tienda A']);
+    expect(concepts(transactionsCsv(shops))).toEqual(['Tienda A', 'Tienda B', 'Tienda C']);
   });
 });
