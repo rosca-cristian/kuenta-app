@@ -815,14 +815,16 @@ export function createDexieRepository(options: DexieRepositoryOptions = {}): Dat
 
     async listTransactions(period, filter: TransactionFilter = {}) {
       const txs = await (period === null ? db.transactions.toArray() : transactionsIn(period));
-      const { accountId, categoryId, type, payeeId } = filter;
+      const { accountId, categoryId, type, payeeId, from, to } = filter;
       const text = normalizeText(filter.text ?? '');
       const matching = txs.filter(
         (tx) =>
           (accountId === undefined || tx.accountId === accountId || tx.toAccountId === accountId) &&
           (categoryId === undefined || (categoryId === null ? isUncategorized(tx) : tx.categoryId === categoryId)) &&
           (type === undefined || tx.type === type) &&
-          (payeeId === undefined || tx.payeeId === payeeId),
+          (payeeId === undefined || tx.payeeId === payeeId) &&
+          (from === undefined || tx.date >= from) &&
+          (to === undefined || tx.date <= to),
       );
       const views = await toViews(await newestFirst(matching));
       if (text === '') return views;
