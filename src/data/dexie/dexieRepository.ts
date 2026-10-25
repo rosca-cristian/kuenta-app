@@ -10,7 +10,7 @@ import { budgetMonth, limitFor } from '../../domain/budgets';
 import { goalProgress } from '../../domain/goals';
 import { addMonths, daysBetween, daysInMonth, isMonth, monthOf, today, type Month } from '../../domain/dates';
 import { normalizeText } from '../../domain/text';
-import { createBackup, type BackupFile } from '../../domain/backup';
+import { createBackup, isBackupDue, type BackupFile } from '../../domain/backup';
 import { shapeByBankSign, transferAccountOf } from '../../domain/transfers';
 import {
   signedAmount,
@@ -104,8 +104,17 @@ export function createDexieRepository(options: DexieRepositoryOptions = {}): Dat
   const now = options.now ?? (() => new Date());
   const appVersion = options.appVersion ?? __APP_VERSION__;
   const listeners = new Set<() => void>();
+  /** Tells the screens something was written. Alone, for settings bookkeeping that doesn't change the user's data. */
   const changed = () => listeners.forEach((listener) => listener());
   const stamp = () => now().toISOString();
+  /**
+   * After a write that changed the user's data: records it in `lastChangeAt`, which Inicio's
+   * backup reminder looks at, then tells the screens.
+   */
+  async function dataChanged() {
+    await db.settings.put({ key: 'lastChangeAt', value: stamp() });
+    changed();
+  }
 
   async function setting<T>(key: string, fallback: T): Promise<T> {
     const row = await db.settings.get(key);
@@ -498,6 +507,7 @@ export function createDexieRepository(options: DexieRepositoryOptions = {}): Dat
           { key: 'onboardingDone', value: true },
         ]);
       });
+      // Only the starter data so far: nothing a backup would save yet.
       changed();
     },
 
@@ -541,7 +551,7 @@ export function createDexieRepository(options: DexieRepositoryOptions = {}): Dat
         });
         return { ok: true, id };
       });
-      if (result.ok) changed();
+      if (result.ok) await dataChanged();
       return result;
     },
 
@@ -559,7 +569,7 @@ export function createDexieRepository(options: DexieRepositoryOptions = {}): Dat
         await db.accounts.update(id, { ...update, updatedAt: stamp() });
         return { ok: true, id };
       });
-      if (result.ok) changed();
+      if (result.ok) await dataChanged();
       return result;
     },
 
@@ -571,7 +581,7 @@ export function createDexieRepository(options: DexieRepositoryOptions = {}): Dat
         if (difference !== 0) await addBalanceAdjustment(id, difference);
         return difference;
       });
-      if (difference !== 0) changed();
+      if (difference !== 0) await dataChanged();
       return difference;
     },
 
@@ -580,7 +590,7 @@ export function createDexieRepository(options: DexieRepositoryOptions = {}): Dat
         await nonImportedAccount(id, 'be archived');
         await db.accounts.update(id, { archived, updatedAt: stamp() });
       });
-      changed();
+      await dataChanged();
     },
 
     async deleteAccount(id) {
@@ -598,7 +608,7 @@ export function createDexieRepository(options: DexieRepositoryOptions = {}): Dat
         await db.goals.where('accountId').equals(id).delete();
         await db.accounts.delete(id);
       });
-      changed();
+      await dataChanged();
     },
 
     async listCategories({ withArchived = false } = {}) {
@@ -617,7 +627,7 @@ export function createDexieRepository(options: DexieRepositoryOptions = {}): Dat
         await db.categories.add({ ...draft, name, id, order: last ? last.order + 1 : 0, archived: false });
         return { ok: true, id };
       });
-      if (result.ok) changed();
+      if (result.ok) await dataChanged();
       return result;
     },
 
@@ -630,7 +640,7 @@ export function createDexieRepository(options: DexieRepositoryOptions = {}): Dat
         await db.categories.update(id, update);
         return { ok: true, id };
       });
-      if (result.ok) changed();
+      if (result.ok) await dataChanged();
       return result;
     },
 
@@ -647,7 +657,7 @@ export function createDexieRepository(options: DexieRepositoryOptions = {}): Dat
         await db.categories.update(id, { order: neighbour.order });
         await db.categories.update(neighbour.id, { order: category.order });
       });
-      changed();
+      await dataChanged();
     },
 
     async categoryUsage(id): Promise<CategoryUsage> {
@@ -678,7 +688,7 @@ export function createDexieRepository(options: DexieRepositoryOptions = {}): Dat
         await limitsOf(id).delete();
         await db.categories.delete(id);
       });
-      changed();
+      await dataChanged();
     },
 
     async listRules() {
@@ -702,7 +712,7 @@ export function createDexieRepository(options: DexieRepositoryOptions = {}): Dat
         await checkRule({ ...rule, enabled: true });
         await db.rules.add(rule);
       });
-      changed();
+      await dataChanged();
       return id;
     },
 
@@ -719,7 +729,7 @@ export function createDexieRepository(options: DexieRepositoryOptions = {}): Dat
         await checkRule(updated);
         await db.rules.put(updated);
       });
-      changed();
+      await dataChanged();
     },
 
     async moveRule(id, direction) {
@@ -732,13 +742,13 @@ export function createDexieRepository(options: DexieRepositoryOptions = {}): Dat
         await db.rules.update(id, { order: neighbour.order });
         await db.rules.update(neighbour.id, { order: rules[index].order });
       });
-      changed();
+      await dataChanged();
     },
 
     async deleteRule(id) {
       // Transactions don't remember which rule set them, so nothing else changes.
       await db.rules.delete(id);
-      changed();
+      await dataChanged();
     },
 
     async previewRule(draft) {
@@ -769,7 +779,7 @@ export function createDexieRepository(options: DexieRepositoryOptions = {}): Dat
         }
         return applyToNeverEdited(rules);
       });
-      if (count > 0) changed();
+      if (count > 0) await dataChanged();
       return count;
     },
 
@@ -804,7 +814,8 @@ export function createDexieRepository(options: DexieRepositoryOptions = {}): Dat
         await setStarterRulesOffer('done');
         return applyToNeverEdited(await db.rules.toArray());
       });
-      changed();
+      if (count > 0) await dataChanged();
+      else changed();
       return count;
     },
 
@@ -851,14 +862,14 @@ export function createDexieRepository(options: DexieRepositoryOptions = {}): Dat
         if (changes.payeeName !== undefined) update.payeeId = await payeeIdFor(changes.payeeName);
         await db.transactions.update(id, update);
       });
-      changed();
+      await dataChanged();
     },
 
     async deleteAdjustment(id) {
       const tx = await db.transactions.get(id);
       if (!tx || tx.source !== 'adjustment') throw new Error('Only balance adjustments can be deleted');
       await db.transactions.delete(id);
-      changed();
+      await dataChanged();
     },
 
     async expenseCategoriesUsedOn(date) {
@@ -892,7 +903,7 @@ export function createDexieRepository(options: DexieRepositoryOptions = {}): Dat
         if (payee) await renameInRules([payee.normalized], name);
         return { ok: true };
       });
-      if (result.ok) changed();
+      if (result.ok) await dataChanged();
       return result;
     },
 
@@ -908,7 +919,7 @@ export function createDexieRepository(options: DexieRepositoryOptions = {}): Dat
         await db.payees.bulkDelete(merged);
         await renameInRules(gone.map((payee) => payee.normalized), kept.name);
       });
-      changed();
+      await dataChanged();
     },
 
     async previewImport(file, fileName): Promise<PreviewResult> {
@@ -988,7 +999,7 @@ export function createDexieRepository(options: DexieRepositoryOptions = {}): Dat
           undone: false,
         });
       });
-      changed();
+      await dataChanged();
       return { batch: (await db.importBatches.get(batchId))!, check: (await computeBalanceCheck())! };
     },
 
@@ -998,7 +1009,7 @@ export function createDexieRepository(options: DexieRepositoryOptions = {}): Dat
       const check = await computeBalanceCheck();
       if (!check || check.difference === 0) return;
       await addBalanceAdjustment(await importAccountId(), check.difference);
-      changed();
+      await dataChanged();
     },
 
     async listImports() {
@@ -1017,13 +1028,13 @@ export function createDexieRepository(options: DexieRepositoryOptions = {}): Dat
         await db.importBatches.update(batchId, { undone: true });
         await refreshOpeningBalance(batch.accountId);
       });
-      changed();
+      await dataChanged();
     },
 
     async home(month): Promise<HomeData> {
       const allAccounts = await repository.listAccounts();
       const accountId = await importAccountId();
-      const [monthTxs, lastImport, chain, currentBudgets, goals, forecastTxs] = await Promise.all([
+      const [monthTxs, lastImport, chain, currentBudgets, goals, forecastTxs, backup] = await Promise.all([
         transactionsIn(month),
         db.importBatches.orderBy('importedAt').reverse().filter((batch) => !batch.undone).first(),
         chainOf(accountId),
@@ -1032,6 +1043,7 @@ export function createDexieRepository(options: DexieRepositoryOptions = {}): Dat
         repository.listGoals(),
         // Expected charges look at the two months before.
         db.transactions.where('date').between(`${addMonths(month, -2)}-01`, `${addMonths(month, 1)}-01`).toArray(),
+        repository.backupStatus(),
       ]);
       return {
         // Archived accounts still hold money: they count in the total, but aren't listed.
@@ -1046,6 +1058,7 @@ export function createDexieRepository(options: DexieRepositoryOptions = {}): Dat
         topBudgets: [...currentBudgets.budgets].sort((a, b) => b.percent - a.percent || b.spent - a.spent).slice(0, TOP_BUDGETS),
         goals: goals.filter((goal) => !goal.archived),
         forecast: monthForecast(forecastTxs, month, today(now())),
+        backupDue: backup.due,
       };
     },
 
@@ -1140,7 +1153,7 @@ export function createDexieRepository(options: DexieRepositoryOptions = {}): Dat
         const id = limits.find((limit) => limit.fromMonth === fromMonth)?.id ?? crypto.randomUUID();
         await db.budgetLimits.put({ id, categoryId, fromMonth, amount });
       });
-      changed();
+      await dataChanged();
     },
 
     async listGoals(): Promise<GoalView[]> {
@@ -1178,7 +1191,7 @@ export function createDexieRepository(options: DexieRepositoryOptions = {}): Dat
         await db.goals.add({ id, name, target, targetMonth, accountId, icon, color, archived: false });
         return { ok: true, id };
       });
-      if (result.ok) changed();
+      if (result.ok) await dataChanged();
       return result;
     },
 
@@ -1208,7 +1221,7 @@ export function createDexieRepository(options: DexieRepositoryOptions = {}): Dat
         await db.goals.update(id, update);
         return { ok: true, id };
       });
-      if (result.ok) changed();
+      if (result.ok) await dataChanged();
       return result;
     },
 
@@ -1221,7 +1234,7 @@ export function createDexieRepository(options: DexieRepositoryOptions = {}): Dat
         await db.goals.update(id, { archived });
         return { ok: true, id };
       });
-      if (result.ok) changed();
+      if (result.ok) await dataChanged();
       return result;
     },
 
@@ -1230,7 +1243,7 @@ export function createDexieRepository(options: DexieRepositoryOptions = {}): Dat
         if (!(await db.goals.get(id))) throw new Error(`Goal ${id} not found`);
         await db.goals.delete(id);
       });
-      changed();
+      await dataChanged();
     },
 
     async subscriptions(): Promise<SubscriptionsView> {
@@ -1280,7 +1293,8 @@ export function createDexieRepository(options: DexieRepositoryOptions = {}): Dat
     },
 
     async backupStatus(): Promise<BackupStatus> {
-      return { lastBackupAt: await setting<string | null>('lastBackupAt', null), due: false };
+      const lastBackupAt = await setting<string | null>('lastBackupAt', null);
+      return { lastBackupAt, due: isBackupDue(await setting<string | null>('lastChangeAt', null), lastBackupAt, now()) };
     },
   };
 

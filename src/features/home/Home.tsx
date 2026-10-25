@@ -82,6 +82,11 @@ export function Home() {
             {home.budgetsOver === 1 ? '1 presupuesto superado' : `${home.budgetsOver} presupuestos superados`}
           </Alert>
         )}
+        {home.backupDue && (
+          <Alert tone="warn" onClick={() => navigate('/mas/copias')}>
+            Haz una copia de seguridad
+          </Alert>
+        )}
 
         <Card>
           <h2 className="mb-2 font-medium">Cuentas</h2>

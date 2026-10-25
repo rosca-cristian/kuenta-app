@@ -42,6 +42,21 @@ export interface BackupFile {
 /** `kuenta-copia-2026-10-20.json` for a backup made that day. */
 export const backupFileName = (date: IsoDate) => `kuenta-copia-${date}.json`;
 
+/** Days after the last backup before Inicio reminds the user to make another, if the data changed. */
+export const BACKUP_REMINDER_DAYS = 7;
+
+/**
+ * Whether Inicio reminds the user to make a backup: the data changed since the last one, and
+ * that one is more than `BACKUP_REMINDER_DAYS` old or was never made. Without a recorded
+ * change (no data yet, or an install from before changes were recorded) there is nothing to remind of.
+ */
+export function isBackupDue(lastChangeAt: string | null, lastBackupAt: string | null, now: Date): boolean {
+  if (lastChangeAt === null) return false;
+  if (lastBackupAt === null) return true;
+  const backupTime = Date.parse(lastBackupAt);
+  return Date.parse(lastChangeAt) > backupTime && now.getTime() - backupTime > BACKUP_REMINDER_DAYS * 24 * 60 * 60 * 1000;
+}
+
 /** A backup of these rows, leaving out the device settings. */
 export function createBackup(data: BackupData, exportedAt: string, appVersion: string): BackupFile {
   return {

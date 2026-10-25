@@ -150,3 +150,124 @@ describe('the last backup', () => {
     expect((await repo.backupStatus()).lastBackupAt).toBe(new Date('2026-10-27T09:30:00').toISOString());
   });
 });
+
+describe('the backup reminder', () => {
+  const october = [{ valor: '02/10/2026', concepto: 'Mercadona', movimiento: 'Pago con tarjeta', importe: -12.5 }];
+  const due = async (repo: DataRepository) => {
+    const [home, status] = await Promise.all([repo.home('2026-10'), repo.backupStatus()]);
+    expect(home.backupDue).toBe(status.due);
+    return status.due;
+  };
+
+  it("doesn't show without data, even after onboarding", async () => {
+    const { repo, clock } = await setup();
+    expect(await due(repo)).toBe(false);
+    clock.now = new Date('2026-11-20T10:00:00');
+    expect(await due(repo)).toBe(false);
+  });
+
+  it('shows after an import when no backup was ever made', async () => {
+    const { repo } = await setup();
+    await importFile(repo, october, 1000);
+    expect(await due(repo)).toBe(true);
+  });
+
+  it('goes away right after a backup, and comes back more than 7 days later only after a change', async () => {
+    const { repo, clock } = await setup();
+    await importFile(repo, october, 1000);
+    await repo.markBackupMade();
+    expect(await due(repo)).toBe(false);
+
+    // A change the same week isn't enough: the last backup is recent.
+    clock.now = new Date('2026-10-22T10:00:00');
+    await repo.createAccount({ name: 'Efectivo', type: 'other', icon: 'wallet', color: 'green' });
+    expect(await due(repo)).toBe(false);
+
+    // 7 days to the minute is not more than 7.
+    clock.now = new Date('2026-10-27T10:00:00');
+    expect(await due(repo)).toBe(false);
+    clock.now = new Date('2026-10-28T10:00:00');
+    expect(await due(repo)).toBe(true);
+  });
+
+  it("doesn't show 8 days after a backup when nothing changed since", async () => {
+    const { repo, clock } = await setup();
+    await importFile(repo, october, 1000);
+    await repo.markBackupMade();
+    clock.now = new Date('2026-10-28T10:00:00');
+    expect(await due(repo)).toBe(false);
+
+    await repo.updateTransaction(await transactionId(repo, 'Mercadona'), { note: 'compra' });
+    expect(await due(repo)).toBe(true);
+  });
+
+  it("doesn't count settings-only writes as changes", async () => {
+    const { repo, clock, db } = await setup();
+    await importFile(repo, october, 1000);
+    await repo.markBackupMade();
+    await db.settings.put({ key: 'starterRulesOffer', value: 'pending' });
+    clock.now = new Date('2026-10-28T10:00:00');
+
+    let notified = 0;
+    repo.subscribe(() => notified++);
+    await repo.setPersistRequested();
+    await repo.dismissStarterRulesOffer();
+    await repo.markBackupMade();
+    clock.now = new Date('2026-11-10T10:00:00');
+    expect(notified).toBe(3);
+    expect(await due(repo)).toBe(false);
+    expect((await db.settings.get('lastChangeAt'))!.value).toBe(new Date('2026-10-20T10:00:00').toISOString());
+  });
+
+  it('records every kind of change to the data, with the clock', async () => {
+    const { repo, clock, db } = await setup();
+    let minute = 0;
+    /** Moves the clock on a minute, runs the write and checks it recorded the change at that time. */
+    const records = async (write: () => Promise<unknown>) => {
+      clock.now = new Date(`2026-10-20T11:${String(++minute).padStart(2, '0')}:00`);
+      await write();
+      expect((await db.settings.get('lastChangeAt'))?.value, `write ${minute}`).toBe(clock.now.toISOString());
+    };
+
+    let batchId = '';
+    await records(async () => (batchId = (await importFile(repo, october, 1000)).batch.id));
+    await records(() => repo.undoImport(batchId));
+    await records(() => importFile(repo, [...october, { valor: '03/10/2026', concepto: 'Panaderia Pepe', movimiento: 'Pago con tarjeta', importe: -3.2 }], 1000));
+    const mercadona = await transactionId(repo, 'Mercadona');
+    await records(() => repo.updateTransaction(mercadona, { note: 'compra' }));
+
+    let categoryId = '';
+    await records(async () => (categoryId = ((await repo.createCategory({ name: 'Mascotas', kind: 'expense', icon: 'dog', color: 'amber' })) as { id: string }).id));
+    await records(() => repo.updateCategory(categoryId, { name: 'Perro' }));
+    await records(() => repo.moveCategory(categoryId, 'up'));
+    await records(() => repo.setBudgetLimit(categoryId, 5000));
+
+    let ruleId = '';
+    await records(async () => (ruleId = await repo.createRule({ name: 'Pan', match: { value: 'panaderia' }, actions: { categoryId } })));
+    await records(() => repo.updateRule(ruleId, { name: 'Panadería' }));
+    await records(() => repo.moveRule(ruleId, 'down'));
+    await records(() => repo.applyRules(ruleId));
+    await records(() => repo.deleteRule(ruleId));
+    await records(() => repo.deleteCategory(categoryId, null));
+
+    const payee = (await repo.listPayees()).find((p) => p.name === 'Mercadona')!;
+    await records(() => repo.renamePayee(payee.id, 'Mercadona SA'));
+    const other = (await repo.listPayees()).find((p) => p.name !== 'Mercadona SA')!;
+    await records(() => repo.mergePayees(payee.id, [other.id]));
+
+    let accountId = '';
+    await records(async () => (accountId = ((await repo.createAccount({ name: 'Revolut', type: 'bank', icon: 'banknote', color: 'cyan' })) as { id: string }).id));
+    await records(() => repo.updateAccount(accountId, { name: 'Revolut EUR' }));
+    await records(() => repo.updateAccountBalance(accountId, 5000));
+    const adjustment = (await repo.listTransactions(null)).find((tx) => tx.source === 'adjustment')!;
+    await records(() => repo.deleteAdjustment(adjustment.id));
+
+    let goalId = '';
+    await records(async () => (goalId = ((await repo.createGoal({ name: 'Viaje', target: 100000, accountId, icon: 'plane', color: 'cyan' })) as { id: string }).id));
+    await records(() => repo.updateGoal(goalId, { name: 'Viaje a Roma' }));
+    await records(() => repo.setGoalArchived(goalId, true));
+    await records(() => repo.deleteGoal(goalId));
+    await records(() => repo.setAccountArchived(accountId, true));
+    await records(() => repo.deleteAccount(accountId));
+  });
+});

@@ -494,7 +494,9 @@ All checked at a 390×844 viewport. Items marked 🧪 have a unit test.
   - 🧪 Copias de seguridad's "Exportar movimientos (CSV)" exports the transactions dated from "Desde" to "Hasta", both included, in the same format; disabled when the range is empty or inverted; it doesn't set `lastBackupAt`.
 - File names: `kuenta-copia-AAAA-MM-DD.json` and `kuenta-movimientos-AAAA-MM-DD.csv`.
 - "Compartir copia" opens the system menu with the JSON file. If the browser can't share files, it downloads it. A download or a share sets `lastBackupAt`; a cancelled share doesn't.
-- The reminder appears on Inicio when more than 7 days have passed since the last backup (or none was ever made) and data has changed since. It disappears after exporting or sharing.
+- 🧪 **Reminder**: Inicio shows "Haz una copia de seguridad", which opens Copias de seguridad, when `lastChangeAt` exists and is later than `lastBackupAt`, and `lastBackupAt` is null or more than 7 days before now. It disappears after exporting or sharing, and doesn't come back while the data hasn't changed, however old the last backup.
+  - Every write that changes the user's data records `lastChangeAt` = now: imports and undoing them, transaction edits, rules and applying them, categories, payees, accounts and balance updates, budgets, goals. Settings bookkeeping doesn't (`persistRequested`, `lastBackupAt`, dismissing the starter-rules offer), nor does onboarding's starter data, so a fresh install with no data isn't reminded.
+  - Installs from before the reminder have no `lastChangeAt`: they start counting from their next change, so updating the app alone never shows it.
 
 ### 5.14 PWA and storage
 - The app installs from Chrome on Android with the "Kuenta" icon and name and opens full screen.

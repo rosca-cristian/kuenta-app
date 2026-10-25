@@ -133,6 +133,8 @@ export interface HomeData {
   goals: GoalView[];
   /** Where the month's spending is heading, with its expected charges; null for other months than the current one and before the 3rd. */
   forecast: Cents | null;
+  /** Whether to remind the user to make a backup: see `BackupStatus.due`. */
+  backupDue: boolean;
 }
 
 export interface TransactionChanges {
@@ -334,13 +336,21 @@ export interface SubscriptionsView {
 export interface BackupStatus {
   /** When the user last exported or shared a backup on this device (ISO 8601); null when never. */
   lastBackupAt: string | null;
-  /** Whether Inicio should remind the user to make a backup. Always false until the reminder arrives. */
+  /**
+   * Whether Inicio reminds the user to make a backup: the data changed (`lastChangeAt`) since
+   * the last backup, and that one was never made or is more than 7 days old.
+   */
   due: boolean;
 }
 
 /** The only data interface screens use. */
 export interface DataRepository {
-  /** Called after every write. Returns an unsubscribe function. */
+  /**
+   * Called after every write. Returns an unsubscribe function. Every write that changes the
+   * user's data also records when in the `lastChangeAt` setting, before calling it; settings
+   * bookkeeping (`persistRequested`, `lastBackupAt`, dismissing the starter-rules offer) and
+   * onboarding's starter data don't.
+   */
   subscribe(listener: () => void): () => void;
 
   getSettings(): Promise<Settings>;
