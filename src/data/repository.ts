@@ -320,7 +320,7 @@ export interface SubscriptionView extends Subscription {
   payee: Payee;
 }
 
-/** Análisis → Suscripciones: every payee with expenses in "Suscripciones", by name, and what they cost. */
+/** Análisis → Suscripciones: every payee with expenses in "Suscripciones", by name, what they cost and what the category spent this month. */
 export interface SubscriptionsView {
   subscriptions: SubscriptionView[];
   totals: SubscriptionTotals;

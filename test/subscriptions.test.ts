@@ -74,22 +74,59 @@ describe('subscriptions', () => {
     expect(byName(view, 'Netflix')).toMatchObject({ lastAmount: 1399, lastDate: '2026-10-15' });
   });
 
-  it('is monthly for consecutive months, yearly 11–13 months apart, and "—" otherwise', async () => {
+  it('is monthly for consecutive months, yearly 11–13 months apart, assumed monthly for a single charge, and "—" otherwise', async () => {
     const repo = await setup();
     await subscriptionRules(repo, ...concepts);
     await importFile(repo, movements);
 
     const view = await repo.subscriptions();
-    // Yearly: a twelfth of 119,99 €, rounded to the cent. A single charge or one three months apart has no frequency.
+    // Yearly: a twelfth of 119,99 €, rounded to the cent. Two charges three months apart have no frequency.
     expect(rows(view)).toEqual([
       ['Dominio Web', 'yearly', 1000],
       ['Netflix', 'monthly', 1399],
-      ['Nueva App', null, null],
+      ['Nueva App', 'monthly', 499],
       ['Revista Mensual', null, null],
       ['Spotify', 'monthly', 1099],
     ]);
+    // Only the single charge's frequency is assumed.
+    expect(view.subscriptions.map((s) => [s.payee.name, s.assumed])).toEqual([
+      ['Dominio Web', false],
+      ['Netflix', false],
+      ['Nueva App', true],
+      ['Revista Mensual', false],
+      ['Spotify', false],
+    ]);
     // Without a frequency, the last charge still shows.
-    expect(byName(view, 'Nueva App')).toMatchObject({ lastAmount: 499, lastDate: '2026-10-12', nextDate: null });
+    expect(byName(view, 'Revista Mensual')).toMatchObject({ lastAmount: 600, lastDate: '2026-08-01', monthlyAmount: null, nextDate: null });
+  });
+
+  it('assumes a single charge is monthly, a month after it, until a second charge confirms or corrects it', async () => {
+    const repo = await setup();
+    await subscriptionRules(repo, 'nueva app');
+    await importFile(repo, [card('31/08/2026', 'Nueva App', -4.99)]);
+
+    expect(byName(await repo.subscriptions(), 'Nueva App')).toMatchObject({
+      frequency: 'monthly',
+      assumed: true,
+      monthlyAmount: 499,
+      nextDate: '2026-09-30',
+      priceRise: false,
+      missingCharge: false,
+    });
+
+    // September's charge confirms it: monthly, no longer assumed.
+    await importFile(repo, [card('30/09/2026', 'Nueva App', -4.99)]);
+    expect(byName(await repo.subscriptions(), 'Nueva App')).toMatchObject({ frequency: 'monthly', assumed: false, monthlyAmount: 499, nextDate: '2026-10-30' });
+  });
+
+  it('leaves two charges in the same month without a frequency', async () => {
+    const repo = await setup();
+    await subscriptionRules(repo, 'nueva app');
+    await importFile(repo, [card('02/10/2026', 'Nueva App', -4.99), card('12/10/2026', 'Nueva App', -4.99)]);
+
+    const view = await repo.subscriptions();
+    expect(byName(view, 'Nueva App')).toMatchObject({ frequency: null, assumed: false, monthlyAmount: null, nextDate: null });
+    expect(view.totals).toMatchObject({ monthly: 0, yearly: 0 });
   });
 
   it('takes 11 and 13 months apart as yearly, but not 10 or 14', async () => {
@@ -124,6 +161,7 @@ describe('subscriptions', () => {
     expect(byName(view, 'Spotify').nextDate).toBe('2026-10-05');
     expect(byName(view, 'Dominio Web').nextDate).toBe('2027-10-01');
     expect(byName(view, 'Revista Mensual').nextDate).toBeNull();
+    expect(byName(view, 'Nueva App').nextDate).toBe('2026-11-12');
     expect(byName(view, 'Gimnasio').nextDate).toBe('2026-10-30');
   });
 
@@ -132,8 +170,23 @@ describe('subscriptions', () => {
     await subscriptionRules(repo, ...concepts);
     await importFile(repo, movements);
 
-    // 10 € + 13,99 € + 10,99 €; the new app and the magazine don't count.
-    expect((await repo.subscriptions()).totals).toEqual({ monthly: 3498, yearly: 41976 });
+    // 10 € + 13,99 € + 4,99 € (assumed monthly) + 10,99 €; the magazine doesn't count.
+    expect((await repo.subscriptions()).totals).toMatchObject({ monthly: 3997, yearly: 47964 });
+  });
+
+  it("shows what the category spent this month, as Análisis → Gastos does, a refund included", async () => {
+    const repo = await setup();
+    await subscriptionRules(repo, ...concepts);
+    await importFile(repo, [...movements, card('16/10/2026', 'Abono', 13.99, 'Devolucion netflix')]);
+    const suscripciones = await categoryId(repo, 'Suscripciones');
+    const refund = (await repo.listTransactions('2026-10')).find((tx) => tx.bankMovement === 'Devolucion netflix')!;
+    await repo.updateTransaction(refund.id, { categoryId: suscripciones });
+
+    const { totals } = await repo.subscriptions();
+    // October: 119,99 € + 4,99 € + 13,99 € − the 13,99 € refund. September's charges and Mercadona don't count.
+    expect(totals.spentThisMonth).toBe(12498);
+    const gastos = (await repo.spending('2026-10')).entries.find((entry) => entry.category?.id === suscripciones);
+    expect(gastos?.amount).toBe(totals.spentThisMonth);
   });
 
   it('flags a price rise when the last charge is higher than the one before', async () => {
@@ -155,8 +208,8 @@ describe('subscriptions', () => {
 
     const view = await repo.subscriptions();
     expect(view.subscriptions.filter((s) => s.missingCharge).map((s) => s.payee.name)).toEqual(['Spotify']);
-    // The same rule as the forecast's expected charges.
-    expect(byName(view, 'Hbo').frequency).toBeNull();
+    // The same rule as the forecast's expected charges: HBO's single charge is assumed monthly, but not missing.
+    expect(byName(view, 'Hbo')).toMatchObject({ frequency: 'monthly', assumed: true, missingCharge: false });
 
     // Once October's charge arrives, the notice goes.
     await importFile(repo, [card('19/10/2026', 'Spotify', -10.99)]);
@@ -171,8 +224,8 @@ describe('subscriptions', () => {
     await repo.updateTransaction(prime.id, { categoryId: await categoryId(repo, 'Suscripciones') });
 
     const view = await repo.subscriptions();
-    // October's order isn't a charge: Prime stays at 49,90 € and isn't monthly.
-    expect(view.subscriptions.map((s) => [s.payee.name, s.lastAmount, s.lastDate, s.frequency])).toEqual([['Amazon', 4990, '2026-09-10', null]]);
+    // October's order isn't a charge: Prime stays at 49,90 € with a single charge, assumed monthly.
+    expect(view.subscriptions.map((s) => [s.payee.name, s.lastAmount, s.lastDate, s.frequency, s.assumed])).toEqual([['Amazon', 4990, '2026-09-10', 'monthly', true]]);
   });
 
   it('tells apart PayPal charges by the payee the rules give them', async () => {
@@ -207,7 +260,7 @@ describe('subscriptions', () => {
   it('is empty without charges in "Suscripciones" or without the category', async () => {
     const repo = await setup();
     await importFile(repo, movements);
-    const empty = { subscriptions: [], totals: { monthly: 0, yearly: 0 } };
+    const empty = { subscriptions: [], totals: { monthly: 0, yearly: 0, spentThisMonth: 0 } };
     expect(await repo.subscriptions()).toEqual(empty);
 
     await repo.deleteCategory(await categoryId(repo, 'Suscripciones'), null);

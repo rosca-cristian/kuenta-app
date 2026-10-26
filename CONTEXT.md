@@ -47,7 +47,7 @@ An expense from a payee that was charged in each of the last two months and hasn
 _Avoid_: Recurring transaction
 
 **Subscription**:
-A service the user pays for periodically, identified by its payee: any payee with expenses in the "Suscripciones" category. Its frequency and cost come from its imported charges; nothing about it is entered by hand.
+A service the user pays for periodically, identified by its payee: any payee with expenses in the "Suscripciones" category. Its frequency and cost come from its imported charges (a single charge is assumed monthly until the next one); nothing about it is entered by hand.
 _Avoid_: Recurring, membership
 
 **Category**:

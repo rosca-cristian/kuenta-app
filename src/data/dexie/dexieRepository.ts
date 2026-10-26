@@ -1276,20 +1276,21 @@ export function createDexieRepository(options: DexieRepositoryOptions = {}): Dat
       return db.transaction('r', db.categories, db.transactions, db.payees, async () => {
         // The category whose payees are the subscriptions, by name: it survives being recreated or seeded again.
         const category = await db.categories.filter((c) => normalizeText(c.name) === 'suscripciones').first();
-        if (!category) return { subscriptions: [], totals: subscriptionTotals([]) };
+        if (!category) return { subscriptions: [], totals: { monthly: 0, yearly: 0, spentThisMonth: 0 } };
         const date = today(now());
         const [charges, recent] = await Promise.all([
           db.transactions.where('categoryId').equals(category.id).toArray(),
-          // Missing charges look at the two months before this one, whatever their category.
+          // Missing charges look at the two months before this one, whatever their category; this month's spending at this month.
           db.transactions.where('date').between(`${addMonths(monthOf(date), -2)}-01`, `${addMonths(monthOf(date), 1)}-01`).toArray(),
         ]);
-        const list = subscriptions([...new Map([...charges, ...recent].map((tx) => [tx.id, tx])).values()], category.id, date);
+        const transactions = [...new Map([...charges, ...recent].map((tx) => [tx.id, tx])).values()];
+        const list = subscriptions(transactions, category.id, date);
         const payees = await db.payees.bulkGet(list.map((subscription) => subscription.payeeId));
         return {
           subscriptions: list
             .map((subscription, i) => ({ ...subscription, payee: payees[i]! }))
             .sort((a, b) => a.payee.name.localeCompare(b.payee.name, 'es-ES')),
-          totals: subscriptionTotals(list),
+          totals: subscriptionTotals(list, transactions, category.id, monthOf(date)),
         };
       });
     },

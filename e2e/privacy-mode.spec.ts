@@ -154,6 +154,7 @@ test('hide every amount with the eye button, keep it after a reload, and show th
   await expectMasked(page);
   await page.getByRole('tab', { name: 'Suscripciones' }).click();
   await expect(page.getByTestId('subscriptions-monthly').locator('.masked-amount')).toBeVisible();
+  await expect(page.getByTestId('subscriptions-spent').locator('.masked-amount')).toBeVisible();
   await expectMasked(page);
 
   // Cuentas, Presupuestos and Objetivos.

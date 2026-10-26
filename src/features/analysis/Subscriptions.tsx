@@ -10,11 +10,13 @@ import { transactionsLink } from '../transactions/filters';
 
 const FREQUENCY: Record<SubscriptionFrequency, string> = { monthly: 'Mensual', yearly: 'Anual' };
 
-const frequencyLabel = (frequency: SubscriptionFrequency | null) => (frequency === null ? '—' : FREQUENCY[frequency]);
+/** "Mensual (supuesta)" for a single charge: the next one confirms it. */
+const frequencyLabel = ({ frequency, assumed }: Pick<SubscriptionView, 'frequency' | 'assumed'>) =>
+  frequency === null ? '—' : assumed ? `${FREQUENCY[frequency]} (supuesta)` : FREQUENCY[frequency];
 
 /**
  * Análisis → Suscripciones: every payee with expenses in "Suscripciones", with what it costs
- * per month and per year at the top. Tapping a row opens Movimientos with all that payee's
+ * per month and per year and what the category spent this month at the top. Tapping a row opens Movimientos with all that payee's
  * transactions, over all months.
  */
 export function Subscriptions() {
@@ -46,7 +48,11 @@ export function Subscriptions() {
             <dd className="text-xl font-semibold tabular-nums" data-testid="subscriptions-yearly"><Money cents={view.totals.yearly} /></dd>
           </div>
         </dl>
-        {uncounted && <p className="mt-2 text-xs text-muted">Las que aún no tienen frecuencia (—) no cuentan en los totales.</p>}
+        <dl className="mt-3 flex items-baseline justify-between gap-2 border-t border-line pt-3">
+          <dt className="text-xs text-muted">Gastado este mes</dt>
+          <dd className="font-semibold tabular-nums" data-testid="subscriptions-spent"><Money cents={view.totals.spentThisMonth} /></dd>
+        </dl>
+        {uncounted && <p className="mt-2 text-xs text-muted">Las de fechas irregulares (—) no cuentan en los totales mensual y anual.</p>}
       </Card>
 
       <ul aria-label="Suscripciones" className="overflow-hidden rounded-2xl border border-line bg-card">
@@ -59,7 +65,7 @@ export function Subscriptions() {
                   <span className="shrink-0 tabular-nums" data-testid="subscription-amount"><Money cents={subscription.lastAmount} /></span>
                 </div>
                 <div className="flex items-baseline justify-between gap-2 text-xs text-muted">
-                  <span data-testid="subscription-frequency">{frequencyLabel(subscription.frequency)}</span>
+                  <span data-testid="subscription-frequency">{frequencyLabel(subscription)}</span>
                   <span className="tabular-nums" data-testid="subscription-monthly">
                     {subscription.monthlyAmount === null ? (
                       '—'

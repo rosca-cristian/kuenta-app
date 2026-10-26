@@ -310,7 +310,7 @@ Tabs:
 - **Gastos**: the month's donut by category with the total in the centre, and below it the categories with amount and percentage (acting as the legend). Categories whose net spending (§3.2) is zero or negative are left out; uncategorized expenses form a grey "Sin categoría" slice. Tapping a category (or "Sin categoría") opens Movimientos filtered by that month and category.
 - **Mensual**: income vs expenses bars for the last 6 or 12 months, with each month's net. Each month matches its summary on Inicio; months before the first month with imported transactions are left out, so the series starts where the data starts, and the current month is marked "en curso".
 - **Patrimonio**: net worth (§3.2) at the end of each of the last 12 months as a line, the current month's point being today's; months before the first transaction are left out. Above it, today's net worth and its change since the end of last month, green or red by sign.
-- **Suscripciones**: one row per subscription (payee): name, last amount, frequency (mensual / anual, deduced from the dates of its charges), monthly equivalent, last charge and expected next charge. Totals per month and per year at the top. Notices: "Ha subido de precio" (last charge higher than the previous one) and "No ha llegado el cargo de este mes" (an expected charge that hasn't arrived). Nothing is entered by hand: a subscription is any payee with expenses in the "Suscripciones" category. Tapping a row opens Movimientos filtered by that payee, over all months.
+- **Suscripciones**: one row per subscription (payee): name, last amount, frequency (mensual / anual, deduced from the dates of its charges; "mensual (supuesta)" while it has a single charge), monthly equivalent, last charge and expected next charge. Totals per month and per year at the top, and "Gastado este mes": the category's spending in the current month, as Gastos measures it. Notices: "Ha subido de precio" (last charge higher than the previous one) and "No ha llegado el cargo de este mes" (an expected charge that hasn't arrived). Nothing is entered by hand: a subscription is any payee with expenses in the "Suscripciones" category. Tapping a row opens Movimientos filtered by that payee, over all months.
 
 ### 4.6 Presupuestos
 - Month selector, up to the current month (no future months). Total budgeted, spent (budgeted categories only) and remaining; when spending exceeds the total, "X € por encima".
@@ -449,11 +449,12 @@ All checked at a 390×844 viewport. Items marked 🧪 have a unit test.
 
 ### 5.10b Subscriptions
 - 🧪 Every payee with expenses in "Suscripciones" appears once, with its last charge amount; payees in other categories don't.
-- 🧪 The frequency comes from the last two charges: monthly when they are in consecutive months; yearly when they are 11–13 months apart; otherwise "—" (a single charge or irregular dates), which shows the last charge until more history exists.
-- 🧪 Monthly equivalent: monthly = last amount; yearly = last amount / 12, rounded to the cent. Totals per month and per year are the sums of the monthly equivalents (× 12 for the year); subscriptions with frequency "—" have no monthly equivalent and don't count in the totals.
-- 🧪 Next charge: the last charge's date plus a month (monthly) or a year (yearly); none for "—".
+- 🧪 The frequency comes from the last two charges: monthly when they are in consecutive months; yearly when they are 11–13 months apart; otherwise "—" (irregular dates, two charges in the same month included), which shows the last charge until more history exists. A single charge is assumed monthly, shown as "Mensual (supuesta)" until the next charge confirms or corrects it.
+- 🧪 Monthly equivalent: monthly (assumed or not) = last amount; yearly = last amount / 12, rounded to the cent. Totals per month and per year are the sums of the monthly equivalents (× 12 for the year); subscriptions with frequency "—" have no monthly equivalent and don't count in the totals.
+- 🧪 "Gastado este mes" is the "Suscripciones" category's spending in the current month as budgets and Análisis → Gastos measure it (§3.2: expenses − income, by transaction date), so a refund in the category reduces it; other months and categories don't count.
+- 🧪 Next charge: the last charge's date plus a month (monthly, assumed included) or a year (yearly); none for "—".
 - 🧪 "Ha subido de precio" appears when the last charge is higher than the one before.
-- 🧪 "No ha llegado el cargo de este mes" uses the expected charge rule (§3.2) for monthly subscriptions.
+- 🧪 "No ha llegado el cargo de este mes" uses the expected charge rule (§3.2) for monthly subscriptions; it needs charges in the two previous months, so a single charge never raises it on its own.
 - 🧪 Subscriptions charged through PayPal or another intermediary are told apart by the payee the user's rules give them (e.g. a rule `mullvad` → payee "Mullvad"), not by the bank concept.
 
 ### 5.11 Budgets
