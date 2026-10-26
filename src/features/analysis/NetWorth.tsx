@@ -2,10 +2,10 @@ import { CartesianGrid, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YA
 import { Card, EmptyState } from '../../ui/components';
 import { usePrefersReducedMotion } from '../../ui/motion';
 import { useRepoQuery } from '../../lib/repo';
-import { useMoney } from '../../lib/money';
+import { Money, maskedChartClass, useMoney } from '../../lib/money';
 import { formatMonth } from '../../domain/dates';
 import type { Cents } from '../../domain/money';
-import { AXIS_TICK, shortMonth } from './chart';
+import { AXIS_TICK, VALUE_AXIS_TICK, shortMonth } from './chart';
 
 /** Green above 0, red below, the normal text colour at 0. */
 const signColour = (cents: Cents) => (cents > 0 ? 'text-income' : cents < 0 ? 'text-danger' : '');
@@ -21,7 +21,7 @@ const ZERO_BASED: [(min: number) => number, (max: number) => number] = [(min) =>
 export function NetWorth() {
   const view = useRepoQuery((repo) => repo.netWorth(), []);
   const reducedMotion = usePrefersReducedMotion();
-  const { money, signedMoney, compactMoney } = useMoney();
+  const { hidden, money, compactMoney } = useMoney();
 
   if (!view) return null;
   if (view.latest === null) {
@@ -37,23 +37,23 @@ export function NetWorth() {
       <Card>
         <p className="text-sm text-muted">Patrimonio hoy</p>
         <p className={`text-3xl font-semibold tabular-nums ${signColour(view.latest)}`} data-testid="net-worth-latest">
-          {money(view.latest)}
+          <Money cents={view.latest} />
         </p>
         {view.change !== null && (
           <p className="text-sm" data-testid="net-worth-change">
-            <span className={`tabular-nums ${signColour(view.change)}`}>{signedMoney(view.change)}</span>
+            <Money cents={view.change} format="signed" className={`tabular-nums ${signColour(view.change)}`} />
             <span className="text-muted"> este mes</span>
           </p>
         )}
       </Card>
 
-      <div className="h-60" data-testid="net-worth-chart">
+      <div className={`h-60 ${maskedChartClass(hidden)}`} data-testid="net-worth-chart">
         <ResponsiveContainer width="100%" height="100%">
           <LineChart data={view.points} margin={{ top: 8, right: 8, bottom: 0, left: 0 }}>
             <CartesianGrid vertical={false} stroke="var(--color-line)" />
             <XAxis dataKey="month" tickFormatter={shortMonth} tick={AXIS_TICK} axisLine={false} tickLine={false} interval="preserveStartEnd" />
             {/* From 0, so the compact labels stay distinct and a small change doesn't look like a fall. */}
-            <YAxis tickFormatter={compactMoney} tick={AXIS_TICK} axisLine={false} tickLine={false} width={72} domain={ZERO_BASED} />
+            <YAxis tickFormatter={compactMoney} tick={VALUE_AXIS_TICK} axisLine={false} tickLine={false} width={72} domain={ZERO_BASED} />
             <Tooltip
               formatter={(value) => [money(Number(value)), 'Patrimonio']}
               labelFormatter={(month) => formatMonth(String(month))}

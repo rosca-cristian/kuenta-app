@@ -6,7 +6,7 @@ import { Sheet } from '../../ui/Sheet';
 import { CategoryGrid } from '../../ui/pickers';
 import { TransferBadge } from '../../ui/icons';
 import { useServices, useRepoQuery } from '../../lib/repo';
-import { useMoney } from '../../lib/money';
+import { Money } from '../../lib/money';
 import { formatDate } from '../../domain/dates';
 import { suggestedRuleText } from '../../domain/rules';
 import { ruleSubjectOf, type ImportWarning, type PlannedRow } from '../../domain/importPlan';
@@ -352,7 +352,6 @@ function Result({ outcome, onDone }: { outcome: ImportOutcome; onDone: () => voi
   const check = useRepoQuery((r) => r.balanceCheck()) ?? outcome.check;
   const home = useRepoQuery((r) => r.home(outcome.batch.dateTo.slice(0, 7)));
   const balanced = check.difference === 0;
-  const { money } = useMoney();
 
   return (
     <>
@@ -367,12 +366,18 @@ function Result({ outcome, onDone }: { outcome: ImportOutcome; onDone: () => voi
         </p>
         <dl className="mt-2 grid w-full grid-cols-2 gap-2 text-sm">
           <dt className="text-left text-muted">Saldo en el banco</dt>
-          <dd className="text-right tabular-nums">{money(check.bankBalance)}</dd>
+          <dd className="text-right tabular-nums"><Money cents={check.bankBalance} /></dd>
           <dt className="text-left text-muted">Saldo en Kuenta</dt>
-          <dd className="text-right tabular-nums">{money(check.appBalance)}</dd>
+          <dd className="text-right tabular-nums"><Money cents={check.appBalance} /></dd>
         </dl>
         <p className={`font-medium ${balanced ? 'text-income' : 'text-warn'}`} data-testid="balance-check">
-          {balanced ? '✓ Cuadra' : `No cuadra: diferencia de ${money(check.difference)}`}
+          {balanced ? (
+            '✓ Cuadra'
+          ) : (
+            <>
+              No cuadra: diferencia de <Money cents={check.difference} />
+            </>
+          )}
         </p>
       </Card>
 

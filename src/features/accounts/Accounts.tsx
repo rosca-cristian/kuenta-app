@@ -5,7 +5,7 @@ import { IconBadge } from '../../ui/icons';
 import { ColorPicker, IconPicker } from '../../ui/pickers';
 import { useRepo, useRepoQuery } from '../../lib/repo';
 import { formatTypedAmount, parseTypedAmount } from '../../domain/money';
-import { useMoney } from '../../lib/money';
+import { Money, usePrivacyMode } from '../../lib/money';
 import type { AccountType } from '../../domain/model';
 import type { AccountDraft, AccountSaveResult, AccountView } from '../../data/repository';
 
@@ -89,7 +89,6 @@ export function Accounts() {
 }
 
 function AccountList({ title, accounts, onEdit }: { title: string; accounts: AccountView[]; onEdit: (account: AccountView) => void }) {
-  const { money } = useMoney();
   return (
     <ul aria-label={title} className="overflow-hidden rounded-2xl border border-line bg-card">
       {accounts.map((account) => (
@@ -106,7 +105,7 @@ function AccountList({ title, accounts, onEdit }: { title: string; accounts: Acc
               </span>
             </span>
             <span className="shrink-0 tabular-nums" data-testid="account-balance">
-              {money(account.balance)}
+              <Money cents={account.balance} />
             </span>
           </button>
         </li>
@@ -127,13 +126,19 @@ function AccountForm({
   onDelete: (account: AccountView) => void;
 }) {
   const repo = useRepo();
+  const hidden = usePrivacyMode();
   const [draft, setDraft] = useState<Omit<AccountDraft, 'openingBalance'>>(
     () => account ?? { name: '', type: 'bank', icon: 'landmark', color: 'blue' },
   );
-  // Typed text; empty means 0.
-  const [opening, setOpening] = useState(() => (account && account.openingBalance !== 0 ? formatTypedAmount(account.openingBalance) : ''));
-  const [error, setError] = useState<string | null>(null);
   const isImportAccount = account?.isImportAccount ?? false;
+  // In privacy mode an existing account's opening balance starts empty rather than giving it
+  // away, and left empty it keeps the stored one; otherwise empty means 0.
+  const [keepsOpening] = useState(hidden && account !== null && !isImportAccount);
+  // Typed text.
+  const [opening, setOpening] = useState(() =>
+    account && !keepsOpening && account.openingBalance !== 0 ? formatTypedAmount(account.openingBalance) : '',
+  );
+  const [error, setError] = useState<string | null>(null);
   const change = (changes: Partial<AccountDraft>) => {
     setDraft({ ...draft, ...changes });
     setError(null);
@@ -142,7 +147,7 @@ function AccountForm({
   async function save(event: FormEvent) {
     event.preventDefault();
     const fields: AccountDraft = { name: draft.name, type: draft.type, icon: draft.icon, color: draft.color };
-    if (!isImportAccount) {
+    if (!isImportAccount && !(keepsOpening && opening.trim() === '')) {
       const openingBalance = opening.trim() === '' ? 0 : parseTypedAmount(opening);
       if (openingBalance === null) {
         setError('Escribe el saldo inicial como un importe, por ejemplo 1.250,50 o -30.');
@@ -203,11 +208,14 @@ function AccountForm({
               setOpening(event.target.value);
               setError(null);
             }}
-            placeholder="0,00"
+            placeholder={keepsOpening ? 'Sin cambios' : '0,00'}
             autoComplete="off"
             className={`${inputClass} tabular-nums`}
           />
-          <span className="text-xs">Lo que tenía la cuenta antes de su primer movimiento. Puede ser negativo.</span>
+          <span className="text-xs">
+            Lo que tenía la cuenta antes de su primer movimiento. Puede ser negativo.
+            {keepsOpening && ' Déjalo vacío para mantener el actual.'}
+          </span>
         </label>
       )}
 
@@ -242,7 +250,7 @@ function AccountForm({
 /** "Actualizar saldo": the user types the real balance and Kuenta adds an adjustment for the difference. */
 function BalanceForm({ account, onDone }: { account: AccountView; onDone: () => void }) {
   const repo = useRepo();
-  const { hidden, money, signedMoney } = useMoney();
+  const hidden = usePrivacyMode();
   // In privacy mode the field starts empty rather than giving the hidden balance away.
   const [text, setText] = useState(() => (hidden ? '' : formatTypedAmount(account.balance)));
   const [error, setError] = useState<string | null>(null);
@@ -262,7 +270,7 @@ function BalanceForm({ account, onDone }: { account: AccountView; onDone: () => 
   return (
     <form onSubmit={save} className="flex flex-col gap-4">
       <p className="text-sm text-muted">
-        Saldo en Kuenta de «{account.name}»: <span className="tabular-nums text-text">{money(account.balance)}</span>
+        Saldo en Kuenta de «{account.name}»: <Money cents={account.balance} className="tabular-nums text-text" />
       </p>
       <label className="flex flex-col gap-1 text-sm text-muted">
         Saldo real
@@ -281,7 +289,11 @@ function BalanceForm({ account, onDone }: { account: AccountView; onDone: () => 
         <p className="text-sm text-muted" data-testid="balance-difference">
           {difference === 0
             ? 'Ya coincide: no se creará ningún ajuste.'
-            : `Se creará un ajuste de saldo de ${signedMoney(difference)} con fecha de hoy. No cuenta como ingreso ni gasto.`}
+            : (
+              <>
+                Se creará un ajuste de saldo de <Money cents={difference} format="signed" /> con fecha de hoy. No cuenta como ingreso ni gasto.
+              </>
+            )}
         </p>
       )}
       {error && (

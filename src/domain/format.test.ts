@@ -20,13 +20,13 @@ describe('money formatting', () => {
     expect(formatCompactMoney(150000000)).toBe('1,5 M €');
   });
 
-  it('masks every amount in privacy mode, sign included', () => {
+  it('gives the same signless placeholder for every amount in privacy mode', () => {
     const { money, signedMoney, compactMoney } = moneyFormatters(true);
-    expect(MASKED_MONEY).toBe('•••• €');
+    expect(MASKED_MONEY).toBe('0.000,00 €');
     for (const cents of [123456, -500, 0, 1250, -150000000]) {
-      expect(money(cents)).toBe('•••• €');
-      expect(signedMoney(cents)).toBe('•••• €');
-      expect(compactMoney(cents)).toBe('•••• €');
+      expect(money(cents)).toBe(MASKED_MONEY);
+      expect(signedMoney(cents)).toBe(MASKED_MONEY);
+      expect(compactMoney(cents)).toBe(MASKED_MONEY);
     }
   });
 

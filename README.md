@@ -14,7 +14,7 @@ Personal finance PWA fed by your bank's statement. Once a week you export your B
 
 ## Privacy mode
 
-Tap the eye in the header of **Inicio** or **Movimientos** to hide every amount in the app (lists, totals, charts) behind "•••• €"; percentages, counts and dates stay visible. Tap it again to show them. The choice belongs to this phone: it stays after closing the app, isn't saved in backups and isn't changed by restoring one. Exported backups and CSVs always have the real amounts.
+Tap the eye in the header of **Inicio** or **Movimientos** to blur every amount in the app (lists, totals, charts): each one becomes a grey smudge where the amount was, and the real amount isn't even on the page; percentages, counts and dates stay visible. While it's on, the amount fields of the edit sheets (a budget's limit, a goal's target, an account's opening balance, "Actualizar saldo") start empty; left empty, they never change the stored amount. Tap it again to show them. The choice belongs to this phone: it stays after closing the app, isn't saved in backups and isn't changed by restoring one. Exported backups and CSVs always have the real amounts.
 
 ## Weekly import
 

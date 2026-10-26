@@ -7,7 +7,7 @@ import { CategoryGrid } from '../../ui/pickers';
 import { useRepo, useRepoQuery } from '../../lib/repo';
 import { formatMonth, monthOf, today, type Month } from '../../domain/dates';
 import { formatTypedAmount, parseTypedAmount } from '../../domain/money';
-import { useMoney } from '../../lib/money';
+import { Money, usePrivacyMode } from '../../lib/money';
 import { BUDGET_STATUS } from '../../ui/budgetStatus';
 import type { Category, Id } from '../../domain/model';
 import type { BudgetView } from '../../data/repository';
@@ -96,24 +96,23 @@ export function Budgets() {
 }
 
 function Totals({ budgeted, spent, remaining }: { budgeted: number; spent: number; remaining: number }) {
-  const { money } = useMoney();
   return (
     <Card>
       <dl className="grid grid-cols-3 gap-2 text-sm">
         <div>
           <dt className="text-muted">Presupuestado</dt>
-          <dd className="tabular-nums" data-testid="budgets-budgeted">{money(budgeted)}</dd>
+          <dd className="tabular-nums" data-testid="budgets-budgeted"><Money cents={budgeted} /></dd>
         </div>
         <div>
           <dt className="text-muted">Gastado</dt>
-          <dd className="tabular-nums" data-testid="budgets-spent">{money(spent)}</dd>
+          <dd className="tabular-nums" data-testid="budgets-spent"><Money cents={spent} /></dd>
         </div>
         <div>
           <dt className="text-muted">Queda</dt>
           {remaining < 0 ? (
-            <dd className="tabular-nums text-danger" data-testid="budgets-remaining">{money(-remaining)} por encima</dd>
+            <dd className="tabular-nums text-danger" data-testid="budgets-remaining"><Money cents={-remaining} /> por encima</dd>
           ) : (
-            <dd className="tabular-nums" data-testid="budgets-remaining">{money(remaining)}</dd>
+            <dd className="tabular-nums" data-testid="budgets-remaining"><Money cents={remaining} /></dd>
           )}
         </div>
       </dl>
@@ -128,7 +127,6 @@ function Totals({ budgeted, spent, remaining }: { budgeted: number; spent: numbe
 function BudgetCard({ budget, today, onEdit }: { budget: BudgetView; today: number | null; onEdit: () => void }) {
   const { category, limit, spent, percent, status } = budget;
   const style = BUDGET_STATUS[status];
-  const { money } = useMoney();
   return (
     <li>
       <button onClick={onEdit} className="block w-full rounded-2xl border border-line bg-card p-4 text-left active:bg-card-2">
@@ -141,7 +139,7 @@ function BudgetCard({ budget, today, onEdit }: { budget: BudgetView; today: numb
         </div>
         <div className="mt-3 flex items-baseline justify-between gap-2 text-sm">
           <span className="tabular-nums" data-testid="budget-spent">
-            {money(spent)} <span className="text-muted">/ {money(limit)}</span>
+            <Money cents={spent} /> <span className="text-muted">/ <Money cents={limit} /></span>
           </span>
           <span className="tabular-nums text-muted" data-testid="budget-percent">
             {formatPercent(percent)}
@@ -241,7 +239,10 @@ function AddBudgetForm({ categories, month, onDone }: { categories: Category[]; 
 function EditBudgetForm({ budget, month, onDone }: { budget: BudgetView; month: Month; onDone: () => void }) {
   const repo = useRepo();
   const { category, limit } = budget;
-  const [text, setText] = useState(() => formatTypedAmount(limit));
+  // In privacy mode the limit starts empty rather than giving it away; saving it empty is
+  // refused like any other invalid limit, so it can't change the stored one.
+  const hidden = usePrivacyMode();
+  const [text, setText] = useState(() => (hidden ? '' : formatTypedAmount(limit)));
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const isExpense = category.kind === 'expense';

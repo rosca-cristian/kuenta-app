@@ -35,3 +35,21 @@ body {
     transition-duration: 0.01ms !important;
   }
 }
+
+/*
+ * Privacy mode: every amount is a fixed placeholder (never the real one), blurred into a soft
+ * smudge where the amount would be: in the text, and on a chart's value axis and tooltip. The
+ * blur follows the font size, so big totals blur more, and no digit stays legible even at 11 px.
+ */
+.masked-amount,
+.masked-chart .recharts-yAxis-tick-labels .recharts-cartesian-axis-tick-value,
+.masked-chart .recharts-tooltip-item-value {
+  filter: blur(0.3em);
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+.masked-amount,
+.masked-chart .recharts-tooltip-item-value {
+  display: inline-block;
+}

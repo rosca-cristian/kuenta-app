@@ -44,7 +44,7 @@
 11. **Subscriptions**: the list of the user's subscriptions, derived from imported transactions, with their cost per month and per year.
 12. **Search and filters** on transactions.
 13. **Backups**: full JSON export and restore, CSV export, share via the system menu, backup reminder.
-14. **Privacy mode**: hide amounts.
+14. **Privacy mode**: blur every amount.
 15. **PWA**: installable, works offline, persistent storage, share target for `.xlsx` files.
 
 ### Removed from the earlier draft
@@ -264,7 +264,7 @@ Format, confirmed with real exports (October 2026). The file is what Google Shee
 
 ## 4. Screens
 
-Fixed bottom navigation: **Inicio · Movimientos · Importar · Análisis · Más**. Every screen with a period uses the same `‹ octubre 2026 ›` selector. The eye icon for privacy mode (a toggle named "Ocultar importes": an open eye, or a crossed-out eye while pressed) sits in the header of Inicio and Movimientos; it turns the mode on or off for the whole app.
+Fixed bottom navigation: **Inicio · Movimientos · Importar · Análisis · Más**. Every screen with a period uses the same `‹ octubre 2026 ›` selector. The eye icon for privacy mode (a toggle named "Ocultar importes": an open eye, or a crossed-out eye while pressed) sits in the header of Inicio and Movimientos; it turns the mode on or off for the whole app. While it's on, each amount is a blurred smudge with the shape of an amount, where the amount would be; the layout and labels stay sharp.
 
 ### 4.1 First run
 1. Welcome: what Kuenta is, that data only lives on this phone, and the weekly import routine. "Empezar" goes on; the secondary "Restaurar una copia" brings a backup back instead (below).
@@ -362,7 +362,8 @@ All checked at a 390×844 viewport. Items marked 🧪 have a unit test.
 - 🧪 Text amounts are also accepted: "1.234,56" → 123456, "-0,5" → −50.
 - 🧪 Formatting: 123456 → "1.234,56 €" (4-digit thousands are grouped too); −500 → "−5,00 €".
 - 🧪 Dates show as "20/10/2026" in tables and CSV, and "lunes, 20 de octubre" in headers.
-- 🧪 In privacy mode every amount on every screen (lists, totals, sheets, Importar, chart axes and tooltips included) shows exactly as "•••• €", with no sign or "+"/"−"; percentages, counts, dates, colours and chart shapes stay. Amount inputs show their value: an edit sheet's fields (a budget limit, a goal target, an opening balance) start with the stored amount, as editing it is deliberate, but "Actualizar saldo" starts empty, since the real balance is typed anyway. Exports (backup, CSV) keep the real amounts.
+- 🧪 In privacy mode every amount on every screen (lists, totals, sheets, Importar, the amounts inside sentences such as "ahorra X/mes" or "No cuadra: diferencia de X", chart value axes and tooltips included) is blurred where it would be. The real amount never reaches the page: each one is the same fixed placeholder "0.000,00 €", with no sign or "+"/"−", blurred (by 0.3 em, so big totals blur more and no digit is legible), not selectable, and hidden from screen readers, which read "Importe oculto" instead. Percentages, counts, dates, colours and chart shapes stay. Exports (backup, CSV) keep the real amounts.
+- 🧪 In privacy mode every edit sheet's amount field starts empty instead of with the stored amount, and saving it untouched never changes that amount: a goal's target and a non-imported account's opening balance, left empty, keep the stored one ("Sin cambios"), so the sheet's other fields can still be edited; a budget's limit and "Actualizar saldo", left empty, are refused like any invalid amount. A new account's empty opening balance still means 0.
 - 🧪 Privacy mode belongs to the phone: it persists across restarts, applies from the first frame, isn't in backups, survives a restore and doesn't count as a data change (no backup reminder).
 
 ### 5.2 Reading the BBVA file

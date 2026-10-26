@@ -3,10 +3,10 @@ import { Bar, BarChart, CartesianGrid, Cell, ResponsiveContainer, XAxis, YAxis }
 import { Choice, EmptyState } from '../../ui/components';
 import { usePrefersReducedMotion } from '../../ui/motion';
 import { useRepoQuery } from '../../lib/repo';
-import { useMoney } from '../../lib/money';
+import { Money, maskedChartClass, useMoney } from '../../lib/money';
 import { formatMonth } from '../../domain/dates';
 import type { MonthlyRange } from '../../data/repository';
-import { AXIS_TICK, shortMonth } from './chart';
+import { AXIS_TICK, VALUE_AXIS_TICK, shortMonth } from './chart';
 
 const RANGES: Record<`${MonthlyRange}`, string> = { 6: '6 meses', 12: '12 meses' };
 
@@ -16,9 +16,6 @@ let lastRange: MonthlyRange = 6;
 /** The current month's bars are lighter: a half month shouldn't look like a bad one. */
 const opacity = (inProgress: boolean) => (inProgress ? 0.45 : 1);
 
-/** Recharts wraps a label wider than the axis; a wider box keeps "1,2 mil €" on one line. */
-const yTick = { ...AXIS_TICK, width: 120 };
-
 /**
  * Análisis → Mensual: income (green) and expenses (neutral) bars for each of the last 6 or
  * 12 months, as Inicio's summary counts them, and below them each month's net, newest first.
@@ -27,7 +24,7 @@ export function Monthly() {
   const [range, setRange] = useState<MonthlyRange>(lastRange);
   const view = useRepoQuery((repo) => repo.monthly(range), [range]);
   const reducedMotion = usePrefersReducedMotion();
-  const { hidden, money, signedMoney, compactMoney } = useMoney();
+  const { hidden, compactMoney } = useMoney();
 
   const choose = (next: MonthlyRange) => {
     lastRange = next;
@@ -49,12 +46,12 @@ export function Monthly() {
           <EmptyState title="Sin movimientos todavía">Cuando importes movimientos verás aquí tus ingresos y gastos de cada mes.</EmptyState>
         ) : (
           <>
-            <div className="h-56" data-testid="monthly-chart">
+            <div className={`h-56 ${maskedChartClass(hidden)}`} data-testid="monthly-chart">
               <ResponsiveContainer width="100%" height="100%">
                 <BarChart data={view.entries} margin={{ top: 8, right: 0, bottom: 0, left: 0 }} barGap={2} barCategoryGap="20%">
                   <CartesianGrid vertical={false} stroke="var(--color-line)" />
                   <XAxis dataKey="month" tickFormatter={shortMonth} tick={AXIS_TICK} axisLine={false} tickLine={false} interval={0} />
-                  <YAxis tickFormatter={compactMoney} tick={yTick} axisLine={false} tickLine={false} width={64} />
+                  <YAxis tickFormatter={compactMoney} tick={VALUE_AXIS_TICK} axisLine={false} tickLine={false} width={64} />
                   {(['income', 'expenses'] as const).map((key) => (
                     <Bar
                       key={key}
@@ -91,11 +88,11 @@ export function Monthly() {
                       {entry.inProgress && <span className="ml-2 rounded-full bg-card-2 px-2 py-0.5 text-xs text-muted">en curso</span>}
                     </p>
                     <p className="truncate text-xs text-muted tabular-nums">
-                      <span className="text-income">{hidden ? '' : '+'}{money(entry.income)}</span> · {hidden ? '' : '−'}{money(entry.expenses)}
+                      <Money cents={entry.income} sign="+" className="text-income" /> · <Money cents={entry.expenses} sign="−" />
                     </p>
                   </div>
                   <span className={`tabular-nums ${entry.net > 0 ? 'text-income' : ''}`} data-testid="monthly-net">
-                    {signedMoney(entry.net)}
+                    <Money cents={entry.net} format="signed" />
                   </span>
                 </li>
               ))}

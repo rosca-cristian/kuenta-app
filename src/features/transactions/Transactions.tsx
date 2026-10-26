@@ -4,7 +4,7 @@ import { Check, Search, SlidersHorizontal, X } from 'lucide-react';
 import { Amount, Button, Choice, EmptyState, FilterChip, MonthSelector, PageHeader } from '../../ui/components';
 import { IconBadge, TransferBadge } from '../../ui/icons';
 import { useRepoQuery } from '../../lib/repo';
-import { useMoney } from '../../lib/money';
+import { Money } from '../../lib/money';
 import { PrivacyButton } from '../../ui/PrivacyButton';
 import { formatDayHeader, monthOf, today, type Month } from '../../domain/dates';
 import { listNet } from '../../domain/stats';
@@ -62,7 +62,6 @@ export function Transactions() {
   const transactions = useLatest(current);
   const search = useCallback((next: string) => update((current) => withText(current, next)), [update]);
   const searching = text.trim() !== '' || filter !== null;
-  const { signedMoney } = useMoney();
 
   const days = useMemo(() => {
     const groups = new Map<string, TransactionView[]>();
@@ -101,7 +100,7 @@ export function Transactions() {
       {transactions && transactions.length > 0 && (
         <p className="px-5 pb-3 text-sm text-muted" data-testid="summary">
           {transactions.length === 1 ? '1 movimiento' : `${transactions.length} movimientos`} · neto{' '}
-          <span className="tabular-nums">{signedMoney(listNet(transactions))}</span>
+          <Money cents={listNet(transactions)} format="signed" className="tabular-nums" />
         </p>
       )}
       {transactions &&
@@ -121,7 +120,7 @@ export function Transactions() {
             <section key={date} style={{ contentVisibility: 'auto', containIntrinsicSize: `auto ${dayHeight(txs.length)}px` }}>
               <h2 className="flex justify-between px-1 pb-1 text-xs text-muted">
                 <span>{formatDayHeader(date, period === null && date.slice(0, 4) !== currentMonth.slice(0, 4))}</span>
-                <span className="tabular-nums">{signedMoney(net)}</span>
+                <Money cents={net} format="signed" className="tabular-nums" />
               </h2>
               <ul className="overflow-hidden rounded-2xl border border-line bg-card">
                 {txs.map((tx) => (

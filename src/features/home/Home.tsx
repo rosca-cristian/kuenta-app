@@ -3,7 +3,7 @@ import { Link, useNavigate } from 'react-router-dom';
 import { Alert, Amount, Button, Card, MonthSelector, PageHeader, formatPercent } from '../../ui/components';
 import { IconBadge, colorFor } from '../../ui/icons';
 import { useRepo, useRepoQuery } from '../../lib/repo';
-import { useMoney } from '../../lib/money';
+import { Money } from '../../lib/money';
 import { PrivacyButton } from '../../ui/PrivacyButton';
 import { formatDate, monthOf, today } from '../../domain/dates';
 import { BUDGET_STATUS } from '../../ui/budgetStatus';
@@ -19,7 +19,6 @@ export function Home() {
   const currentMonth = monthOf(today());
   const [month, setMonth] = useState(currentMonth);
   const home = useRepoQuery((repo) => repo.home(month), [month]);
-  const { money } = useMoney();
 
   if (!home) return <PageHeader title="Inicio" action={<PrivacyButton />} />;
   const { summary } = home;
@@ -30,7 +29,7 @@ export function Home() {
       <div className="flex flex-col gap-4 px-4">
         <Card>
           <p className="text-sm text-muted">Saldo total</p>
-          <p className="text-3xl font-semibold tabular-nums" data-testid="total-balance">{money(home.totalBalance)}</p>
+          <p className="text-3xl font-semibold tabular-nums" data-testid="total-balance"><Money cents={home.totalBalance} /></p>
           <div className="mt-3 border-t border-line pt-2">
             <MonthSelector month={month} onChange={setMonth} />
             <dl className="grid grid-cols-3 gap-2 text-sm">
@@ -52,7 +51,7 @@ export function Home() {
             </dl>
             {home.forecast !== null && (
               <p className="mt-2 text-sm text-muted" data-testid="month-forecast">
-                A este ritmo gastarás {money(home.forecast)} este mes
+                A este ritmo gastarás <Money cents={home.forecast} /> este mes
               </p>
             )}
           </div>
@@ -102,7 +101,7 @@ export function Home() {
                   <span className="truncate">{account.name}</span>
                   {!account.isImportAccount && <span className="text-xs text-muted">no importada</span>}
                 </span>
-                <span className="tabular-nums">{money(account.balance)}</span>
+                <span className="tabular-nums"><Money cents={account.balance} /></span>
               </li>
             ))}
           </ul>
@@ -116,7 +115,6 @@ export function Home() {
 
 /** The current month's budgets with the highest percentage used, whatever month the card shows. */
 function TopBudgets({ budgets }: { budgets: BudgetView[] }) {
-  const { money } = useMoney();
   return (
     <Card>
       <div className="mb-2 flex items-center justify-between gap-2">
@@ -131,7 +129,7 @@ function TopBudgets({ budgets }: { budgets: BudgetView[] }) {
             <div className="flex items-baseline justify-between gap-2 text-sm">
               <span className="min-w-0 truncate">{category.name}</span>
               <span className={`shrink-0 tabular-nums ${BUDGET_STATUS[status].text}`} data-testid="budget-spent">
-                {money(spent)} <span className="text-muted">/ {money(limit)}</span>
+                <Money cents={spent} /> <span className="text-muted">/ <Money cents={limit} /></span>
               </span>
             </div>
             <div
@@ -154,7 +152,6 @@ function TopBudgets({ budgets }: { budgets: BudgetView[] }) {
 
 /** A progress bar for each active goal; tapping one opens Objetivos. */
 function GoalsProgress({ goals }: { goals: GoalView[] }) {
-  const { money } = useMoney();
   return (
     <Card>
       <h2 className="mb-2 font-medium">Objetivos</h2>
@@ -175,7 +172,7 @@ function GoalsProgress({ goals }: { goals: GoalView[] }) {
                 )}
               </span>
               <span className="block text-xs tabular-nums text-muted" data-testid="goal-progress">
-                {money(current)} / {money(target)}
+                <Money cents={current} /> / <Money cents={target} />
               </span>
               <span
                 role="progressbar"

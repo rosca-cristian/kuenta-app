@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom';
 import { ChevronLeft, ChevronRight, X } from 'lucide-react';
 import { addMonths, formatMonth, type Month } from '../domain/dates';
 import type { Cents } from '../domain/money';
-import { useMoney } from '../lib/money';
+import { Money } from '../lib/money';
 
 export function Button({
   variant = 'primary',
@@ -77,12 +77,11 @@ export function MonthSelector({ month, onChange, max }: { month: Month; onChange
   );
 }
 
-/** An amount; income in green, expenses in the normal text colour. Privacy mode masks it, sign included. */
+/** An amount; income in green, expenses in the normal text colour. Privacy mode blurs it and drops the sign (see Money). */
 export function Amount({ cents, kind, className = '' }: { cents: Cents; kind?: 'income' | 'expense' | 'neutral'; className?: string }) {
-  const { hidden, money } = useMoney();
   const colour = kind === 'income' ? 'text-income' : '';
-  const sign = hidden ? '' : kind === 'income' ? '+' : kind === 'expense' ? '−' : '';
-  return <span className={`tabular-nums ${colour} ${className}`}>{sign}{money(kind ? Math.abs(cents) : cents)}</span>;
+  const sign = kind === 'income' ? '+' : kind === 'expense' ? '−' : '';
+  return <Money cents={kind ? Math.abs(cents) : cents} sign={sign} className={`tabular-nums ${colour} ${className}`} />;
 }
 
 export function EmptyState({ title, children }: { title: string; children?: ReactNode }) {

@@ -7,7 +7,7 @@ import { ColorPicker, IconPicker } from '../../ui/pickers';
 import { useRepo, useRepoQuery } from '../../lib/repo';
 import { formatMonth, monthOf, today, type Month } from '../../domain/dates';
 import { formatTypedAmount, parseTypedAmount } from '../../domain/money';
-import { useMoney } from '../../lib/money';
+import { Money, usePrivacyMode } from '../../lib/money';
 import type { Id } from '../../domain/model';
 import type { GoalSaveResult, GoalView } from '../../data/repository';
 
@@ -115,7 +115,6 @@ function GoalList({ title, goals, onEdit }: { title: string; goals: GoalView[]; 
 function GoalCard({ goal, onEdit }: { goal: GoalView; onEdit: () => void }) {
   const { name, icon, color, account, current, target, targetMonth, percent, reached, plan } = goal;
   const accountName = account.archived ? `${account.name} (archivada)` : account.name;
-  const { money } = useMoney();
   return (
     <li>
       <button onClick={onEdit} className="block w-full rounded-2xl border border-line bg-card p-4 text-left active:bg-card-2">
@@ -135,7 +134,7 @@ function GoalCard({ goal, onEdit }: { goal: GoalView; onEdit: () => void }) {
         </div>
         <div className="mt-3 flex items-baseline justify-between gap-2 text-sm">
           <span className="tabular-nums" data-testid="goal-progress">
-            {money(current)} <span className="text-muted">/ {money(target)}</span>
+            <Money cents={current} /> <span className="text-muted">/ <Money cents={target} /></span>
           </span>
           <span className="tabular-nums text-muted" data-testid="goal-percent">
             {formatPercent(percent)}
@@ -158,7 +157,16 @@ function GoalCard({ goal, onEdit }: { goal: GoalView; onEdit: () => void }) {
         {/* An archived goal is no longer pursued: no amount to save. */}
         {plan && !goal.archived && (
           <div className={`mt-2 text-sm tabular-nums ${plan.kind === 'overdue' ? 'text-warn' : 'text-muted'}`} data-testid="goal-plan">
-            {plan.kind === 'save' ? `ahorra ${money(plan.perMonth)}/mes` : `Fecha superada · faltan ${money(plan.missing)}`}
+            {plan.kind === 'save' ? (
+              <>
+                ahorra <Money cents={plan.perMonth} />
+                /mes
+              </>
+            ) : (
+              <>
+                Fecha superada · faltan <Money cents={plan.missing} />
+              </>
+            )}
           </div>
         )}
       </button>
@@ -174,9 +182,12 @@ function GoalCard({ goal, onEdit }: { goal: GoalView; onEdit: () => void }) {
 function GoalForm({ goal, onDone, onDelete }: { goal: GoalView | null; onDone: () => void; onDelete: (goal: GoalView) => void }) {
   const repo = useRepo();
   const accounts = useRepoQuery((r) => r.goalAccounts(goal?.id), [goal?.id]);
-  const { money } = useMoney();
+  // In privacy mode an existing goal's target starts empty rather than giving it away, and
+  // left empty it keeps the stored one, so the other fields can still be edited.
+  const hidden = usePrivacyMode();
+  const [keepsTarget] = useState(hidden && goal !== null);
   const [name, setName] = useState(goal?.name ?? '');
-  const [text, setText] = useState(goal ? formatTypedAmount(goal.target) : '');
+  const [text, setText] = useState(goal && !keepsTarget ? formatTypedAmount(goal.target) : '');
   const [targetMonth, setTargetMonth] = useState<Month | null>(goal?.targetMonth ?? null);
   const [accountId, setAccountId] = useState<Id | null>(goal?.accountId ?? null);
   // Null follows the chosen account.
@@ -194,7 +205,7 @@ function GoalForm({ goal, onDone, onDelete }: { goal: GoalView | null; onDone: (
 
   async function save(event: FormEvent) {
     event.preventDefault();
-    const target = parseTypedAmount(text);
+    const target = keepsTarget && goal && text.trim() === '' ? goal.target : parseTypedAmount(text);
     if (name.trim() === '') setError('Escribe un nombre.');
     else if (target === null || target <= 0) setError(targetHint);
     else if (!accountId) setError('Elige una cuenta.');
@@ -239,10 +250,11 @@ function GoalForm({ goal, onDone, onDelete }: { goal: GoalView | null; onDone: (
           value={text}
           onChange={(event) => changed(setText)(event.target.value)}
           inputMode="decimal"
-          placeholder="0,00"
+          placeholder={keepsTarget ? 'Sin cambios' : '0,00'}
           autoComplete="off"
           className={`${inputClass} tabular-nums`}
         />
+        {keepsTarget && <span className="text-xs">Déjalo vacío para mantener el objetivo actual.</span>}
       </label>
 
       <TargetMonthPicker value={targetMonth} onChange={changed(setTargetMonth)} />
@@ -261,7 +273,7 @@ function GoalForm({ goal, onDone, onDelete }: { goal: GoalView | null; onDone: (
           >
             <IconBadge icon={option.icon} color={option.color} size={32} />
             <span className="min-w-0 flex-1 truncate">{option.archived ? `${option.name} (archivada)` : option.name}</span>
-            <span className="shrink-0 text-sm tabular-nums text-muted">{money(option.balance)}</span>
+            <span className="shrink-0 text-sm tabular-nums text-muted"><Money cents={option.balance} /></span>
           </button>
         ))}
         <span className="text-xs text-muted">El progreso es el saldo de la cuenta. Cada cuenta puede tener un solo objetivo.</span>
