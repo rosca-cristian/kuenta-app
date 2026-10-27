@@ -110,6 +110,7 @@ export function Choice<T extends string>({
   name,
   value,
   options,
+  columns,
   onChange,
 }: {
   legend: string;
@@ -118,13 +119,15 @@ export function Choice<T extends string>({
   name: string;
   value: T;
   options: Record<T, string>;
+  /** Options per row, when they don't all fit in one; all of them by default. */
+  columns?: number;
   onChange: (value: T) => void;
 }) {
   const entries = Object.entries(options) as [T, string][];
   return (
     <fieldset>
       <legend className={legendHidden ? 'sr-only' : 'mb-1 text-sm text-muted'}>{legend}</legend>
-      <div className="grid gap-2" style={{ gridTemplateColumns: `repeat(${entries.length}, minmax(0, 1fr))` }}>
+      <div className="grid gap-2" style={{ gridTemplateColumns: `repeat(${columns ?? entries.length}, minmax(0, 1fr))` }}>
         {entries.map(([option, label]) => (
           <label
             key={option}

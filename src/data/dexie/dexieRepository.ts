@@ -1342,12 +1342,16 @@ export function createDexieRepository(
             (categoryId === null
               ? isUncategorized(tx)
               : tx.categoryId === categoryId)) &&
-          (type === undefined || tx.type === type) &&
+          (type === undefined ||
+            tx.type === (type === "reimbursement" ? "income" : type)) &&
           (payeeId === undefined || tx.payeeId === payeeId) &&
           (from === undefined || tx.date >= from) &&
           (to === undefined || tx.date <= to),
       );
-      const views = await toViews(await newestFirst(matching));
+      // The views carry the links, all loaded at once: the reimbursements are the incomes with some.
+      const views = (await toViews(await newestFirst(matching))).filter(
+        (tx) => type !== "reimbursement" || tx.reimbursement !== null,
+      );
       return text === "" ? views : views.filter((tx) => matchesText(tx, text));
     },
 

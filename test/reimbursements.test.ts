@@ -3,6 +3,7 @@ import { createDexieRepository } from "../src/data/dexie/dexieRepository";
 import { KuentaDb } from "../src/data/dexie/db";
 import type { DataRepository, TransactionView } from "../src/data/repository";
 import { backupJson } from "../src/domain/backup";
+import { listNet } from "../src/domain/stats";
 import type { SampleMovement } from "./support/bbvaXlsx";
 import { importFile } from "./support/backupData";
 
@@ -290,6 +291,79 @@ describe("linking an income to the expenses it pays back", () => {
       (await repo.listTransactions(null)).map((tx) => [tx.id, tx.amount]),
     ).toEqual(listed);
     expect((await view(repo, ids.ana)).amount).toBe(3805);
+  });
+
+  it("keeps Movimientos' summary and day totals on the bank amounts", async () => {
+    const { repo } = await setup();
+    const { ids } = await linkedData(repo);
+    /** The month's net and each day's, as the summary line and the day headers sum them. */
+    const totals = async () => {
+      const listed = await repo.listTransactions("2026-10");
+      const days = Map.groupBy(listed, (tx) => tx.date);
+      return {
+        summary: listNet(listed),
+        days: [...days].map(([date, txs]) => [date, listNet(txs)]),
+      };
+    };
+    const before = await totals();
+    await linkAll(repo, ids);
+    expect(await totals()).toEqual(before);
+    expect(before.summary).toBe(150000 - 6000 - 2500 - 7350 + 8000 + 6000 + 3805 + 985 + 1565);
+  });
+
+  it('lists the incomes that pay back an expense with the "reimbursement" type', async () => {
+    const { repo } = await setup();
+    const { ids } = await linkedData(repo);
+    const reimbursements = async (filter: { text?: string } = {}) =>
+      (
+        await repo.listTransactions("2026-10", {
+          ...filter,
+          type: "reimbursement",
+        })
+      ).map((tx) => tx.id);
+    expect(await reimbursements()).toEqual([]);
+
+    await linkAll(repo, ids);
+    // Newest first, as the list is, with the links on each view; never an expense.
+    expect(await reimbursements()).toEqual([
+      ids.eva,
+      ids.luis,
+      ids.ana,
+      ids.septiembre,
+      ids.papas,
+    ]);
+    const [eva] = await repo.listTransactions("2026-10", {
+      type: "reimbursement",
+    });
+    expect(eva.reimbursement).toEqual({
+      paidBack: 0,
+      spread: 1565,
+      links: [{ transactionId: ids.romera, amount: 1565 }],
+    });
+    // With the other filters, all of which must hold.
+    expect(await reimbursements({ text: "papas" })).toEqual([ids.papas]);
+    expect(
+      (
+        await repo.listTransactions("2026-10", {
+          type: "reimbursement",
+          categoryId: null,
+        })
+      ).length,
+    ).toBe(5);
+    expect(
+      (
+        await repo.listTransactions("2026-09", { type: "reimbursement" })
+      ).map((tx) => tx.id),
+    ).toEqual([]);
+
+    // Unlinked, it's an ordinary income again.
+    await repo.setReimbursements(ids.papas, []);
+    expect(await reimbursements()).not.toContain(ids.papas);
+    expect(
+      (await repo.listTransactions("2026-10", { type: "income" })).map(
+        (tx) => tx.id,
+      ),
+    ).toContain(ids.papas);
   });
 
   it("replaces the links of the income, drops a part of 0, and removes them all with none", async () => {

@@ -8,13 +8,22 @@ import { Money } from '../../lib/money';
 import { PrivacyButton } from '../../ui/PrivacyButton';
 import { formatDayHeader, monthOf, today, type Month } from '../../domain/dates';
 import { listNet } from '../../domain/stats';
-import { TX_TYPE_NAMES } from '../../domain/model';
 import type { TransactionFilter, TransactionView } from '../../data/repository';
 import { EditTransactionSheet } from './EditTransactionSheet';
 import { transactionTitle } from './titles';
 import { ExportCsvButton } from './ExportCsvButton';
 import { FiltersSheet } from './FiltersSheet';
-import { filterParams, periodParam, textParam, withFilter, withoutFilter, withPeriod, withText, type FilterField } from './filters';
+import {
+  filterParams,
+  periodParam,
+  textParam,
+  TYPE_FILTER_NAMES,
+  withFilter,
+  withoutFilter,
+  withPeriod,
+  withText,
+  type FilterField,
+} from './filters';
 
 /** How long typing pauses before the search goes into the URL. */
 const SEARCH_DELAY_MS = 150;
@@ -26,6 +35,30 @@ const dayHeight = (rows: number) => 24 + rows * 65;
 function subtitle(tx: TransactionView): string {
   if (tx.type === 'transfer') return `${tx.account.name} → ${tx.toAccount?.name ?? ''}`;
   return `${tx.source === 'adjustment' ? 'Ajuste de saldo' : tx.category?.name ?? 'Sin categoría'} · ${tx.account.name}`;
+}
+
+/**
+ * A row's amount, always the bank's: under it, "Reembolso" on an income that pays back expenses
+ * and "Tu parte" on an expense paid back, what it really cost.
+ */
+function RowAmount({ tx }: { tx: TransactionView }) {
+  if (tx.type === 'transfer') return <Amount cents={tx.amount} kind="neutral" className="text-muted" />;
+  const amount = <Amount cents={tx.amount} kind={tx.type} />;
+  if (!tx.reimbursement) return amount;
+  return (
+    <span className="flex shrink-0 flex-col items-end">
+      {amount}
+      {tx.type === 'income' ? (
+        <span className="rounded-full bg-card-2 px-1.5 text-xs text-muted" data-testid="reimbursement-mark">
+          Reembolso
+        </span>
+      ) : (
+        <span className="whitespace-nowrap text-xs text-muted" data-testid="row-your-share">
+          Tu parte <Money cents={tx.amount - tx.reimbursement.paidBack} className="tabular-nums" />
+        </span>
+      )}
+    </span>
+  );
 }
 
 /**
@@ -130,11 +163,7 @@ export function Transactions() {
                           {subtitle(tx)}
                         </span>
                       </span>
-                      {tx.type === 'transfer' ? (
-                        <Amount cents={tx.amount} kind="neutral" className="text-muted" />
-                      ) : (
-                        <Amount cents={tx.amount} kind={tx.type === 'income' ? 'income' : 'expense'} />
-                      )}
+                      <RowAmount tx={tx} />
                       {tx.editedAt && <Check size={14} className="text-muted" aria-label="Revisado" />}
                     </button>
                   </li>
@@ -258,7 +287,7 @@ function FilterBar({
     if (filter.categoryId !== undefined) chips.push(['categoryId', filter.categoryId === null ? 'Sin categoría' : names.category ?? 'Categoría borrada']);
     if (filter.payeeId !== undefined) chips.push(['payeeId', names.payee ?? 'Comercio borrado']);
     if (filter.accountId !== undefined) chips.push(['accountId', names.account ?? 'Cuenta borrada']);
-    if (filter.type !== undefined) chips.push(['type', TX_TYPE_NAMES[filter.type]]);
+    if (filter.type !== undefined) chips.push(['type', TYPE_FILTER_NAMES[filter.type]]);
   }
   return (
     <div className="flex flex-wrap items-center gap-2 px-4 pb-3">

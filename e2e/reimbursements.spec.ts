@@ -133,8 +133,31 @@ test('link three Bizum to a dinner and one to two purchases: your part counts on
   await expect(sheet(page).getByTestId('your-share')).toHaveText('Pagado25,00 €Te devolvieron20,00 €Tu parte5,00 €');
   await page.keyboard.press('Escape');
 
-  // Movimientos keeps the bank's amounts.
+  // Movimientos keeps the bank's amounts, marks the Bizum and shows your part of each expense.
   await expect(row(page, 'Bar Romera')).toContainText('−73,50 €');
+  await expect(row(page, 'Bar Romera').getByTestId('row-your-share')).toHaveText('Tu parte 9,95 €');
+  await expect(row(page, 'Mercadona').getByTestId('row-your-share')).toHaveText('Tu parte 0,00 €');
+  await expect(row(page, 'Recibido: cena Ana')).toContainText('+38,05 €');
+  await expect(row(page, 'Recibido: cena Ana').getByTestId('reimbursement-mark')).toHaveText('Reembolso');
+  await expect(row(page, 'Abono de nómina').getByTestId('reimbursement-mark')).toHaveCount(0);
+  await expect(row(page, 'Abono de nómina').getByTestId('row-your-share')).toHaveCount(0);
+  // The summary and the day totals stay the money that came in and went out.
+  await expect(page.getByTestId('summary')).toHaveText('8 movimientos · neto +985,05 €');
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
+
+  // "Reembolsos" lists the four Bizum, in the URL and as a chip.
+  await page.getByRole('button', { name: 'Filtros', exact: true }).click();
+  await sheet(page).getByRole('radio', { name: 'Reembolsos' }).check();
+  await sheet(page).getByRole('button', { name: 'Aplicar' }).click();
+  await expect(page.locator('main').getByRole('listitem')).toHaveCount(4);
+  await expect(page.getByTestId('reimbursement-mark')).toHaveCount(4);
+  await expect(page.getByTestId('filter-chip')).toHaveText(['Reembolsos']);
+  await expect(page.getByTestId('summary')).toHaveText('4 movimientos · neto +143,55 €');
+  expect(page.url()).toContain('tipo=reembolso');
+  await page.reload();
+  await expect(page.locator('main').getByRole('listitem')).toHaveCount(4);
+  await page.getByTestId('filter-chip').getByRole('button').click();
+  await expect(page.locator('main').getByRole('listitem')).toHaveCount(8);
 
   // Inicio: only the salary is income, and the expenses are your parts; the balance doesn't change.
   await page.getByRole('link', { name: 'Inicio' }).click();
@@ -161,6 +184,10 @@ test('link three Bizum to a dinner and one to two purchases: your part counts on
   await page.getByRole('link', { name: 'Inicio' }).click();
   await page.getByRole('button', { name: 'Ocultar importes' }).click();
   await openMovimientos(page);
+  // "Tu parte" is blurred like the amounts.
+  await expect(row(page, 'Bar Romera').getByTestId('row-your-share')).toContainText('Tu parte');
+  await expect(row(page, 'Bar Romera').getByTestId('row-your-share').getByTestId('hidden-amount')).toBeVisible();
+  await expect(row(page, 'Bar Romera')).not.toContainText('9,95');
   await row(page, 'Recibido: compra papás').click();
   await sheet(page).getByRole('button', { name: 'Cambiar reembolso' }).click();
   await expect(sheet(page).getByLabel('Parte de Mercadona')).toHaveValue('');

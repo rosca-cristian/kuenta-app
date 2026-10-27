@@ -3,21 +3,22 @@ import { Sheet } from '../../ui/Sheet';
 import { Button, Choice } from '../../ui/components';
 import { AccountPicker, CategoryGrid } from '../../ui/pickers';
 import { useRepoQuery } from '../../lib/repo';
-import { TX_TYPE_NAMES, type Account, type Category, type TxType } from '../../domain/model';
+import type { Account, Category } from '../../domain/model';
 import type { TransactionFilter } from '../../data/repository';
+import { TYPE_FILTER_NAMES } from './filters';
 
 /** What the sheet sets; the payee comes from Análisis and only its chip removes it. */
 export type SheetFilter = Pick<TransactionFilter, 'accountId' | 'categoryId' | 'type'>;
 
-const TYPE_OPTIONS: Record<TxType | 'all', string> = { all: 'Todos', ...TX_TYPE_NAMES };
+const TYPE_OPTIONS: Record<NonNullable<SheetFilter['type']> | 'all', string> = { all: 'Todos', ...TYPE_FILTER_NAMES };
 
 /** Archived accounts after the active ones, each in their own order. Categories already come that way. */
 const activeFirst = (accounts: Account[]) => [...accounts.filter((account) => !account.archived), ...accounts.filter((account) => account.archived)];
 
 /**
- * Movimientos' "Filtros": account, category ("Sin categoría" included) and type, starting from
- * the current ones; "Aplicar" hands them on. Tapping the picked account or category again
- * unpicks it.
+ * Movimientos' "Filtros": account, category ("Sin categoría" included) and type ("Reembolsos"
+ * included: the incomes that pay back an expense), starting from the current ones; "Aplicar"
+ * hands them on. Tapping the picked account or category again unpicks it.
  */
 export function FiltersSheet({
   open,
@@ -71,6 +72,7 @@ function FiltersForm({
         name="type"
         value={type ?? 'all'}
         options={TYPE_OPTIONS}
+        columns={3}
         onChange={(choice) => setType(choice === 'all' ? undefined : choice)}
       />
       <AccountPicker legend="Cuenta" accounts={accounts} value={accountId} onPick={(id) => setAccountId(accountId === id ? undefined : id)} />
