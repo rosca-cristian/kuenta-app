@@ -2264,6 +2264,7 @@ export function createDexieRepository(
         db.budgetLimits,
         db.goals,
         db.importBatches,
+        db.reimbursements,
         db.settings,
       ];
       return db.transaction("r", tables, async () => {
@@ -2276,6 +2277,7 @@ export function createDexieRepository(
           budgetLimits,
           goals,
           importBatches,
+          reimbursements,
           settings,
         ] = await Promise.all([
           db.accounts.toArray(),
@@ -2286,8 +2288,13 @@ export function createDexieRepository(
           db.budgetLimits.toArray(),
           db.goals.toArray(),
           db.importBatches.toArray(),
+          db.reimbursements.toArray(),
           db.settings.toArray(),
         ]);
+        // A link whose income or expense is gone or isn't one any more counts nowhere (`linksOf`): it stays out.
+        const byId = new Map(transactions.map((tx) => [tx.id, tx]));
+        const is = (id: Id, type: Transaction["type"]) =>
+          byId.get(id)?.source === "import" && byId.get(id)?.type === type;
         const data = {
           accounts,
           categories,
@@ -2297,6 +2304,10 @@ export function createDexieRepository(
           budgetLimits,
           goals,
           importBatches,
+          reimbursements: reimbursements.filter(
+            (link) =>
+              is(link.incomeId, "income") && is(link.expenseId, "expense"),
+          ),
           settings,
         };
         return createBackup(data, stamp(), appVersion);
@@ -2337,17 +2348,15 @@ export function createDexieRepository(
         db.budgetLimits,
         db.goals,
         db.importBatches,
+        db.reimbursements,
         db.settings,
       ];
-      await db.transaction("rw", [...tables, db.reimbursements], async () => {
+      await db.transaction("rw", tables, async () => {
         // This phone's own settings stay (whether persistence was requested…); the backup's data settings replace the rest.
         const device = (await db.settings.toArray()).filter(
           (row) => !BACKUP_SETTINGS.includes(row.key),
         );
-        // Backups don't carry reimbursements yet: the replaced transactions' links go with them.
-        await Promise.all(
-          [...tables, db.reimbursements].map((table) => table.clear()),
-        );
+        await Promise.all(tables.map((table) => table.clear()));
         await db.accounts.bulkAdd(data.accounts);
         await db.categories.bulkAdd(data.categories);
         await db.payees.bulkAdd(data.payees);
@@ -2356,6 +2365,7 @@ export function createDexieRepository(
         await db.budgetLimits.bulkAdd(data.budgetLimits);
         await db.goals.bulkAdd(data.goals);
         await db.importBatches.bulkAdd(data.importBatches);
+        await db.reimbursements.bulkAdd(data.reimbursements);
         await db.settings.bulkPut([
           ...device,
           ...data.settings.filter((row) => BACKUP_SETTINGS.includes(row.key)),

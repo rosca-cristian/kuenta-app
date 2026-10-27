@@ -18,7 +18,7 @@ export async function transactionId(repo: DataRepository, concept: string) {
 
 /**
  * Data touching every table: an import with categorizations, a note and a renamed payee; a
- * rule applied to it; a transfer to a non-imported account and a balance adjustment there; a
+ * Bizum paying back part of the bakery; a rule applied to it; a transfer to a non-imported account and a balance adjustment there; a
  * budget with two limits; a goal, an archived one and one without target month on an archived
  * account; a transfer rule and a rule disabled by deleting its category; an archived category
  * and the starter-rules offer closed; and a second import, undone. The repository can't archive
@@ -31,6 +31,7 @@ export async function richData(repo: DataRepository, db: KuentaDb) {
       { valor: '01/10/2026', concepto: 'Abono de nómina', movimiento: 'Empresa ejemplo', importe: 1500 },
       { valor: '02/10/2026', concepto: 'Mercadona - crta del inge', movimiento: 'Pago con tarjeta', importe: -50 },
       { valor: '03/10/2026', concepto: 'Panaderia Pepe', movimiento: 'Pago con tarjeta', importe: -3.2 },
+      { valor: '04/10/2026', concepto: 'Bizum', movimiento: 'Recibido: pan', importe: 2 },
       { valor: '05/10/2026', concepto: 'Revolut**5625*', movimiento: 'Pago con tarjeta', importe: -200 },
     ],
     1000,
@@ -45,6 +46,8 @@ export async function richData(repo: DataRepository, db: KuentaDb) {
   await repo.renamePayee(payee.id, 'Mercadona SA');
   await repo.createRule({ name: 'Pan', match: { value: 'panaderia' }, actions: { categoryId: groceries, payeeName: 'Panadería Pepe' } });
   await repo.applyRules();
+  const bizum = (await repo.listTransactions(null)).find((t) => t.bankMovement === 'Recibido: pan')!.id;
+  await repo.setReimbursements(bizum, [{ expenseId: await transactionId(repo, 'Panaderia Pepe'), amount: 150 }]);
   await repo.updateTransaction(await transactionId(repo, 'Revolut**5625*'), { transferAccountId: revolutId });
   // Revolut got 200 €; it really has 180 €: an adjustment of −20 € today.
   await repo.updateAccountBalance(revolutId, 18000);
@@ -73,6 +76,6 @@ export async function richData(repo: DataRepository, db: KuentaDb) {
   await db.categories.update(oldId, { archived: true });
   await db.settings.put({ key: 'starterRulesOffer', value: 'done' });
 
-  const second = await importFile(repo, [{ valor: '10/10/2026', concepto: 'Gasolinera', movimiento: 'Pago con tarjeta', importe: -40 }], 2246.8);
+  const second = await importFile(repo, [{ valor: '10/10/2026', concepto: 'Gasolinera', movimiento: 'Pago con tarjeta', importe: -40 }], 2248.8);
   await repo.undoImport(second.batch.id);
 }

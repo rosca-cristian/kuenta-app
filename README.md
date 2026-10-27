@@ -14,7 +14,7 @@ Personal finance PWA fed by your bank's statement. Once a week you export your B
 
 ## Reimbursements
 
-When friends pay you back a dinner by Bizum, open the received Bizum in **Movimientos** and tap **Es un reembolso**: tick the expenses it pays back (each part is filled for you, and can be changed). From then on only your part of the dinner counts as spending, in Inicio, Análisis and budgets, and the Bizum isn't income; balances don't change. The expense's sheet shows **Pagado · Te devolvieron · Tu parte**.
+When friends pay you back a dinner by Bizum, open the received Bizum in **Movimientos** and tap **Es un reembolso**: tick the expenses it pays back (each part is filled for you, and can be changed). From then on only your part of the dinner counts as spending, in Inicio, Análisis and budgets, and the Bizum isn't income; balances don't change. The expense's sheet shows **Pagado · Te devolvieron · Tu parte**. Reimbursements are saved in backups (older copies, made before them, still restore), and the CSV export has a **Reembolsado** column next to **Importe**, the bank's amount.
 
 ## Privacy mode
 
@@ -33,12 +33,12 @@ Overlapping periods are fine: rows already imported are recognized and skipped. 
 
 Data is stored in the browser's IndexedDB on the phone, and Kuenta asks Chrome to keep it persistently. Uninstalling the app or clearing Chrome's site data deletes it, so keep a copy outside the phone: in **Más → Copias de seguridad**,
 
-- **Exportar copia** downloads all your data as `kuenta-copia-AAAA-MM-DD.json`: accounts, categories, payees, transactions with your categorizations, notes and transfers, rules, budgets, goals and the import history.
+- **Exportar copia** downloads all your data as `kuenta-copia-AAAA-MM-DD.json`: accounts, categories, payees, transactions with your categorizations, notes and transfers, rules, budgets, goals, reimbursements and the import history.
 - **Compartir copia** opens Android's share menu with that file, to save it to Drive or send it by email or Telegram. Chrome doesn't share `.json` files, so the shared copy is named `kuenta-copia-AAAA-MM-DD.txt`: same content, and **Restaurar copia** accepts it. Where the browser can't share files, it downloads it instead.
 
 - **Restaurar copia** brings a backup back, on this phone or a new one (on a new phone, the welcome screen's **Restaurar una copia** does the same, without step 3):
   1. Tap **Restaurar copia** and pick the `kuenta-copia-….json` file (from Downloads, Drive…).
-  2. Check the summary: the copy's date and how many accounts, transactions, categories, payees, rules, budgets and goals it has, next to what you have now.
+  2. Check the summary: the copy's date and how many accounts, transactions, categories, payees, rules, budgets, goals and reimbursements it has, next to what you have now.
   3. Optionally tap **Exportar mis datos actuales antes** to keep a copy of your current data.
   4. Tap **Sustituir todos mis datos**. All your data is replaced by the copy's in one go, and Inicio says **Copia restaurada**.
 

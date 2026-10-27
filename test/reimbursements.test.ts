@@ -789,31 +789,31 @@ describe('the expenses "Es un reembolso" offers', () => {
 });
 
 describe("reimbursements and backups", () => {
-  it("aren't in a backup yet, whose format doesn't change, and a restore clears them", async () => {
+  it("travel in a backup and come back with a restore, counting as before", async () => {
     const source = await setup();
     const { ids } = await linkedData(source.repo);
     await linkAll(source.repo, ids);
     const backup = await source.repo.exportBackup();
-    expect(backup.format).toBe(1);
-    expect(Object.keys(backup.data).sort()).toEqual(
-      [
-        "accounts",
-        "budgetLimits",
-        "categories",
-        "goals",
-        "importBatches",
-        "payees",
-        "rules",
-        "settings",
-        "transactions",
-      ].sort(),
-    );
-    expect(backupJson(backup)).not.toContain("reimbursement");
+    expect(backup.format).toBe(2);
+    expect(backup.data.reimbursements).toHaveLength(6);
 
-    const read = source.repo.readBackup(backupJson(backup));
+    const target = await setup();
+    const read = target.repo.readBackup(backupJson(backup));
     if (!read.ok) throw new Error("Refused");
-    await source.repo.restoreBackup(read.backup);
-    expect(await source.db.reimbursements.count()).toBe(0);
-    expect((await view(source.repo, ids.romera)).reimbursement).toBeNull();
+    // Five incomes paying something back.
+    expect(read.summary.reimbursements).toBe(5);
+    await target.repo.restoreBackup(read.backup);
+    expect(await target.db.reimbursements.toArray()).toEqual(
+      await source.db.reimbursements.toArray(),
+    );
+    expect(await view(target.repo, ids.romera)).toEqual(
+      await view(source.repo, ids.romera),
+    );
+    expect((await target.repo.home("2026-10")).summary).toEqual(
+      (await source.repo.home("2026-10")).summary,
+    );
+    expect(await target.repo.dataCounts()).toEqual(
+      await source.repo.dataCounts(),
+    );
   });
 });

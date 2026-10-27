@@ -45,7 +45,7 @@ test('export a JSON backup and share it, which downloads it without file sharing
 
   const exported = await download(page, 'Exportar copia');
   expect(exported.name).toBe('kuenta-copia-2026-10-20.json');
-  expect(exported.json).toMatchObject({ app: 'kuenta', format: 1 });
+  expect(exported.json).toMatchObject({ app: 'kuenta', format: 2 });
   expect(exported.json.data.transactions.map((tx: { bankConcept: string }) => tx.bankConcept).sort()).toEqual(['Abono de nómina', 'Mercadona']);
   await expect(lastBackup).toHaveText('Última copia: 20/10/2026');
 
@@ -53,7 +53,7 @@ test('export a JSON backup and share it, which downloads it without file sharing
   await page.clock.setFixedTime(new Date('2026-10-23T09:00:00'));
   const shared = await download(page, 'Compartir copia');
   expect(shared.name).toBe('kuenta-copia-2026-10-23.json');
-  expect(shared.json).toMatchObject({ app: 'kuenta', format: 1 });
+  expect(shared.json).toMatchObject({ app: 'kuenta', format: 2 });
   expect(shared.json.data.transactions).toHaveLength(2);
   await expect(lastBackup).toHaveText('Última copia: 23/10/2026');
   await expectNoHorizontalScroll(page);

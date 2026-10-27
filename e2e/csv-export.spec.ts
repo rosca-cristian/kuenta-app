@@ -2,7 +2,7 @@ import { readFile } from 'node:fs/promises';
 import { expect, test, type Page } from '@playwright/test';
 import { bbvaXlsxFile } from './support/xlsx';
 
-const HEADER = 'Fecha;Tipo;Cuenta;Cuenta destino;Categoría;Comercio;Nota;Importe;Concepto banco';
+const HEADER = 'Fecha;Tipo;Cuenta;Cuenta destino;Categoría;Comercio;Nota;Importe;Reembolsado;Concepto banco';
 
 /** Taps "Exportar CSV" and returns the downloaded file's name and bytes. */
 async function exportCsv(page: Page) {
@@ -46,8 +46,8 @@ test('export what Movimientos shows as a CSV for Spanish Excel, disabled for an 
   expect([...october.bytes.subarray(0, 3)]).toEqual([0xef, 0xbb, 0xbf]);
   expect(october.bytes.subarray(3).toString('utf8').split('\r\n')).toEqual([
     HEADER,
-    '01/10/2026;Ingreso;BBVA;;Nómina;Abono De Nómina;;1500,00;Abono de nómina',
-    '02/10/2026;Gasto;BBVA;;Supermercado;"Mercadona; Valencia";;-12,50;"Mercadona; Valencia"',
+    '01/10/2026;Ingreso;BBVA;;Nómina;Abono De Nómina;;1500,00;;Abono de nómina',
+    '02/10/2026;Gasto;BBVA;;Supermercado;"Mercadona; Valencia";;-12,50;;"Mercadona; Valencia"',
     '',
   ]);
 
@@ -60,8 +60,8 @@ test('export what Movimientos shows as a CSV for Spanish Excel, disabled for an 
   const search = await exportCsv(page);
   expect(search.bytes.subarray(3).toString('utf8').split('\r\n')).toEqual([
     HEADER,
-    '15/08/2026;Gasto;BBVA;;Supermercado;Mercadona;;-30,00;Mercadona',
-    '02/10/2026;Gasto;BBVA;;Supermercado;"Mercadona; Valencia";;-12,50;"Mercadona; Valencia"',
+    '15/08/2026;Gasto;BBVA;;Supermercado;Mercadona;;-30,00;;Mercadona',
+    '02/10/2026;Gasto;BBVA;;Supermercado;"Mercadona; Valencia";;-12,50;;"Mercadona; Valencia"',
     '',
   ]);
 
@@ -74,7 +74,7 @@ test('export what Movimientos shows as a CSV for Spanish Excel, disabled for an 
   const income = await exportCsv(page);
   expect(income.bytes.subarray(3).toString('utf8').split('\r\n')).toEqual([
     HEADER,
-    '01/10/2026;Ingreso;BBVA;;Nómina;Abono De Nómina;;1500,00;Abono de nómina',
+    '01/10/2026;Ingreso;BBVA;;Nómina;Abono De Nómina;;1500,00;;Abono de nómina',
     '',
   ]);
 });

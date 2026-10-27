@@ -29,6 +29,7 @@ async function tables(db: KuentaDb) {
     budgetLimits: byId(await db.budgetLimits.toArray()),
     goals: byId(await db.goals.toArray()),
     importBatches: byId(await db.importBatches.toArray()),
+    reimbursements: byId(await db.reimbursements.toArray()),
     settings: Object.fromEntries((await db.settings.toArray()).map((setting) => [setting.key, setting.value])),
   };
 }
@@ -47,6 +48,10 @@ function read(repo: DataRepository, text: string): BackupFile {
   return result.backup;
 }
 
+/** The id of the backup's transaction with this bank concept. */
+const txWith = (file: { data: Record<string, Record<string, unknown>[]> }, concept: string) =>
+  file.data.transactions.find((tx) => tx.bankConcept === concept)!.id as string;
+
 /** The backup's JSON with `change` applied to its parsed object. */
 function edited(text: string, change: (file: { data: Record<string, Record<string, unknown>[]> } & Record<string, unknown>) => void) {
   const file = JSON.parse(text);
@@ -61,9 +66,11 @@ describe('restoring a backup', () => {
     await target.repo.restoreBackup(read(target.repo, text));
 
     const [before, after] = [await tables(source.db), await tables(target.db)];
-    for (const table of ['accounts', 'categories', 'payees', 'transactions', 'rules', 'budgetLimits', 'goals', 'importBatches'] as const) {
+    const all = ['accounts', 'categories', 'payees', 'transactions', 'rules', 'budgetLimits', 'goals', 'importBatches', 'reimbursements'] as const;
+    for (const table of all) {
       expect(after[table], table).toEqual(before[table]);
     }
+    expect(after.reimbursements).toHaveLength(1);
     const { importAccountId, starterDataVersion, starterRulesOffer, onboardingDone } = before.settings;
     expect(starterRulesOffer).toBe('done');
     expect(after.settings).toEqual({
@@ -79,6 +86,8 @@ describe('restoring a backup', () => {
     expect(await target.repo.listGoals()).toEqual(await source.repo.listGoals());
     expect(await target.repo.listRules()).toEqual(await source.repo.listRules());
     expect(await target.repo.listCategories({ withArchived: true })).toEqual(await source.repo.listCategories({ withArchived: true }));
+    expect(await target.repo.listTransactions(null)).toEqual(await source.repo.listTransactions(null));
+    expect(await target.repo.spending('2026-10')).toEqual(await source.repo.spending('2026-10'));
     expect(await target.repo.getSettings()).toEqual({ onboardingDone: true, importAccountId, persistRequested: false, privacyMode: false });
   });
 
@@ -124,6 +133,7 @@ describe('restoring a backup', () => {
     expect(after.categories).toEqual(byId(backup.data.categories));
     expect(after.importBatches).toEqual(byId(backup.data.importBatches));
     expect(after.payees).toEqual(byId(backup.data.payees));
+    expect(after.reimbursements).toEqual(byId(backup.data.reimbursements));
     expect(after.settings.persistRequested).toBe(true);
     expect(after.settings.lastBackupAt).toBe(backup.exportedAt);
     expect(after.settings.lastChangeAt).toBe(backup.exportedAt);
@@ -206,12 +216,13 @@ describe('reading a backup', () => {
     expect(result.ok && result.summary).toEqual({
       exportedAt: new Date('2026-10-20T10:00:00').toISOString(),
       accounts: 3,
-      transactions: 5,
+      transactions: 6,
       categories: (await source.repo.listCategories({ withArchived: true })).length,
       payees: (await source.repo.listPayees()).length,
       rules: (await source.repo.listRules()).length,
       budgets: 1,
       goals: 3,
+      reimbursements: 1,
     });
     expect(result.ok && { exportedAt: result.summary.exportedAt, ...(await source.repo.dataCounts()) }).toEqual(result.ok && result.summary);
   });
@@ -219,7 +230,7 @@ describe('reading a backup', () => {
   const refusals: [string, (text: string) => string, unknown][] = [
     ['text that is not JSON', () => 'Fecha;Tipo;Cuenta\n20/10/2026;Gasto;BBVA', { reason: 'not-kuenta' }],
     ['JSON from another app', (text) => edited(text, (file) => void (file.app = 'otra')), { reason: 'not-kuenta' }],
-    ['a newer format', (text) => edited(text, (file) => void (file.format = 2)), { reason: 'newer' }],
+    ['a newer format', (text) => edited(text, (file) => void (file.format = 3)), { reason: 'newer' }],
     [
       'a wrong type in a table',
       (text) => edited(text, (file) => void (file.data.transactions[1].amount = '12,50')),
@@ -260,6 +271,52 @@ describe('reading a backup', () => {
       (text) => edited(text, (file) => void (file.data.settings.find((s) => s.key === 'importAccountId')!.value = 'no-such-account')),
       { reason: 'damaged', damage: { kind: 'reference', table: 'settings', field: 'importAccountId', target: 'accounts' } },
     ],
+    [
+      'a reimbursement of a missing transaction',
+      (text) => edited(text, (file) => void (file.data.reimbursements[0].expenseId = 'no-such-transaction')),
+      { reason: 'damaged', damage: { kind: 'reference', table: 'reimbursements', field: 'expenseId', target: 'transactions' } },
+    ],
+    [
+      'a reimbursement by something other than an imported income',
+      (text) => edited(text, (file) => void (file.data.reimbursements[0].incomeId = txWith(file, 'Panaderia Pepe'))),
+      { reason: 'damaged', damage: { kind: 'invalid', table: 'reimbursements', row: 0, field: 'incomeId' } },
+    ],
+    [
+      'a reimbursement of something other than an imported expense',
+      (text) => edited(text, (file) => void (file.data.reimbursements[0].expenseId = txWith(file, 'Revolut**5625*'))),
+      { reason: 'damaged', damage: { kind: 'invalid', table: 'reimbursements', row: 0, field: 'expenseId' } },
+    ],
+    [
+      'a reimbursement of a balance adjustment',
+      (text) =>
+        edited(text, (file) => void (file.data.reimbursements[0].expenseId = file.data.transactions.find((tx) => tx.source === 'adjustment')!.id as string)),
+      { reason: 'damaged', damage: { kind: 'invalid', table: 'reimbursements', row: 0, field: 'expenseId' } },
+    ],
+    [
+      'parts above the income',
+      (text) => edited(text, (file) => void (file.data.reimbursements[0].amount = 201)),
+      { reason: 'damaged', damage: { kind: 'invalid', table: 'reimbursements', row: 0, field: 'amount' } },
+    ],
+    [
+      'parts above the expense, across incomes',
+      (text) =>
+        edited(text, (file) => {
+          // The salary pays back the rest of the bread, and a cent more.
+          const link = file.data.reimbursements[0];
+          file.data.reimbursements.push({ id: 'otro', incomeId: txWith(file, 'Abono de nómina'), expenseId: link.expenseId, amount: 171 });
+        }),
+      { reason: 'damaged', damage: { kind: 'invalid', table: 'reimbursements', row: 1, field: 'amount' } },
+    ],
+    [
+      'a part of 0',
+      (text) => edited(text, (file) => void (file.data.reimbursements[0].amount = 0)),
+      { reason: 'damaged', damage: { kind: 'invalid', table: 'reimbursements', row: 0, field: 'amount' } },
+    ],
+    [
+      'two links of the same income and expense',
+      (text) => edited(text, (file) => void file.data.reimbursements.push({ ...file.data.reimbursements[0], id: 'otro', amount: 1 })),
+      { reason: 'damaged', damage: { kind: 'duplicate', table: 'reimbursements', field: 'incomeId+expenseId' } },
+    ],
   ];
 
   it.each(refusals)('refuses %s, leaving the data untouched', async (_, damage, error) => {
@@ -271,6 +328,29 @@ describe('reading a backup', () => {
     const result = target.repo.readBackup(damage(text));
     expect(result).toEqual({ ok: false, error });
     expect(await tables(target.db)).toEqual(before);
+  });
+
+  it('restores a format 1 copy, made before reimbursements, with none', async () => {
+    const { source, backup } = await richBackup();
+    // What Kuenta wrote before format 2: the same tables but reimbursements.
+    const { reimbursements, ...data } = backup.data;
+    expect(reimbursements).toHaveLength(1);
+    const formatOne = JSON.stringify({ ...backup, format: 1, data }, null, 2);
+
+    // A phone with links of its own: restoring the copy leaves none.
+    const target = await setup();
+    await richData(target.repo, target.db);
+    expect(await target.db.reimbursements.count()).toBe(1);
+    const result = target.repo.readBackup(formatOne);
+    expect(result.ok && result.backup).toEqual({ ...backup, format: 2, data: { ...backup.data, reimbursements: [] } });
+    expect(result.ok && result.summary.reimbursements).toBe(0);
+    await target.repo.restoreBackup(read(target.repo, formatOne));
+    const after = await tables(target.db);
+    expect(after.transactions).toEqual(byId(backup.data.transactions));
+    expect(after.reimbursements).toEqual([]);
+    const bakery = await transactionId(target.repo, 'Panaderia Pepe');
+    expect((await target.repo.getTransaction(bakery))!.reimbursement).toBeNull();
+    expect((await source.repo.getTransaction(bakery))!.reimbursement).toMatchObject({ paidBack: 150 });
   });
 
   it("counts a setting's row among all the file's settings, the ones it doesn't restore included", async () => {
