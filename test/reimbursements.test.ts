@@ -517,6 +517,115 @@ describe("linking an income to the expenses it pays back", () => {
   });
 });
 
+describe("keeping the links consistent", () => {
+  it("keeps the links when the category, payee or note of either side changes", async () => {
+    const { repo, db } = await setup();
+    const { ids } = await linkedData(repo);
+    await linkAll(repo, ids);
+    const rows = await db.reimbursements.toArray();
+
+    await repo.updateTransaction(ids.romera, {
+      categoryId: await categoryId(repo, "Ocio"),
+      payeeName: "Romera",
+      note: "Cumpleaños de Ana",
+    });
+    await repo.updateTransaction(ids.ana, {
+      categoryId: await categoryId(repo, "Otros ingresos"),
+      payeeName: "Ana",
+      note: "Su parte",
+    });
+    await repo.updateTransaction(ids.ana, { categoryId: null });
+    expect(await db.reimbursements.toArray()).toEqual(rows);
+    expect((await view(repo, ids.romera)).reimbursement).toMatchObject({
+      paidBack: 6355,
+    });
+  });
+
+  /**
+   * The linked data, and a second import: a cinema ticket paid back by Bizum, and a Bizum from
+   * Pablo for what was left of the dinner from the first import.
+   */
+  async function twoImports(repo: DataRepository) {
+    const { ids } = await linkedData(repo);
+    await linkAll(repo, ids);
+    const { batch } = await importFile(
+      repo,
+      [
+        card("15/10/2026", "Cine Luna", -20),
+        bizum("16/10/2026", "Recibido: cine", 10),
+        bizum("17/10/2026", "Recibido: Pablo cena", 9.95),
+      ],
+      3445.05,
+    );
+    const later = {
+      cine: await idOf(repo, "Cine Luna"),
+      cineBizum: await idOf(repo, "Recibido: cine"),
+      pablo: await idOf(repo, "Recibido: Pablo cena"),
+    };
+    await repo.setReimbursements(later.cineBizum, [
+      { expenseId: later.cine, amount: 1000 },
+    ]);
+    await repo.setReimbursements(later.pablo, [
+      { expenseId: ids.romera, amount: 995 },
+    ]);
+    return { ids, later, batchId: batch.id };
+  }
+
+  it("undoing an import deletes the links of its transactions, also those to another import's", async () => {
+    const { repo, db } = await setup();
+    const { ids, later, batchId } = await twoImports(repo);
+    expect((await view(repo, ids.romera)).reimbursement).toMatchObject({
+      paidBack: 7350,
+    });
+    const firstImport = (await db.reimbursements.toArray()).filter(
+      (link) => link.incomeId !== later.cineBizum && link.incomeId !== later.pablo,
+    );
+
+    await repo.undoImport(batchId);
+    expect(await db.reimbursements.toArray()).toEqual(firstImport);
+    // The dinner is left with its three friends' parts: "Tu parte" is 9,95 € again.
+    expect((await view(repo, ids.romera)).reimbursement).toMatchObject({
+      paidBack: 6355,
+      links: [
+        { transactionId: ids.ana },
+        { transactionId: ids.luis },
+        { transactionId: ids.eva },
+      ],
+    });
+    expect((await repo.home("2026-10")).summary).toMatchObject({
+      income: 150000,
+      expenses: 1495,
+    });
+    expect(
+      (await repo.spending("2026-10")).entries.find(
+        (e) => e.category?.name === "Restaurantes",
+      )!.amount,
+    ).toBe(995);
+  });
+
+  it("undoing the import an expense came in leaves the incomes of another import that paid it back whole again", async () => {
+    const { repo, db } = await setup();
+    const { later, batchId } = await twoImports(repo);
+    const first = (await repo.listImports()).find(
+      (batch) => batch.id !== batchId,
+    )!;
+
+    await repo.undoImport(first.id);
+    expect(
+      (await db.reimbursements.toArray()).map((link) => link.incomeId),
+    ).toEqual([later.cineBizum]);
+    expect((await view(repo, later.pablo)).reimbursement).toBeNull();
+    expect((await view(repo, later.cine)).reimbursement).toMatchObject({
+      paidBack: 1000,
+    });
+    // Pablo's Bizum counts as income again; the cinema is half paid back.
+    expect((await repo.home("2026-10")).summary).toMatchObject({
+      income: 995,
+      expenses: 1000,
+    });
+  });
+});
+
 describe('the expenses "Es un reembolso" offers', () => {
   it("lists the imported expenses of the 30 days up to the income, closest first, with what is left of each", async () => {
     const { repo } = await setup();

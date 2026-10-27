@@ -183,3 +183,75 @@ test('link three Bizum to a dinner and one to two purchases: your part counts on
   await expect(page.getByTestId('month-expenses')).toHaveText('94,95 €');
   await expect(page.getByTestId('total-balance')).toHaveText('1.985,05 €');
 });
+
+test('making a linked Bizum a transfer warns that its reimbursement goes, and undoing an import removes its links', async ({ page }) => {
+  await page.goto('./');
+  await page.getByRole('button', { name: 'Empezar' }).click();
+  await page.getByRole('button', { name: 'Continuar' }).click();
+
+  // A dinner and Ana's Bizum in one import, Luis's Bizum in the next.
+  await page.getByRole('link', { name: 'Importar' }).click();
+  await page.getByTestId('file-input').setInputFiles(
+    bbvaXlsxFile(
+      [
+        { valor: thisMonth(1), concepto: 'Bar Romera', movimiento: 'Pago con tarjeta', importe: -60 },
+        { valor: thisMonth(2), concepto: 'Bizum', movimiento: 'Recibido: cena Ana', importe: 30 },
+      ],
+      { startBalance: 1000 },
+    ),
+  );
+  await page.getByRole('button', { name: 'Importar 2' }).click();
+  await expect(page.getByTestId('balance-check')).toHaveText('✓ Cuadra');
+  await page.getByRole('button', { name: 'Importar otro archivo' }).click();
+  await page.getByTestId('file-input').setInputFiles(
+    bbvaXlsxFile([{ valor: thisMonth(3), concepto: 'Bizum', movimiento: 'Recibido: cena Luis', importe: 20 }], { startBalance: 970 }),
+  );
+  await page.getByRole('button', { name: 'Importar 1' }).click();
+  await expect(page.getByTestId('balance-check')).toHaveText('✓ Cuadra');
+
+  await page.getByRole('link', { name: 'Más' }).click();
+  await page.getByRole('link', { name: 'Cuentas' }).click();
+  await page.getByRole('button', { name: 'Nueva' }).click();
+  await sheet(page).getByLabel('Nombre').fill('Revolut');
+  await sheet(page).getByRole('button', { name: 'Crear cuenta' }).click();
+  await expect(sheet(page)).toHaveCount(0);
+
+  for (const note of ['Recibido: cena Ana', 'Recibido: cena Luis']) {
+    await linkBizum(page, note);
+    await sheet(page).getByRole('checkbox', { name: 'Bar Romera' }).check();
+    await sheet(page).getByRole('button', { name: 'Guardar' }).click();
+    await expect(sheet(page).getByRole('list', { name: 'Reembolso de' })).toBeVisible();
+    await page.keyboard.press('Escape');
+  }
+  await row(page, 'Bar Romera').click();
+  await expect(sheet(page).getByTestId('your-share')).toHaveText('Pagado60,00 €Te devolvieron50,00 €Tu parte10,00 €');
+
+  // Picking a transfer account for a linked transaction warns before saving; taking it back doesn't.
+  await sheet(page).getByRole('button', { name: 'Convertir en transferencia' }).click();
+  await sheet(page).getByRole('button', { name: 'Revolut', exact: true }).click();
+  await expect(sheet(page).getByTestId('reimbursement-goes')).toHaveText('Se quitará el reembolso');
+  await sheet(page).getByRole('button', { name: 'Quitar transferencia' }).click();
+  await expect(sheet(page).getByTestId('reimbursement-goes')).toHaveCount(0);
+  await page.keyboard.press('Escape');
+
+  // Undoing the second import takes Luis's part with it: the dinner keeps Ana's only.
+  await page.getByRole('link', { name: 'Importar' }).click();
+  await page.getByRole('listitem').filter({ hasText: '1 creados' }).getByRole('button', { name: 'Deshacer', exact: true }).click();
+  await page.getByRole('button', { name: 'Deshacer importación' }).click();
+  await expect(page.getByText('Deshecha')).toBeVisible();
+  await openMovimientos(page);
+  await row(page, 'Bar Romera').click();
+  await expect(sheet(page).getByTestId('your-share')).toHaveText('Pagado60,00 €Te devolvieron30,00 €Tu parte30,00 €');
+  await expect(sheet(page).getByRole('list', { name: 'Te lo devolvieron' }).getByRole('button')).toHaveText([/Recibido: cena Ana/]);
+  await page.keyboard.press('Escape');
+  await page.getByRole('link', { name: 'Inicio' }).click();
+  await expect(page.getByTestId('month-expenses')).toHaveText('30,00 €');
+
+  // Undoing the first one too leaves nothing linked.
+  await page.getByRole('link', { name: 'Importar' }).click();
+  await page.getByRole('button', { name: 'Deshacer', exact: true }).click();
+  await page.getByRole('button', { name: 'Deshacer importación' }).click();
+  await expect(page.getByText('Deshecha')).toHaveCount(2);
+  await page.getByRole('link', { name: 'Inicio' }).click();
+  await expect(page.getByTestId('month-expenses')).toHaveText('0,00 €');
+});

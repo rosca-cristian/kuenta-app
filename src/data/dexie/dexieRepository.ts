@@ -1783,10 +1783,24 @@ export function createDexieRepository(
     async undoImport(batchId) {
       await db.transaction(
         "rw",
-        [db.transactions, db.accounts, db.importBatches, db.settings],
+        [
+          db.transactions,
+          db.accounts,
+          db.importBatches,
+          db.settings,
+          db.reimbursements,
+        ],
         async () => {
           const batch = await db.importBatches.get(batchId);
           if (!batch || batch.undone) return;
+          // A link never points to a missing transaction: those to and from the batch's go
+          // with it, even when the other side came in another import and stays.
+          await dropReimbursementsOf(
+            await db.transactions
+              .where("importBatchId")
+              .equals(batchId)
+              .primaryKeys(),
+          );
           await db.transactions.where("importBatchId").equals(batchId).delete();
           await db.importBatches.update(batchId, { undone: true });
           await refreshOpeningBalance(batch.accountId);

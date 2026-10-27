@@ -256,6 +256,11 @@ function EditForm({
         </div>
       )}
 
+      {tx.reimbursement && transferTo !== null && (
+        <p className="text-sm text-warn" data-testid="reimbursement-goes">
+          Se quitará el reembolso
+        </p>
+      )}
       <Button onClick={save}>Guardar</Button>
       {tx.source === 'adjustment' && (
         <Button variant="danger" onClick={removeAdjustment}>
