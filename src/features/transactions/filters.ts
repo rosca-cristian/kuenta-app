@@ -1,12 +1,12 @@
 import { isMonth, type Month } from '../../domain/dates';
-import type { TxType } from '../../domain/model';
+import { TX_TYPE_NAMES } from '../../domain/model';
 import type { TransactionFilter } from '../../data/repository';
 
 /**
  * Movimientos' query parameters, which hold its whole state and which Análisis and Inicio link
  * with: `mes` (YYYY-MM, or `todos` for all months), `q` (the search), `cuenta` (an account's id),
- * `categoria` (a category's id or `sin-categoria`), `tipo` (`gasto`, `ingreso` or
- * `transferencia`) and `comercio` (a payee's id).
+ * `categoria` (a category's id or `sin-categoria`), `tipo` (`gasto`, `ingreso`, `transferencia`
+ * or `reembolso`) and `comercio` (a payee's id).
  */
 const MONTH = 'mes';
 const ALL_MONTHS = 'todos';
@@ -16,7 +16,11 @@ const CATEGORY = 'categoria';
 const TYPE = 'tipo';
 const PAYEE = 'comercio';
 const UNCATEGORIZED = 'sin-categoria';
-const TYPES: Record<TxType, string> = { expense: 'gasto', income: 'ingreso', transfer: 'transferencia' };
+type TypeFilter = NonNullable<TransactionFilter['type']>;
+const TYPES: Record<TypeFilter, string> = { expense: 'gasto', income: 'ingreso', transfer: 'transferencia', reimbursement: 'reembolso' };
+
+/** The type filter's options as the filters sheet and the chips name them. */
+export const TYPE_FILTER_NAMES: Record<TypeFilter, string> = { ...TX_TYPE_NAMES, reimbursement: 'Reembolsos' };
 
 /** The filter's fields besides the search, each kept in its own parameter. */
 export type FilterField = 'accountId' | 'categoryId' | 'type' | 'payeeId';
@@ -42,7 +46,7 @@ export function textParam(params: URLSearchParams): string {
 export function filterParams(params: URLSearchParams): TransactionFilter | null {
   const account = params.get(ACCOUNT);
   const category = params.get(CATEGORY);
-  const type = (Object.keys(TYPES) as TxType[]).find((key) => TYPES[key] === params.get(TYPE));
+  const type = (Object.keys(TYPES) as TypeFilter[]).find((key) => TYPES[key] === params.get(TYPE));
   const payee = params.get(PAYEE);
   if (account === null && category === null && type === undefined && payee === null) return null;
   const filter: TransactionFilter = {};

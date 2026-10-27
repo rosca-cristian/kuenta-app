@@ -108,7 +108,8 @@ export interface TransactionFilter {
   accountId?: Id;
   /** A category's id, or null for "sin categoría": the imported expenses and income without a category. */
   categoryId?: Id | null;
-  type?: TxType;
+  /** A type, or `'reimbursement'`: the incomes that pay back at least one expense ("Reembolsos"). */
+  type?: TxType | 'reimbursement';
   payeeId?: Id;
   /** On or after this date (the transaction's date, inclusive). */
   from?: IsoDate;
