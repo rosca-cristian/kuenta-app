@@ -321,3 +321,51 @@ describe('updating a Part 3 install to the schema with budgets and goals', () =>
     expect((await open(name).budgets('2026-10')).budgets).toMatchObject([{ category: { name: 'Restaurantes' }, limit: 30000, spent: 0 }]);
   });
 });
+
+/** An install made before reimbursements: schema version 3, with a dinner and a Bizum received for it. */
+async function createSchemaThreeDatabase() {
+  const name = `kuenta-upgrade-${++dbCount}`;
+  const data = partOneData();
+  const bizum: Transaction = {
+    ...data.transactions[2], id: 'tx-4', type: 'income', amount: 2000, date: '2026-10-02', payeeId: null, note: 'Recibido: cena',
+    importHash: 'hash-tx-4', bookingDate: '2026-10-02', bankConcept: 'Bizum', bankMovement: 'Recibido: cena', bankBalance: 93000,
+  };
+  const db = new Dexie(name);
+  db.version(1).stores({
+    accounts: 'id, order',
+    categories: 'id, kind, order',
+    payees: 'id, &normalized',
+    transactions: 'id, date, [accountId+date], [toAccountId+date], categoryId, payeeId, &importHash, importBatchId, bookingDate',
+    importBatches: 'id, importedAt',
+    settings: 'key',
+  });
+  db.version(2).stores({ rules: 'id, order' });
+  db.version(3).stores({ budgetLimits: 'id, [categoryId+fromMonth]', goals: 'id, accountId' });
+  await db.table('accounts').add(data.account);
+  await db.table('categories').bulkAdd(data.categories);
+  await db.table('payees').bulkAdd(data.payees);
+  await db.table('transactions').bulkAdd([...data.transactions, bizum]);
+  await db.table('settings').bulkPut([
+    { key: 'importAccountId', value: data.account.id },
+    { key: 'onboardingDone', value: true },
+    { key: 'starterDataVersion', value: STARTER_DATA_VERSION },
+  ]);
+  db.close();
+  return { name, transactions: [...data.transactions, bizum] };
+}
+
+describe('updating an install to the schema with reimbursements', () => {
+  it('starts with none, and no transaction changes', async () => {
+    const { name, transactions } = await createSchemaThreeDatabase();
+    const repo = open(name);
+
+    const txs = await repo.listTransactions(null);
+    expect(txs).toHaveLength(4);
+    for (const original of transactions) expect(txs.find((tx) => tx.id === original.id)).toEqual(expect.objectContaining({ ...original, reimbursement: null }));
+    expect((await repo.home('2026-10')).summary).toMatchObject({ income: 2000, expenses: 3000 });
+
+    // The new table takes links, kept across startups.
+    await repo.setReimbursements('tx-4', [{ expenseId: 'tx-3', amount: 2000 }]);
+    expect((await open(name).home('2026-10')).summary).toMatchObject({ income: 0, expenses: 1000 });
+  });
+});

@@ -126,6 +126,19 @@ export interface Goal {
   archived: boolean;
 }
 
+/**
+ * A reimbursement: a part of an imported income (a received Bizum) linked to an imported
+ * expense it pays back. The part makes the expense smaller, in the expense's month, and
+ * isn't income; balances don't change. At most one per income and expense.
+ */
+export interface Reimbursement {
+  id: Id;
+  incomeId: Id;
+  expenseId: Id;
+  /** Above 0. An income's parts add up to its amount at most; an expense's, across incomes, too. */
+  amount: Cents;
+}
+
 export interface ImportBatch {
   id: Id;
   importedAt: string;

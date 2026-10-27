@@ -43,8 +43,8 @@ export function Home() {
               </div>
               <div>
                 <dt className="text-muted">Ahorro</dt>
-                <dd><Amount cents={summary.savings} /></dd>
-                <dd className="text-xs text-muted">
+                <dd data-testid="month-savings"><Amount cents={summary.savings} /></dd>
+                <dd className="text-xs text-muted" data-testid="month-savings-rate">
                   {summary.savingsRate === null ? '—' : `${Math.round(summary.savingsRate * 100)} %`}
                 </dd>
               </div>

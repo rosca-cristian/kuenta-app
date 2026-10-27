@@ -48,6 +48,49 @@ export interface TransactionView extends Transaction {
   payee: Payee | null;
   account: Account;
   toAccount: Account | null;
+  /** Its reimbursements, with `amount` as the bank's; null when it has none. */
+  reimbursement: ReimbursementView | null;
+}
+
+/** One reimbursement as either of its two transactions sees it. */
+export interface ReimbursementLinkView {
+  /** The other transaction: the income paying back an expense, or the expense an income pays back. */
+  transactionId: Id;
+  /** The part, above 0. */
+  amount: Cents;
+}
+
+/**
+ * A transaction's reimbursements. An expense's parts are paid back to it, so it counts as
+ * `amount − paidBack` ("Tu parte"); an income's parts are spread over expenses, so only
+ * `amount − spread` counts as income. The other field is 0.
+ */
+export interface ReimbursementView {
+  /** For an expense: what incomes paid back of it. */
+  paidBack: Cents;
+  /** For an income: how much of it pays back expenses. */
+  spread: Cents;
+  /** Oldest other transaction first. */
+  links: ReimbursementLinkView[];
+}
+
+/** An expense "Es un reembolso" offers to link to an income. */
+export interface ReimbursementCandidate {
+  transaction: TransactionView;
+  /**
+   * What's left of it to pay back: its amount minus what other incomes pay back of it. The
+   * income's own part counts as left, since the sheet edits it.
+   */
+  left: Cents;
+  /** The income's current part of it; 0 when not linked yet. */
+  part: Cents;
+}
+
+/** One part of an income paying back an expense, as "Es un reembolso" saves it. */
+export interface ReimbursementPart {
+  expenseId: Id;
+  /** Whole cents; 0 drops the link. */
+  amount: Cents;
 }
 
 /**
@@ -472,6 +515,24 @@ export interface DataRepository {
   /** Expense categories used on a date, most used first. */
   expenseCategoriesUsedOn(date: IsoDate): Promise<Id[]>;
 
+  /**
+   * The expenses an imported income ("Es un reembolso") may pay back: the imported expenses
+   * dated from 30 days before it up to its date (with `before`, from 30 days before that date
+   * instead: "Ver gastos anteriores"), plus those it already pays back, whatever their date,
+   * with something left to pay back. Closest date first, in the bank's order within a day.
+   * `text` searches as `TransactionFilter.text` does. Empty for anything but an imported income.
+   */
+  reimbursementCandidates(incomeId: Id, options?: { text?: string; before?: IsoDate }): Promise<ReimbursementCandidate[]>;
+  /**
+   * Replaces the expenses an imported income pays back, in one transaction; a part of 0 drops
+   * that link and no parts remove them all ("Quitar reembolso"). Throws, changing nothing,
+   * unless the income and every expense are imported ones, each part is whole cents and not
+   * negative, each expense appears once, the parts add up to the income at most, and what all
+   * incomes pay back of an expense is its amount at most. Saving what's already there changes
+   * nothing. Balances never change: only income and spending count it.
+   */
+  setReimbursements(incomeId: Id, parts: ReimbursementPart[]): Promise<void>;
+
   /** Every payee, sorted by name, with its number of transactions. */
   listPayees(): Promise<PayeeView[]>;
   /**
@@ -502,12 +563,19 @@ export interface DataRepository {
   editedCountInImport(batchId: Id): Promise<number>;
   undoImport(batchId: Id): Promise<void>;
 
+  /**
+   * Inicio for a month. Its summary counts reimbursements: each expense smaller by what was paid
+   * back of it, in its own month, and only what incomes don't pay back as income. Balances,
+   * goals and the forecast count the bank's amounts.
+   */
   home(month: Month): Promise<HomeData>;
 
   /**
    * Análisis → Gastos: each category's spending in the month by transaction date, as
    * `budgets` measures it (expenses − income), leaving out those at 0 or below, plus the
    * uncategorized expenses as "Sin categoría". Transfers and balance adjustments never count.
+   * Reimbursements make each expense smaller, and the incomes that pay them back count only
+   * for what's left, wherever the other side is dated.
    */
   spending(month: Month): Promise<SpendingView>;
 
@@ -522,13 +590,15 @@ export interface DataRepository {
   /**
    * Análisis → Mensual: each month's income and expenses, as Inicio's summary counts them,
    * for the last 6 or 12 months ending at the current one, which is marked in progress.
-   * The months before the first one with imported transactions are left out.
+   * The months before the first one with imported transactions are left out. Reimbursements
+   * count as in the summary.
    */
   monthly(months: MonthlyRange): Promise<MonthlyView>;
 
   /**
    * The budgets of a month with their spending by transaction date. Transfers, balance
-   * adjustments and uncategorized transactions never count.
+   * adjustments and uncategorized transactions never count. Reimbursements count as in
+   * `spending`.
    */
   budgets(month: Month): Promise<BudgetsView>;
   /** The non-archived expense categories without a budget in the month, in order: those "Añadir presupuesto" offers. */
@@ -579,6 +649,7 @@ export interface DataRepository {
    * Análisis → Suscripciones on today's date: one subscription per payee with an imported
    * expense in the category named "Suscripciones" (ignoring case and accents), its charges
    * being its expenses there, with the monthly and yearly totals. Empty without that category.
+   * Charges and the month's spending count reimbursements as `spending` does.
    */
   subscriptions(): Promise<SubscriptionsView>;
 

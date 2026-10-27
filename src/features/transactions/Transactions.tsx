@@ -11,6 +11,7 @@ import { listNet } from '../../domain/stats';
 import { TX_TYPE_NAMES } from '../../domain/model';
 import type { TransactionFilter, TransactionView } from '../../data/repository';
 import { EditTransactionSheet } from './EditTransactionSheet';
+import { transactionTitle } from './titles';
 import { ExportCsvButton } from './ExportCsvButton';
 import { FiltersSheet } from './FiltersSheet';
 import { filterParams, periodParam, textParam, withFilter, withoutFilter, withPeriod, withText, type FilterField } from './filters';
@@ -20,10 +21,6 @@ const SEARCH_DELAY_MS = 150;
 
 /** A day section's height before it's laid out: its header and rows, so the scrollbar stays put. */
 const dayHeight = (rows: number) => 24 + rows * 65;
-
-function title(tx: TransactionView): string {
-  return tx.payee?.name || tx.note || tx.bankConcept || 'Movimiento';
-}
 
 /** The grey line under the title: category and account, or the accounts a transfer moves money between. */
 function subtitle(tx: TransactionView): string {
@@ -128,7 +125,7 @@ export function Transactions() {
                     <button className="flex min-h-16 w-full items-center gap-3 px-3 py-2 text-left active:bg-card-2" onClick={() => setEditing(tx.id)}>
                       {tx.type === 'transfer' ? <TransferBadge /> : <IconBadge icon={tx.category?.icon} color={tx.category?.color} />}
                       <span className="min-w-0 flex-1">
-                        <span className="block truncate">{title(tx)}</span>
+                        <span className="block truncate">{transactionTitle(tx)}</span>
                         <span className={`block truncate text-xs ${tx.category || tx.type === 'transfer' ? 'text-muted' : 'text-warn'}`}>
                           {subtitle(tx)}
                         </span>

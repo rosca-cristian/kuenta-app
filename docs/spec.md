@@ -207,6 +207,14 @@ interface ImportBatch {
   undone: boolean;
 }
 
+interface Reimbursement {   // a part of an imported income paying back an imported expense (§3.2)
+  id: Id;
+  incomeId: Id;              // an imported income
+  expenseId: Id;             // an imported expense
+  amount: Cents;             // > 0; an income's parts ≤ its amount; the parts paying back an expense, across incomes, ≤ its amount
+}
+// At most one per income and expense. Not in backups yet (format 1).
+
 interface Setting { key: string; value: unknown }
 // keys: importAccountId, starterDataVersion, starterRulesOffer, privacyMode, lastBackupAt, lastChangeAt,
 //       onboardingDone, persistRequested
@@ -214,7 +222,7 @@ interface Setting { key: string; value: unknown }
 
 ### Dexie indexes
 
-Version 1 (part 1) has every table below except `rules`, `budgetLimits` and `goals`; version 2 (part 2) adds `rules`; version 3 (part 4) adds `budgetLimits` and `goals`.
+Version 1 (part 1) has every table below except `rules`, `budgetLimits`, `goals` and `reimbursements`; version 2 (part 2) adds `rules`; version 3 (part 4) adds `budgetLimits` and `goals`; version 4 adds `reimbursements` (existing installs start with none, and no transaction changes).
 
 ```
 accounts:      id, order
@@ -225,6 +233,7 @@ transactions:  id, date, [accountId+date], [toAccountId+date], categoryId, payee
 rules:         id, order
 budgetLimits:  id, [categoryId+fromMonth]
 goals:         id, accountId
+reimbursements: id, incomeId, expenseId
 importBatches: id, importedAt
 settings:      key
 ```
@@ -256,6 +265,7 @@ Format, confirmed with real exports (October 2026). The file is what Google Shee
 - **Transfers** don't count as income or expense in the summary, charts, budgets or savings rate. They do count in balances, and net worth doesn't change.
 - **Balance adjustments** count in balances but never as income or expense.
 - **Spending of a category in a month** = expenses in that category − income in that category. A Bizum received from a friend for a shared dinner, categorized as Restaurantes, reduces Restaurantes spending.
+- **Reimbursements**: an imported income (a Bizum from friends after a shared dinner, the parents paying back a purchase) can be linked to the imported expenses it pays back, each with a part. For income and spending (Inicio's summary and savings rate, Análisis → Gastos and Mensual, budgets, subscriptions) each expense counts as its amount minus the parts paid back of it, in the expense's own month, and each income as its amount minus the parts it spreads (0 when it pays back expenses whole), wherever the other side is dated. Balances, net worth, goals, the forecast, Movimientos and exports keep the bank's amounts: a reimbursement moves no money. A link whose income or expense is gone or isn't one any more counts nowhere. Example: Bar Romera 73,50 € paid back by Bizum of 38,05 €, 9,85 € and 15,65 € leaves "Tu parte" 9,95 € in Restaurantes, and none of the Bizum is income.
 - **Budget limit for month M** = the category's `BudgetLimit` with the most recent `fromMonth ≤ M`. Changing the limit in October doesn't rewrite September.
 - **Net worth at month end** = sum of the balances of all accounts, archived and non-imported included.
 - **Expected charge** (for the forecast): an expense of the previous month whose payee had an expense in each of the two previous months and has none yet in the current month. Its amount is last month's amount.
@@ -292,6 +302,7 @@ Fixed bottom navigation: **Inicio · Movimientos · Importar · Análisis · Má
 - **URL parameters**, the single source of truth for the screen's state, so reloads and the edit sheet keep it: `mes` (`YYYY-MM`, or `todos` for all months; the current month without it), `q` (the search, written with `replace` about 150 ms after typing stops), `cuenta` (an account's id), `categoria` (a category's id or `sin-categoria`), `tipo` (`gasto`, `ingreso` or `transferencia`) and `comercio` (a payee's id). Every filter present must hold.
 - List grouped by day with a header such as "lunes, 20 oct · −45,30 €" (date and day's net: income − expenses, transfers excluded; balance adjustments count).
 - Row: circle with the category's icon and colour; payee or note; category · account in grey; amount on the right (income in green, expenses in normal text colour).
+- **Es un reembolso** (§3.2), on the edit sheet of an imported income (not a transfer or balance adjustment): "¿Qué gastos te devuelve?" lists the imported expenses of the 30 days up to it with something left to pay back, closest first, each with date, payee or note, category, amount and what's left ("queda X"), plus a search box (as Movimientos' search) and "Ver gastos anteriores" (30 more days each time). Ticked expenses get a part, filled oldest first (by date) up to the smaller of what's left of the expense and of the income; a part typed by hand stays, and the others fill around it. "Repartido X · Queda como ingreso Y" sums it up; a part over what's left shows "No puede ser más de lo que queda del gasto (X)" or "…del ingreso (X)". "Guardar" replaces the income's links; "Quitar reembolso" (only when it has some) removes them. In privacy mode the part fields start empty, and left empty they keep the part (or take the automatic one). Afterwards the income's sheet lists the expenses it pays back and what stays as income, and a paid-back expense's sheet shows "Pagado · Te devolvieron · Tu parte" and the incomes that paid it back; tapping one opens its sheet.
 - Tapping a row opens the **edit sheet**: amount, date and account shown read-only; category, payee and note editable; "Convertir en transferencia" (pick the other account) and, on a transfer, "Quitar transferencia" (back to expense or income by the bank's sign, uncategorized); both count as the user's edit; the original bank concept and movement. For an incoming amount, the category picker shows first the **expense** categories used that same day.
 - **Rule suggestion**: after saving a category on a transaction whose payee has other uncategorized transactions, Kuenta asks "¿Usar siempre Supermercado para Mercadona? (3 más)" with "Crear regla". The proposed text is the concept cut at the first `-`, `*` or digit (`Mercadona - crta del inge` → `mercadona`), editable, with a live count of matching transactions. Not offered for Bizum rows.
 - "Exportar CSV", respecting active filters.
@@ -529,7 +540,7 @@ All checked at a 390×844 viewport. Items marked 🧪 have a unit test.
 | Templates, autocomplete, calculator, cleared status | Only made sense with manual entry. |
 | Multi-currency | Complicates the whole model; EUR only. |
 | Split transactions | Complicate balances, budgets, CSV and import. |
-| Reimbursements (a received Bizum linked to the expenses it pays back) | Parked idea, see rosca-cristian/kuenta-app#10. Today a refund gets the expense's category and subtracts from it (§3.2). |
+| Reimbursements (a received Bizum linked to the expenses it pays back) | No longer out: built after v1 (rosca-cristian/kuenta-app#10), see §3.2 "Reimbursements" and "Es un reembolso" in §4.3. Without a link, a refund still gets the expense's category and subtracts from it (§3.2). |
 | Subcategories and tags | Not chosen. The model allows adding them later. |
 | Other banks, Norma 43, PDF, the BBVA "Informe de gastos" export | The BBVA reader is isolated in `import/bbva` so other formats can be added. |
 | Overall monthly budget, monthly savings target | Not chosen: the budgets screen totals the budgeted categories, and a goal with a target month gives "ahorra X €/mes". |

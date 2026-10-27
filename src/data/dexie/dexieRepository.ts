@@ -8,8 +8,9 @@ import { monthForecast } from '../../domain/forecast';
 import { subscriptions, subscriptionTotals } from '../../domain/subscriptions';
 import { budgetMonth, limitFor } from '../../domain/budgets';
 import { goalProgress } from '../../domain/goals';
+import { leftToPayBack, netOfReimbursements } from '../../domain/reimbursements';
 import { netWorthSeries } from '../../domain/balances';
-import { addMonths, daysBetween, isMonth, monthOf, today, type Month } from '../../domain/dates';
+import { addDays, addMonths, daysBetween, isMonth, monthOf, today, type Month } from '../../domain/dates';
 import { normalizeText } from '../../domain/text';
 import { BACKUP_SETTINGS, countsOf, createBackup, isBackupDue, readBackup, type BackupCounts, type BackupFile } from '../../domain/backup';
 import { shapeByBankSign, transferAccountOf } from '../../domain/transfers';
@@ -19,6 +20,7 @@ import {
   type Goal,
   type Id,
   type ImportBatch,
+  type Reimbursement,
   type Rule,
   type RuleActions,
   type RuleMatch,
@@ -51,6 +53,8 @@ import type {
   PayeeRenameResult,
   PayeeView,
   PreviewResult,
+  ReimbursementCandidate,
+  ReimbursementView,
   RuleChanges,
   RuleDraft,
   Settings,
@@ -102,6 +106,15 @@ function tidyActions(actions: RuleActions): RuleActions {
  */
 const STARTER_RULES_OFFER = 'starterRulesOffer';
 type StarterRulesOffer = 'pending' | 'done';
+
+/** How far back, in days, "Es un reembolso" looks for the expenses an income pays back, and each "Ver gastos anteriores" more. */
+const REIMBURSEMENT_WINDOW_DAYS = 30;
+
+const isDefined = <T,>(item: T | undefined): item is T => item !== undefined;
+
+/** Whether `text` (normalized; blank matches all) is in the payee's name, the note, the bank concept or the bank movement. */
+const matchesText = (tx: TransactionView, text: string) =>
+  text === '' || [tx.payee?.name, tx.note, tx.bankConcept, tx.bankMovement].some((field) => field && normalizeText(field).includes(text));
 
 /** How many budgets Inicio shows. */
 const TOP_BUDGETS = 3;
@@ -430,11 +443,55 @@ export function createDexieRepository(options: DexieRepositoryOptions = {}): Dat
     });
   }
 
+  /**
+   * The live reimbursements of these transactions, as income or as expense, with every
+   * transaction they link. A link whose income or expense is gone, or isn't an imported one
+   * any more (e.g. made a transfer), is left out: it counts nowhere.
+   */
+  async function linksOf(ids: Id[]): Promise<{ links: Reimbursement[]; linked: Map<Id, Transaction> }> {
+    if (ids.length === 0) return { links: [], linked: new Map() };
+    const [asIncome, asExpense] = await Promise.all([
+      db.reimbursements.where('incomeId').anyOf(ids).toArray(),
+      db.reimbursements.where('expenseId').anyOf(ids).toArray(),
+    ]);
+    const all = [...new Map([...asIncome, ...asExpense].map((link) => [link.id, link])).values()];
+    const txs = await db.transactions.bulkGet([...new Set(all.flatMap((link) => [link.incomeId, link.expenseId]))]);
+    const linked = new Map(txs.filter(isDefined).map((tx) => [tx.id, tx]));
+    const is = (id: Id, type: Transaction['type']) => linked.get(id)?.source === 'import' && linked.get(id)?.type === type;
+    return { links: all.filter((link) => is(link.incomeId, 'income') && is(link.expenseId, 'expense')), linked };
+  }
+
+  /**
+   * The transactions as income and spending count them, each expense smaller by what was paid
+   * back of it and each income by what it pays back (`netOfReimbursements`), whether or not the
+   * other side is among them.
+   */
+  async function netted(txs: Transaction[]): Promise<Transaction[]> {
+    return netOfReimbursements(txs, (await linksOf(txs.map((tx) => tx.id))).links);
+  }
+
+  /** A transaction's reimbursements as its view shows them, oldest other transaction first; null without any. */
+  function reimbursementOf(tx: Transaction, links: Reimbursement[], linked: Map<Id, Transaction>): ReimbursementView | null {
+    const asExpense = tx.type === 'expense';
+    const own = links.filter((link) => (asExpense ? link.expenseId : link.incomeId) === tx.id);
+    if (own.length === 0) return null;
+    const other = (link: Reimbursement) => linked.get(asExpense ? link.incomeId : link.expenseId)!;
+    const total = own.reduce((sum, link) => sum + link.amount, 0);
+    return {
+      paidBack: asExpense ? total : 0,
+      spread: asExpense ? 0 : total,
+      links: own
+        .sort((a, b) => other(a).date.localeCompare(other(b).date) || other(a).id.localeCompare(other(b).id))
+        .map((link) => ({ transactionId: other(link).id, amount: link.amount })),
+    };
+  }
+
   async function toViews(txs: Transaction[]): Promise<TransactionView[]> {
-    const [accounts, categories, payees] = await Promise.all([
+    const [accounts, categories, payees, { links, linked }] = await Promise.all([
       db.accounts.toArray(),
       db.categories.toArray(),
       db.payees.bulkGet([...new Set(txs.map((tx) => tx.payeeId).filter((id): id is Id => id !== null))]),
+      linksOf(txs.map((tx) => tx.id)),
     ]);
     const byId = <T extends { id: Id }>(items: (T | undefined)[]) =>
       new Map(items.filter((item): item is T => item !== undefined).map((item) => [item.id, item]));
@@ -447,6 +504,7 @@ export function createDexieRepository(options: DexieRepositoryOptions = {}): Dat
       toAccount: tx.toAccountId ? accountMap.get(tx.toAccountId) ?? null : null,
       category: tx.categoryId ? categoryMap.get(tx.categoryId) ?? null : null,
       payee: tx.payeeId ? payeeMap.get(tx.payeeId) ?? null : null,
+      reimbursement: reimbursementOf(tx, links, linked),
     }));
   }
 
@@ -865,10 +923,7 @@ export function createDexieRepository(options: DexieRepositoryOptions = {}): Dat
           (to === undefined || tx.date <= to),
       );
       const views = await toViews(await newestFirst(matching));
-      if (text === '') return views;
-      return views.filter((tx) =>
-        [tx.payee?.name, tx.note, tx.bankConcept, tx.bankMovement].some((field) => field && normalizeText(field).includes(text)),
-      );
+      return text === '' ? views : views.filter((tx) => matchesText(tx, text));
     },
 
     async transactionDateRange() {
@@ -916,6 +971,63 @@ export function createDexieRepository(options: DexieRepositoryOptions = {}): Dat
         if (tx.type === 'expense' && tx.categoryId) counts.set(tx.categoryId, (counts.get(tx.categoryId) ?? 0) + 1);
       }
       return [...counts.entries()].sort((a, b) => b[1] - a[1]).map(([id]) => id);
+    },
+
+    async reimbursementCandidates(incomeId, { text = '', before } = {}): Promise<ReimbursementCandidate[]> {
+      const tables = [db.transactions, db.reimbursements, db.settings, db.accounts, db.categories, db.payees];
+      return db.transaction('r', tables, async () => {
+        const income = await db.transactions.get(incomeId);
+        if (!income || income.source !== 'import' || income.type !== 'income') return [];
+        const own = await db.reimbursements.where('incomeId').equals(incomeId).toArray();
+        const [recent, linked] = await Promise.all([
+          db.transactions.where('date').between(addDays(before ?? income.date, -REIMBURSEMENT_WINDOW_DAYS), income.date, true, true).toArray(),
+          // What it already pays back stays editable, however old.
+          db.transactions.bulkGet(own.map((link) => link.expenseId)),
+        ]);
+        const expenses = [...new Map([...recent, ...linked.filter(isDefined)].map((tx) => [tx.id, tx])).values()].filter(
+          (tx) => tx.source === 'import' && tx.type === 'expense',
+        );
+        const { links } = await linksOf(expenses.map((tx) => tx.id));
+        const parts = new Map(links.filter((link) => link.incomeId === incomeId).map((link) => [link.expenseId, link.amount]));
+        const search = normalizeText(text);
+        return (await toViews(await newestFirst(expenses)))
+          .filter((tx) => matchesText(tx, search))
+          .map((transaction) => ({ transaction, left: leftToPayBack(transaction, links, incomeId), part: parts.get(transaction.id) ?? 0 }))
+          .filter((candidate) => candidate.left > 0);
+      });
+    },
+
+    async setReimbursements(incomeId, parts) {
+      for (const part of parts) {
+        checkWholeCents(part.amount, 'A reimbursement');
+        if (part.amount < 0) throw new Error(`A reimbursement can't be negative: ${part.amount}`);
+      }
+      if (new Set(parts.map((part) => part.expenseId)).size !== parts.length) throw new Error('An income pays back each expense once');
+      const kept = parts.filter((part) => part.amount > 0);
+      const edited = await db.transaction('rw', db.transactions, db.reimbursements, async () => {
+        const income = await db.transactions.get(incomeId);
+        if (!income || income.source !== 'import' || income.type !== 'income') throw new Error(`${incomeId} isn't an imported income`);
+        const spread = kept.reduce((sum, part) => sum + part.amount, 0);
+        if (spread > income.amount) throw new Error(`The parts (${spread}) add up to more than the income (${income.amount})`);
+        const [expenses, { links }] = await Promise.all([db.transactions.bulkGet(kept.map((part) => part.expenseId)), linksOf(kept.map((part) => part.expenseId))]);
+        kept.forEach((part, i) => {
+          const expense = expenses[i];
+          if (!expense || expense.source !== 'import' || expense.type !== 'expense') throw new Error(`${part.expenseId} isn't an imported expense`);
+          // What other incomes pay back of it stays; this income's own parts are being replaced.
+          const left = leftToPayBack(expense, links, incomeId);
+          if (part.amount > left) throw new Error(`The part (${part.amount}) is more than what's left of expense ${expense.id} (${left})`);
+        });
+        const existing = await db.reimbursements.where('incomeId').equals(incomeId).toArray();
+        const byExpense = new Map(existing.map((link) => [link.expenseId, link]));
+        // Saving the same parts again changes nothing.
+        if (kept.length === existing.length && kept.every((part) => byExpense.get(part.expenseId)?.amount === part.amount)) return false;
+        await db.reimbursements.bulkDelete(existing.map((link) => link.id));
+        await db.reimbursements.bulkAdd(
+          kept.map(({ expenseId, amount }) => ({ id: byExpense.get(expenseId)?.id ?? crypto.randomUUID(), incomeId, expenseId, amount })),
+        );
+        return true;
+      });
+      if (edited) await dataChanged();
     },
 
     async listPayees(): Promise<PayeeView[]> {
@@ -1088,7 +1200,8 @@ export function createDexieRepository(options: DexieRepositoryOptions = {}): Dat
       return {
         // Archived accounts still hold money: they count in the total, but aren't listed.
         totalBalance: allAccounts.reduce((sum, account) => sum + account.balance, 0),
-        summary: monthSummary(monthTxs, month),
+        // Reimbursements make expenses smaller and aren't income; balances, goals and the forecast take the bank's amounts.
+        summary: monthSummary(await netted(monthTxs), month),
         accounts: allAccounts.filter((account) => !account.archived),
         daysSinceLastImport: lastImport ? daysBetween(today(new Date(lastImport.importedAt)), today(now())) : null,
         // Of the month shown, like the Movimientos list its alert opens.
@@ -1103,10 +1216,10 @@ export function createDexieRepository(options: DexieRepositoryOptions = {}): Dat
     },
 
     async spending(month): Promise<SpendingView> {
-      return db.transaction('r', db.categories, db.transactions, async () => {
+      return db.transaction('r', db.categories, db.transactions, db.reimbursements, async () => {
         const [categories, txs] = await Promise.all([db.categories.orderBy('order').toArray(), transactionsIn(month)]);
         const byId = new Map(categories.map((category) => [category.id, category]));
-        const { entries, total } = monthSpending(txs, month, categories.map((category) => category.id));
+        const { entries, total } = monthSpending(await netted(txs), month, categories.map((category) => category.id));
         return {
           entries: entries.map(({ categoryId, ...entry }) => ({ category: categoryId === null ? null : byId.get(categoryId)!, ...entry })),
           total,
@@ -1126,25 +1239,25 @@ export function createDexieRepository(options: DexieRepositoryOptions = {}): Dat
 
     async monthly(months): Promise<MonthlyView> {
       const currentMonth = monthOf(today(now()));
-      return db.transaction('r', db.transactions, async () => {
+      return db.transaction('r', db.transactions, db.reimbursements, async () => {
         const [txs, first] = await Promise.all([
           db.transactions.where('date').between(`${addMonths(currentMonth, 1 - months)}-01`, `${addMonths(currentMonth, 1)}-01`).toArray(),
           // Balance adjustments aren't data: they only correct a balance.
           db.transactions.orderBy('date').filter((tx) => tx.source === 'import').first(),
         ]);
-        return { entries: monthlySeries(txs, currentMonth, months, first ? monthOf(first.date) : null) };
+        return { entries: monthlySeries(await netted(txs), currentMonth, months, first ? monthOf(first.date) : null) };
       });
     },
 
     async budgets(month): Promise<BudgetsView> {
-      return db.transaction('r', db.categories, db.budgetLimits, db.transactions, async () => {
+      return db.transaction('r', db.categories, db.budgetLimits, db.transactions, db.reimbursements, async () => {
         const [categories, limits, txs] = await Promise.all([db.categories.orderBy('order').toArray(), db.budgetLimits.toArray(), transactionsIn(month)]);
         const byId = new Map(categories.map((category) => [category.id, category]));
         const { budgets, totals, today: marker } = budgetMonth({
           month,
           categoryIds: categories.map((category) => category.id),
           limits,
-          transactions: txs,
+          transactions: await netted(txs),
           today: today(now()),
         });
         return { budgets: budgets.map(({ categoryId, ...budget }) => ({ category: byId.get(categoryId)!, ...budget })), totals, today: marker };
@@ -1273,7 +1386,7 @@ export function createDexieRepository(options: DexieRepositoryOptions = {}): Dat
     },
 
     async subscriptions(): Promise<SubscriptionsView> {
-      return db.transaction('r', db.categories, db.transactions, db.payees, async () => {
+      return db.transaction('r', db.categories, db.transactions, db.payees, db.reimbursements, async () => {
         // The category whose payees are the subscriptions, by name: it survives being recreated or seeded again.
         const category = await db.categories.filter((c) => normalizeText(c.name) === 'suscripciones').first();
         if (!category) return { subscriptions: [], totals: { monthly: 0, yearly: 0, spentThisMonth: 0 } };
@@ -1283,7 +1396,7 @@ export function createDexieRepository(options: DexieRepositoryOptions = {}): Dat
           // Missing charges look at the two months before this one, whatever their category; this month's spending at this month.
           db.transactions.where('date').between(`${addMonths(monthOf(date), -2)}-01`, `${addMonths(monthOf(date), 1)}-01`).toArray(),
         ]);
-        const transactions = [...new Map([...charges, ...recent].map((tx) => [tx.id, tx])).values()];
+        const transactions = await netted([...new Map([...charges, ...recent].map((tx) => [tx.id, tx])).values()]);
         const list = subscriptions(transactions, category.id, date);
         const payees = await db.payees.bulkGet(list.map((subscription) => subscription.payeeId));
         return {
@@ -1333,10 +1446,11 @@ export function createDexieRepository(options: DexieRepositoryOptions = {}): Dat
     async restoreBackup(backup: BackupFile) {
       const { data, exportedAt } = backup;
       const tables = [db.accounts, db.categories, db.payees, db.transactions, db.rules, db.budgetLimits, db.goals, db.importBatches, db.settings];
-      await db.transaction('rw', tables, async () => {
+      await db.transaction('rw', [...tables, db.reimbursements], async () => {
         // This phone's own settings stay (whether persistence was requested…); the backup's data settings replace the rest.
         const device = (await db.settings.toArray()).filter((row) => !BACKUP_SETTINGS.includes(row.key));
-        await Promise.all(tables.map((table) => table.clear()));
+        // Backups don't carry reimbursements yet: the replaced transactions' links go with them.
+        await Promise.all([...tables, db.reimbursements].map((table) => table.clear()));
         await db.accounts.bulkAdd(data.accounts);
         await db.categories.bulkAdd(data.categories);
         await db.payees.bulkAdd(data.payees);

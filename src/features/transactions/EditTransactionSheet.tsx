@@ -1,14 +1,17 @@
 import { useMemo, useState } from 'react';
 import { Sheet } from '../../ui/Sheet';
 import { Amount, Button } from '../../ui/components';
-import { TransferBadge } from '../../ui/icons';
+import { Money } from '../../lib/money';
+import { IconBadge, TransferBadge } from '../../ui/icons';
 import { AccountPicker, CategoryGrid } from '../../ui/pickers';
 import { useRepo, useRepoQuery } from '../../lib/repo';
 import { formatDate } from '../../domain/dates';
 import { signedAmount, type Category, type Id } from '../../domain/model';
 import { shapeByBankSign, transferAccountOf } from '../../domain/transfers';
-import type { AccountView, RuleSuggestion, TransactionChanges, TransactionView } from '../../data/repository';
+import type { AccountView, ReimbursementLinkView, RuleSuggestion, TransactionChanges, TransactionView } from '../../data/repository';
 import { QuickRuleSheet } from '../rules/QuickRuleSheet';
+import { ReimbursementForm } from './ReimbursementForm';
+import { transactionTitle } from './titles';
 
 /** A rule to propose once the edit sheet closes: the suggestion plus what the question shows. */
 type Proposal = RuleSuggestion & { categoryId: Id; payeeName: string };
@@ -16,11 +19,27 @@ type Proposal = RuleSuggestion & { categoryId: Id; payeeName: string };
 /**
  * Edits the parts of a transaction that belong to the user: category, payee, note and
  * whether it's a transfer to another account. After the user sets a category, it may
- * propose a rule for the payee's other transactions.
+ * propose a rule for the payee's other transactions. An imported income can be linked to the
+ * expenses it pays back ("Es un reembolso"), and either side of a reimbursement opens the other.
  */
 export function EditTransactionSheet({ id, onClose }: { id: Id | null; onClose: () => void }) {
-  const tx = useRepoQuery((r) => (id ? r.getTransaction(id) : Promise.resolve(null)), [id]);
+  // The transaction shown: the one asked for, or one linked to it the user opened from the sheet.
+  const [askedId, setAskedId] = useState(id);
+  const [shownId, setShownId] = useState(id);
+  // "Es un reembolso" takes over the sheet, keeping the edit form's changes underneath.
+  const [linking, setLinking] = useState(false);
+  if (id !== askedId) {
+    setAskedId(id);
+    setShownId(id);
+    setLinking(false);
+  }
+  const tx = useRepoQuery((r) => (shownId ? r.getTransaction(shownId) : Promise.resolve(null)), [shownId]);
   const accounts = useRepoQuery((r) => r.listAccounts());
+
+  function open(next: Id) {
+    setShownId(next);
+    setLinking(false);
+  }
   // Kept after the proposal closes, so the sheet doesn't change while it slides away.
   const [proposal, setProposal] = useState<Proposal | null>(null);
   const [proposing, setProposing] = useState(false);
@@ -35,8 +54,19 @@ export function EditTransactionSheet({ id, onClose }: { id: Id | null; onClose: 
 
   return (
     <>
-      <Sheet open={id !== null} onClose={onClose} title={tx?.source === 'adjustment' ? 'Ajuste de saldo' : 'Movimiento'}>
-        {tx && accounts && <EditForm key={tx.id} tx={tx} accounts={accounts} onDone={done} />}
+      <Sheet
+        open={id !== null}
+        onClose={onClose}
+        title={linking ? '¿Qué gastos te devuelve?' : tx?.source === 'adjustment' ? 'Ajuste de saldo' : 'Movimiento'}
+      >
+        {tx && accounts && (
+          <>
+            <div hidden={linking}>
+              <EditForm key={tx.id} tx={tx} accounts={accounts} onDone={done} onOpen={open} onLink={() => setLinking(true)} />
+            </div>
+            {linking && <ReimbursementForm key={tx.id} income={tx} onDone={() => setLinking(false)} />}
+          </>
+        )}
       </Sheet>
       <QuickRuleSheet
         open={proposing}
@@ -49,7 +79,21 @@ export function EditTransactionSheet({ id, onClose }: { id: Id | null; onClose: 
   );
 }
 
-function EditForm({ tx, accounts, onDone }: { tx: TransactionView; accounts: AccountView[]; onDone: (proposal: Proposal | null) => void }) {
+function EditForm({
+  tx,
+  accounts,
+  onDone,
+  onOpen,
+  onLink,
+}: {
+  tx: TransactionView;
+  accounts: AccountView[];
+  onDone: (proposal: Proposal | null) => void;
+  /** Opens a transaction linked to this one by a reimbursement. */
+  onOpen: (id: Id) => void;
+  /** Opens "Es un reembolso" for this income. */
+  onLink: () => void;
+}) {
   const repo = useRepo();
   const categories = useRepoQuery((r) => r.listCategories());
   const usedThatDay = useRepoQuery((r) => r.expenseCategoriesUsedOn(tx.date), [tx.date]);
@@ -116,6 +160,42 @@ function EditForm({ tx, accounts, onDone }: { tx: TransactionView; accounts: Acc
           {formatDate(tx.date)} · {shape.type === 'transfer' ? `${accountName(shape.accountId)} → ${accountName(shape.toAccountId)}` : tx.account.name}
         </p>
       </div>
+
+      {tx.type === 'expense' && tx.reimbursement && (
+        <>
+          <dl className="grid grid-cols-3 gap-2 rounded-xl bg-card-2 p-3 text-center" data-testid="your-share">
+            <div>
+              <dt className="text-xs text-muted">Pagado</dt>
+              <dd className="tabular-nums"><Money cents={tx.amount} /></dd>
+            </div>
+            <div>
+              <dt className="text-xs text-muted">Te devolvieron</dt>
+              <dd className="tabular-nums text-income"><Money cents={tx.reimbursement.paidBack} /></dd>
+            </div>
+            <div>
+              <dt className="text-xs text-muted">Tu parte</dt>
+              <dd className="font-semibold tabular-nums"><Money cents={tx.amount - tx.reimbursement.paidBack} /></dd>
+            </div>
+          </dl>
+          <LinkedTransactions title="Te lo devolvieron" links={tx.reimbursement.links} onOpen={onOpen} />
+        </>
+      )}
+
+      {tx.source === 'import' && tx.type === 'income' && transferTo === null && (
+        <div className="flex flex-col gap-2">
+          {tx.reimbursement && (
+            <>
+              <LinkedTransactions title="Reembolso de" links={tx.reimbursement.links} onOpen={onOpen} />
+              <p className="text-sm text-muted" data-testid="stays-income">
+                Queda como ingreso <Money cents={tx.amount - tx.reimbursement.spread} className="tabular-nums" />
+              </p>
+            </>
+          )}
+          <Button variant="secondary" onClick={onLink}>
+            {tx.reimbursement ? 'Cambiar reembolso' : 'Es un reembolso'}
+          </Button>
+        </div>
+      )}
 
       {tx.source === 'import' && (
         <>
@@ -205,5 +285,32 @@ function TransferAccountPicker({
         Cancelar
       </Button>
     </AccountPicker>
+  );
+}
+
+/** The transactions on the other side of a reimbursement, each with its part; tapping one opens its sheet. */
+function LinkedTransactions({ title, links, onOpen }: { title: string; links: ReimbursementLinkView[]; onOpen: (id: Id) => void }) {
+  const txs = useRepoQuery((r) => Promise.all(links.map((link) => r.getTransaction(link.transactionId))), [links]);
+  return (
+    <section>
+      <h3 className="mb-1 text-sm text-muted">{title}</h3>
+      <ul className="overflow-hidden rounded-xl border border-line" aria-label={title}>
+        {links.map((link, i) => {
+          const linked = txs?.[i];
+          return (
+            <li key={link.transactionId} className="border-b border-line last:border-b-0">
+              <button type="button" className="flex min-h-14 w-full items-center gap-3 bg-card-2 px-3 py-2 text-left active:opacity-70" onClick={() => onOpen(link.transactionId)}>
+                <IconBadge icon={linked?.category?.icon} color={linked?.category?.color} size={32} />
+                <span className="min-w-0 flex-1">
+                  <span className="block truncate">{linked ? transactionTitle(linked) : ''}</span>
+                  <span className="block truncate text-xs text-muted">{linked ? formatDate(linked.date) : ''}</span>
+                </span>
+                <Money cents={link.amount} className="shrink-0 tabular-nums" />
+              </button>
+            </li>
+          );
+        })}
+      </ul>
+    </section>
   );
 }

@@ -1,5 +1,5 @@
 import Dexie, { type EntityTable } from 'dexie';
-import type { Account, BudgetLimit, Category, Goal, ImportBatch, Payee, Rule, Setting, Transaction } from '../../domain/model';
+import type { Account, BudgetLimit, Category, Goal, ImportBatch, Payee, Reimbursement, Rule, Setting, Transaction } from '../../domain/model';
 
 export class KuentaDb extends Dexie {
   accounts!: EntityTable<Account, 'id'>;
@@ -9,6 +9,7 @@ export class KuentaDb extends Dexie {
   rules!: EntityTable<Rule, 'id'>;
   budgetLimits!: EntityTable<BudgetLimit, 'id'>;
   goals!: EntityTable<Goal, 'id'>;
+  reimbursements!: EntityTable<Reimbursement, 'id'>;
   importBatches!: EntityTable<ImportBatch, 'id'>;
   settings!: EntityTable<Setting, 'key'>;
 
@@ -27,5 +28,7 @@ export class KuentaDb extends Dexie {
     this.version(2).stores({ rules: 'id, order' });
     // Part 4: budgets and goals. Existing installs start with both empty.
     this.version(3).stores({ budgetLimits: 'id, [categoryId+fromMonth]', goals: 'id, accountId' });
+    // Reimbursements: existing installs start with none, and no transaction changes.
+    this.version(4).stores({ reimbursements: 'id, incomeId, expenseId' });
   }
 }

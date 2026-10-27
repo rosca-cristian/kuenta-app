@@ -12,6 +12,10 @@ Personal finance PWA fed by your bank's statement. Once a week you export your B
 3. Open Kuenta from its icon. Installing it is what makes it appear in Android's share sheet.
 4. Moving from another phone? On the welcome screen, tap **Restaurar una copia** instead of **Empezar** and pick your `kuenta-copia-….json` (see [Backups](#backups)): Kuenta opens on Inicio with your data, no setup needed.
 
+## Reimbursements
+
+When friends pay you back a dinner by Bizum, open the received Bizum in **Movimientos** and tap **Es un reembolso**: tick the expenses it pays back (each part is filled for you, and can be changed). From then on only your part of the dinner counts as spending, in Inicio, Análisis and budgets, and the Bizum isn't income; balances don't change. The expense's sheet shows **Pagado · Te devolvieron · Tu parte**.
+
 ## Privacy mode
 
 Tap the eye in the header of **Inicio** or **Movimientos** to blur every amount in the app (lists, totals, charts): each one becomes a grey smudge where the amount was, and the real amount isn't even on the page; percentages, counts and dates stay visible. While it's on, the amount fields of the edit sheets (a budget's limit, a goal's target, an account's opening balance, "Actualizar saldo") start empty; left empty, they never change the stored amount. Tap it again to show them. The choice belongs to this phone: it stays after closing the app, isn't saved in backups and isn't changed by restoring one. Exported backups and CSVs always have the real amounts.

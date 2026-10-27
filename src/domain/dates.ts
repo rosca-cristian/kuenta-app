@@ -66,6 +66,12 @@ export function monthsBetween(from: Month, to: Month): number {
   return index(to) - index(from);
 }
 
+/** The date `count` days later (earlier when negative): 2026-10-05 − 30 days is 2026-09-05. */
+export function addDays(date: IsoDate, count: number): IsoDate {
+  const d = new Date(Date.UTC(Number(date.slice(0, 4)), Number(date.slice(5, 7)) - 1, Number(date.slice(8, 10)) + count));
+  return isoDate(d.getUTCFullYear(), d.getUTCMonth() + 1, d.getUTCDate());
+}
+
 /** Whole days from `from` to `to` (positive when `to` is later). */
 export function daysBetween(from: IsoDate, to: IsoDate): number {
   const toUtc = (d: IsoDate) => Date.UTC(Number(d.slice(0, 4)), Number(d.slice(5, 7)) - 1, Number(d.slice(8, 10)));
