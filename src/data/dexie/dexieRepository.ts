@@ -112,6 +112,15 @@ const REIMBURSEMENT_WINDOW_DAYS = 30;
 
 const isDefined = <T,>(item: T | undefined): item is T => item !== undefined;
 
+/**
+ * The links that count: both sides still there and still an imported income and an imported
+ * expense. A link whose income or expense is gone or isn't one any more counts nowhere.
+ */
+function liveLinks(links: Reimbursement[], byId: Map<Id, Transaction>): Reimbursement[] {
+  const is = (id: Id, type: Transaction['type']) => byId.get(id)?.source === 'import' && byId.get(id)?.type === type;
+  return links.filter((link) => is(link.incomeId, 'income') && is(link.expenseId, 'expense'));
+}
+
 /** Whether `text` (normalized; blank matches all) is in the payee's name, the note, the bank concept or the bank movement. */
 const matchesText = (tx: TransactionView, text: string) =>
   text === '' || [tx.payee?.name, tx.note, tx.bankConcept, tx.bankMovement].some((field) => field && normalizeText(field).includes(text));
@@ -469,8 +478,7 @@ export function createDexieRepository(options: DexieRepositoryOptions = {}): Dat
     const all = [...new Map([...asIncome, ...asExpense].map((link) => [link.id, link])).values()];
     const txs = await db.transactions.bulkGet([...new Set(all.flatMap((link) => [link.incomeId, link.expenseId]))]);
     const linked = new Map(txs.filter(isDefined).map((tx) => [tx.id, tx]));
-    const is = (id: Id, type: Transaction['type']) => linked.get(id)?.source === 'import' && linked.get(id)?.type === type;
-    return { links: all.filter((link) => is(link.incomeId, 'income') && is(link.expenseId, 'expense')), linked };
+    return { links: liveLinks(all, linked), linked };
   }
 
   /**
@@ -1451,9 +1459,6 @@ export function createDexieRepository(options: DexieRepositoryOptions = {}): Dat
           db.reimbursements.toArray(),
           db.settings.toArray(),
         ]);
-        // A link whose income or expense is gone or isn't one any more counts nowhere (`linksOf`): it stays out.
-        const byId = new Map(transactions.map((tx) => [tx.id, tx]));
-        const is = (id: Id, type: Transaction['type']) => byId.get(id)?.source === 'import' && byId.get(id)?.type === type;
         const data = {
           accounts,
           categories,
@@ -1463,7 +1468,8 @@ export function createDexieRepository(options: DexieRepositoryOptions = {}): Dat
           budgetLimits,
           goals,
           importBatches,
-          reimbursements: reimbursements.filter((link) => is(link.incomeId, 'income') && is(link.expenseId, 'expense')),
+          // A link that counts nowhere stays out, so the copy always reads back.
+          reimbursements: liveLinks(reimbursements, new Map(transactions.map((tx) => [tx.id, tx]))),
           settings,
         };
         return createBackup(data, stamp(), appVersion);

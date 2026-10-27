@@ -309,6 +309,7 @@ describe('linking an income to the expenses it pays back', () => {
     expect((await repo.home('2026-10')).summary.expenses).toBe(500 + 7350 - 3805);
     expect((await repo.spending('2026-10')).entries.find((e) => e.category?.name === 'Restaurantes')!.amount).toBe(7350 - 3805);
   });
+
   it('drops the links of a transaction made a transfer, by hand or by a rule, for good', async () => {
     const { repo, db } = await setup();
     const { ids } = await linkedData(repo);
