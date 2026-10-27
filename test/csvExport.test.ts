@@ -47,19 +47,19 @@ describe('exporting Movimientos as CSV', () => {
 
     const all = transactionsCsv(await repo.listTransactions('2026-10'));
     expect(all.split('\r\n')).toEqual([
-      '\uFEFFFecha;Tipo;Cuenta;Cuenta destino;Categoría;Comercio;Nota;Importe;Concepto banco',
-      '01/10/2026;Ingreso;BBVA;;Nómina;Abono De Nómina;;1500,00;Abono de nómina',
-      `02/10/2026;Gasto;BBVA;;Supermercado;Mercadona;'=compra;-50,00;Mercadona - crta del inge`,
-      '02/10/2026;Gasto;BBVA;;Supermercado;Mercadona;;-12,50;"Mercadona; Valencia"',
-      '05/10/2026;Transferencia;BBVA;Revolut;;Revolut**5625*;;-200,00;Revolut**5625*',
-      '20/10/2026;Ajuste de saldo;Revolut;;;;Ajuste de saldo;-20,00;',
+      '\uFEFFFecha;Tipo;Cuenta;Cuenta destino;Categoría;Comercio;Nota;Importe;Reembolsado;Concepto banco',
+      '01/10/2026;Ingreso;BBVA;;Nómina;Abono De Nómina;;1500,00;;Abono de nómina',
+      `02/10/2026;Gasto;BBVA;;Supermercado;Mercadona;'=compra;-50,00;;Mercadona - crta del inge`,
+      '02/10/2026;Gasto;BBVA;;Supermercado;Mercadona;;-12,50;;"Mercadona; Valencia"',
+      '05/10/2026;Transferencia;BBVA;Revolut;;Revolut**5625*;;-200,00;;Revolut**5625*',
+      '20/10/2026;Ajuste de saldo;Revolut;;;;Ajuste de saldo;-20,00;;',
       '',
     ]);
 
     const filtered = transactionsCsv(await repo.listTransactions('2026-10', { categoryId: groceries }));
     expect(filtered.split('\r\n').slice(1)).toEqual([
-      `02/10/2026;Gasto;BBVA;;Supermercado;Mercadona;'=compra;-50,00;Mercadona - crta del inge`,
-      '02/10/2026;Gasto;BBVA;;Supermercado;Mercadona;;-12,50;"Mercadona; Valencia"',
+      `02/10/2026;Gasto;BBVA;;Supermercado;Mercadona;'=compra;-50,00;;Mercadona - crta del inge`,
+      '02/10/2026;Gasto;BBVA;;Supermercado;Mercadona;;-12,50;;"Mercadona; Valencia"',
       '',
     ]);
   });
@@ -73,7 +73,7 @@ describe('exporting Movimientos as CSV', () => {
       { valor: '02/10/2026', concepto: 'Otra 2', movimiento: 'Pago con tarjeta', importe: -4 },
       { valor: '02/10/2026', concepto: 'Tienda C', movimiento: 'Pago con tarjeta', importe: -5 },
     ]);
-    const concepts = (csv: string) => csv.split('\r\n').slice(1, -1).map((line) => line.split(';')[8]);
+    const concepts = (csv: string) => csv.split('\r\n').slice(1, -1).map((line) => line.split(';')[9]);
 
     // Movimientos lists the newest first, in the bank's order, filtered or not.
     expect((await repo.listTransactions('2026-10')).map((tx) => tx.bankConcept)).toEqual(['Tienda C', 'Otra 2', 'Tienda B', 'Otra', 'Tienda A']);
@@ -120,11 +120,11 @@ describe('exporting a date range as CSV', () => {
     await importFile(repo, history);
     const csv = transactionsCsv(await repo.listTransactions(null, { from: '2026-09-01', to: '2026-10-02' }));
     expect(csv.split('\r\n')).toEqual([
-      '﻿Fecha;Tipo;Cuenta;Cuenta destino;Categoría;Comercio;Nota;Importe;Concepto banco',
-      '01/09/2026;Gasto;BBVA;;;Inicio A;;-2,00;Inicio A',
-      '01/09/2026;Gasto;BBVA;;;Inicio B;;-3,00;Inicio B',
-      '15/09/2026;Ingreso;BBVA;;Nómina;Abono De Nómina;;1500,00;Abono de nómina',
-      '02/10/2026;Gasto;BBVA;;;Fin;;-4,00;Fin',
+      '﻿Fecha;Tipo;Cuenta;Cuenta destino;Categoría;Comercio;Nota;Importe;Reembolsado;Concepto banco',
+      '01/09/2026;Gasto;BBVA;;;Inicio A;;-2,00;;Inicio A',
+      '01/09/2026;Gasto;BBVA;;;Inicio B;;-3,00;;Inicio B',
+      '15/09/2026;Ingreso;BBVA;;Nómina;Abono De Nómina;;1500,00;;Abono de nómina',
+      '02/10/2026;Gasto;BBVA;;;Fin;;-4,00;;Fin',
       '',
     ]);
     expect((await repo.backupStatus()).lastBackupAt).toBeNull();
@@ -142,5 +142,29 @@ describe('exporting a date range as CSV', () => {
     // Balance adjustments are dated today, between the two.
     await repo.updateAccountBalance(revolutId, 1000);
     expect(await repo.transactionDateRange()).toEqual({ first: '2026-08-31', last: '2026-10-23' });
+  });
+});
+
+describe('the "Reembolsado" column', () => {
+  it("has what was paid back of an expense and what an income pays back, in Movimientos' export and a date range's", async () => {
+    const { repo } = await setup();
+    await importFile(repo, [
+      { valor: '29/09/2026', concepto: 'Bar Romera', movimiento: 'Pago con tarjeta', importe: -73.5 },
+      { valor: '01/10/2026', concepto: 'Bizum', movimiento: 'Recibido: Ana cena', importe: 38.05 },
+      { valor: '02/10/2026', concepto: 'Bizum', movimiento: 'Recibido: Luis', importe: 50 },
+    ]);
+    const all = await repo.listTransactions(null);
+    const id = (movement: string) => all.find((tx) => tx.bankMovement === movement)!.id;
+    await repo.setReimbursements(id('Recibido: Ana cena'), [{ expenseId: id('Pago con tarjeta'), amount: 3805 }]);
+    await repo.setReimbursements(id('Recibido: Luis'), [{ expenseId: id('Pago con tarjeta'), amount: 2000 }]);
+
+    const rows = (csv: string) => csv.split('\r\n').slice(1, -1).map((line) => line.split(';').slice(7, 10).join(';'));
+    expect(rows(transactionsCsv(await repo.listTransactions(null, { from: '2026-09-01', to: '2026-10-31' })))).toEqual([
+      '-73,50;58,05;Bar Romera',
+      '38,05;38,05;Bizum',
+      '50,00;20,00;Bizum',
+    ]);
+    // October alone: the dinner is in September, and the Bizum still say what they pay back.
+    expect(rows(transactionsCsv(await repo.listTransactions('2026-10')))).toEqual(['38,05;38,05;Bizum', '50,00;20,00;Bizum']);
   });
 });

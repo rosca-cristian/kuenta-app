@@ -22,7 +22,7 @@ describe('exporting a backup', () => {
     await richData(repo, db);
 
     const backup = await repo.exportBackup();
-    expect(backup).toMatchObject({ app: 'kuenta', format: 1, exportedAt: new Date('2026-10-20T10:00:00').toISOString(), appVersion: '1.2.3' });
+    expect(backup).toMatchObject({ app: 'kuenta', format: 2, exportedAt: new Date('2026-10-20T10:00:00').toISOString(), appVersion: '1.2.3' });
     expect(backup.data.accounts).toEqual(await db.accounts.toArray());
     expect(backup.data.categories).toEqual(await db.categories.toArray());
     expect(backup.data.payees).toEqual(await db.payees.toArray());
@@ -31,6 +31,7 @@ describe('exporting a backup', () => {
     expect(backup.data.budgetLimits).toEqual(await db.budgetLimits.toArray());
     expect(backup.data.goals).toEqual(await db.goals.toArray());
     expect(backup.data.importBatches).toEqual(await db.importBatches.toArray());
+    expect(backup.data.reimbursements).toEqual(await db.reimbursements.toArray());
 
     // What the data holds, to be sure the rich data really reached every table.
     expect(backup.data.accounts.map((a) => `${a.name}:${a.archived}`).sort()).toEqual(['BBVA:false', 'Hucha:true', 'Revolut:false']);
@@ -42,6 +43,7 @@ describe('exporting a backup', () => {
       'import:expense:320:rules',
       'import:expense:5000:edited',
       'import:income:150000:rules',
+      'import:income:200:rules',
       'import:transfer:20000:edited',
     ]);
     expect(backup.data.transactions.find((tx) => tx.bankConcept === 'Mercadona - crta del inge')!.note).toBe('compra semanal');
@@ -56,6 +58,8 @@ describe('exporting a backup', () => {
       'Viaje:false:2027-06',
     ]);
     expect(backup.data.importBatches.map((batch) => batch.undone).sort()).toEqual([false, true]);
+    const bakery = backup.data.transactions.find((tx) => tx.bankConcept === 'Panaderia Pepe')!.id;
+    expect(backup.data.reimbursements).toEqual([{ id: expect.any(String), incomeId: expect.any(String), expenseId: bakery, amount: 150 }]);
   });
 
   it("keeps the data settings and leaves out the device's", async () => {
@@ -78,13 +82,28 @@ describe('exporting a backup', () => {
     });
   });
 
+  it('leaves out a link whose income or expense is gone or no longer one, so the copy always reads back', async () => {
+    const { repo, db } = await setup();
+    await richData(repo, db);
+    const [link] = await db.reimbursements.toArray();
+    const transfer = (await db.transactions.toArray()).find((tx) => tx.type === 'transfer')!.id;
+    await db.reimbursements.bulkAdd([
+      { ...link, id: 'gone', expenseId: 'no-such-transaction' },
+      { ...link, id: 'transfer', expenseId: transfer },
+    ]);
+
+    const backup = await repo.exportBackup();
+    expect(backup.data.reimbursements).toEqual([link]);
+    expect(repo.readBackup(backupJson(backup)).ok).toBe(true);
+  });
+
   it('writes plain JSON with 2-space indentation that reads back as the same backup', async () => {
     const { repo, db } = await setup();
     await richData(repo, db);
     const backup = await repo.exportBackup();
 
     const json = backupJson(backup);
-    expect(json.startsWith('{\n  "app": "kuenta",\n  "format": 1,\n')).toBe(true);
+    expect(json.startsWith('{\n  "app": "kuenta",\n  "format": 2,\n')).toBe(true);
     expect(JSON.parse(json)).toEqual(backup);
   });
 });

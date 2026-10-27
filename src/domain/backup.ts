@@ -1,12 +1,12 @@
 import { z } from 'zod';
 import type { IsoDate } from './dates';
-import type { Account, BudgetLimit, Category, Goal, ImportBatch, Payee, Rule, Setting, Transaction } from './model';
+import type { Account, BudgetLimit, Category, Goal, ImportBatch, Payee, Reimbursement, Rule, Setting, Transaction } from './model';
 
 /**
  * The backup format version, independent of the Dexie schema version. A change to the format
  * raises it and adds a migration from the previous one, so older copies keep restoring.
  */
-export const BACKUP_FORMAT = 1;
+export const BACKUP_FORMAT = 2;
 
 /**
  * The settings that describe the user's data, the only ones a backup carries. The others belong
@@ -25,6 +25,8 @@ export interface BackupData {
   budgetLimits: BudgetLimit[];
   goals: Goal[];
   importBatches: ImportBatch[];
+  /** Since format 2; a format 1 file restores with none. */
+  reimbursements: Reimbursement[];
   /** Only the data settings (`BACKUP_SETTINGS`). */
   settings: Setting[];
 }
@@ -85,6 +87,8 @@ export interface BackupCounts {
   /** Categories with a budget: a limit above 0 in some month. */
   budgets: number;
   goals: number;
+  /** Incomes linked as reimbursements: with at least one link. */
+  reimbursements: number;
 }
 
 /** A backup's date and counts, shown before restoring it. */
@@ -168,6 +172,10 @@ const FIELD_NAMES: Record<string, string> = {
   skipped: 'omitidos',
   appBalance: 'saldo en Kuenta',
   undone: 'deshecha',
+  // Reimbursements.
+  incomeId: 'ingreso',
+  expenseId: 'gasto',
+  'incomeId+expenseId': 'ingreso y gasto',
   // Settings.
   key: 'clave',
   value: 'valor',
@@ -190,9 +198,16 @@ export type BackupReadResult = { ok: true; backup: BackupFile; summary: BackupSu
 
 /**
  * The format migrations, in order: the one at index `i` turns a format `i + 1` file into a
- * format `i + 2` one. Empty while format 1 is the only one.
+ * format `i + 2` one. A `data` that isn't an object is left for the schema to refuse.
  */
-const MIGRATIONS: ((file: Record<string, unknown>) => Record<string, unknown>)[] = [];
+const MIGRATIONS: ((file: Record<string, unknown>) => Record<string, unknown>)[] = [
+  // 1 → 2: reimbursements, which format 1 didn't have.
+  (file) => ({
+    ...file,
+    format: 2,
+    data: typeof file.data === 'object' && file.data !== null && !Array.isArray(file.data) ? { ...file.data, reimbursements: [] } : file.data,
+  }),
+];
 
 const id = z.string().min(1);
 const cents = z.number().int();
@@ -289,6 +304,8 @@ const importBatchSchema = z.object({
   undone: z.boolean(),
 });
 
+const reimbursementSchema = z.object({ id, incomeId: id, expenseId: id, amount: cents.positive() });
+
 /** The data settings' values; any other setting (a device's, or one Kuenta doesn't know) is dropped on reading. */
 const settingSchema = z.discriminatedUnion('key', [
   z.object({ key: z.literal('importAccountId'), value: id }),
@@ -311,6 +328,7 @@ const backupSchema = z.object({
     budgetLimits: z.array(budgetLimitSchema),
     goals: z.array(goalSchema),
     importBatches: z.array(importBatchSchema),
+    reimbursements: z.array(reimbursementSchema),
     settings: z
       .array(z.object({ key: z.string(), value: z.unknown() }))
       .transform((settings) => settings.filter((setting) => BACKUP_SETTINGS.includes(setting.key)))
@@ -318,7 +336,18 @@ const backupSchema = z.object({
   }),
 });
 
-const TABLES: readonly BackupTable[] = ['accounts', 'categories', 'payees', 'transactions', 'rules', 'budgetLimits', 'goals', 'importBatches', 'settings'];
+const TABLES: readonly BackupTable[] = [
+  'accounts',
+  'categories',
+  'payees',
+  'transactions',
+  'rules',
+  'budgetLimits',
+  'goals',
+  'importBatches',
+  'reimbursements',
+  'settings',
+];
 
 /**
  * The first issue zod found in the file, as the table, row and field it's in. Rows count the
@@ -351,8 +380,8 @@ function fileSettingRow(file: Record<string, unknown>, index: number): number {
 
 /**
  * The first broken promise between the backup's tables: unique ids per table, unique
- * `importHash` and payee `normalized`, unique setting keys, and every reference to another
- * row present in the copy. Null when there's none.
+ * `importHash` and payee `normalized`, unique setting keys, every reference to another
+ * row present in the copy, and the reimbursements' invariants. Null when there's none.
  */
 function damageIn(data: BackupData): BackupDamage | null {
   const ids = Object.fromEntries(
@@ -381,6 +410,8 @@ function damageIn(data: BackupData): BackupDamage | null {
     ['budgetLimits', 'categoryId', 'categories', data.budgetLimits.map((limit) => limit.categoryId)],
     ['goals', 'accountId', 'accounts', data.goals.map((goal) => goal.accountId)],
     ['importBatches', 'accountId', 'accounts', data.importBatches.map((batch) => batch.accountId)],
+    ['reimbursements', 'incomeId', 'transactions', data.reimbursements.map((link) => link.incomeId)],
+    ['reimbursements', 'expenseId', 'transactions', data.reimbursements.map((link) => link.expenseId)],
     ['settings', 'importAccountId', 'accounts', data.settings.filter((s) => s.key === 'importAccountId').map((s) => s.value as string)],
   ];
   for (const [table, field, target, values] of references) {
@@ -389,6 +420,32 @@ function damageIn(data: BackupData): BackupDamage | null {
   }
   if (!data.settings.some((setting) => setting.key === 'importAccountId')) {
     return { kind: 'invalid', table: 'settings', row: null, field: 'importAccountId' };
+  }
+  return reimbursementDamage(data);
+}
+
+/**
+ * The first broken promise of the reimbursements, whose transactions are all in the copy: an
+ * imported income linked to an imported expense, once per pair, and parts adding up to at most
+ * the income's amount and, across incomes, the expense's. Null when there's none.
+ */
+function reimbursementDamage(data: BackupData): BackupDamage | null {
+  const pairs = data.reimbursements.map((link) => `${link.incomeId} ${link.expenseId}`);
+  if (new Set(pairs).size !== pairs.length) return { kind: 'duplicate', table: 'reimbursements', field: 'incomeId+expenseId' };
+
+  const transactions = new Map(data.transactions.map((tx) => [tx.id, tx]));
+  const spread = new Map<string, number>();
+  const paidBack = new Map<string, number>();
+  for (const [row, link] of data.reimbursements.entries()) {
+    const income = transactions.get(link.incomeId)!;
+    const expense = transactions.get(link.expenseId)!;
+    if (income.source !== 'import' || income.type !== 'income') return { kind: 'invalid', table: 'reimbursements', row, field: 'incomeId' };
+    if (expense.source !== 'import' || expense.type !== 'expense') return { kind: 'invalid', table: 'reimbursements', row, field: 'expenseId' };
+    spread.set(income.id, (spread.get(income.id) ?? 0) + link.amount);
+    paidBack.set(expense.id, (paidBack.get(expense.id) ?? 0) + link.amount);
+    if (spread.get(income.id)! > income.amount || paidBack.get(expense.id)! > expense.amount) {
+      return { kind: 'invalid', table: 'reimbursements', row, field: 'amount' };
+    }
   }
   return null;
 }
@@ -403,6 +460,7 @@ export function countsOf(data: BackupData): BackupCounts {
     rules: data.rules.length,
     budgets: new Set(data.budgetLimits.filter((limit) => limit.amount > 0).map((limit) => limit.categoryId)).size,
     goals: data.goals.length,
+    reimbursements: new Set(data.reimbursements.map((link) => link.incomeId)).size,
   };
 }
 

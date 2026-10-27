@@ -11,11 +11,13 @@ export type CsvTransaction = Pick<
   toAccount: { name: string } | null;
   category: { name: string } | null;
   payee: { name: string } | null;
+  /** What was paid back of an expense, or what an income pays back. */
+  reimbursement: { paidBack: Cents; spread: Cents } | null;
 };
 
 const BOM = '\uFEFF';
 const EOL = '\r\n';
-const HEADER = ['Fecha', 'Tipo', 'Cuenta', 'Cuenta destino', 'Categoría', 'Comercio', 'Nota', 'Importe', 'Concepto banco'];
+const HEADER = ['Fecha', 'Tipo', 'Cuenta', 'Cuenta destino', 'Categoría', 'Comercio', 'Nota', 'Importe', 'Reembolsado', 'Concepto banco'];
 
 /** `kuenta-movimientos-2026-10-20.csv` for an export made that day. */
 export const csvFileName = (date: IsoDate) => `kuenta-movimientos-${date}.csv`;
@@ -37,12 +39,19 @@ function typeLabel(tx: CsvTransaction): string {
   return TX_TYPE_NAMES[tx.type];
 }
 
+/** The part of an expense paid back, or of an income spread over expenses; empty when none. */
+function reimbursed(tx: CsvTransaction): string {
+  const part = (tx.reimbursement?.paidBack ?? 0) + (tx.reimbursement?.spread ?? 0);
+  return part > 0 ? csvAmount(part) : '';
+}
+
 /**
  * The CSV export of `docs/spec.md` §5.13, for Spanish Excel: UTF-8 with BOM, `;` separator,
  * CRLF after every line, one line per transaction. It takes the transactions in Movimientos'
  * order, newest first as `listTransactions` returns them, and writes them oldest first. The
  * amount is signed from the transaction's account, so a transfer is negative (the money
- * leaves that account).
+ * leaves that account). "Reembolsado" is what was paid back of an expense or what an income
+ * pays back, positive, and empty without reimbursements; the amount stays the bank's.
  */
 export function transactionsCsv(transactions: CsvTransaction[]): string {
   const lines = [...transactions].reverse().map((tx) =>
@@ -55,6 +64,7 @@ export function transactionsCsv(transactions: CsvTransaction[]): string {
       guarded(tx.payee?.name ?? ''),
       guarded(tx.note),
       csvAmount(signedAmount(tx, tx.accountId)),
+      reimbursed(tx),
       guarded(tx.bankConcept ?? ''),
     ]
       .map(escaped)

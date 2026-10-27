@@ -2,7 +2,7 @@ import { readFile } from 'node:fs/promises';
 import { expect, test } from '@playwright/test';
 import { bbvaXlsxFile } from './support/xlsx';
 
-const HEADER = 'Fecha;Tipo;Cuenta;Cuenta destino;Categoría;Comercio;Nota;Importe;Concepto banco';
+const HEADER = 'Fecha;Tipo;Cuenta;Cuenta destino;Categoría;Comercio;Nota;Importe;Reembolsado;Concepto banco';
 
 test('export a date range as CSV from Copias de seguridad, disabled for an inverted range', async ({ page }) => {
   // Tuesday 20 October 2026.
@@ -47,8 +47,8 @@ test('export a date range as CSV from Copias de seguridad, disabled for an inver
   expect([...bytes.subarray(0, 3)]).toEqual([0xef, 0xbb, 0xbf]);
   expect(bytes.subarray(3).toString('utf8').split('\r\n')).toEqual([
     HEADER,
-    '01/10/2026;Ingreso;BBVA;;Nómina;Abono De Nómina;;1500,00;Abono de nómina',
-    '02/10/2026;Gasto;BBVA;;Supermercado;"Mercadona; Valencia";;-12,50;"Mercadona; Valencia"',
+    '01/10/2026;Ingreso;BBVA;;Nómina;Abono De Nómina;;1500,00;;Abono de nómina',
+    '02/10/2026;Gasto;BBVA;;Supermercado;"Mercadona; Valencia";;-12,50;;"Mercadona; Valencia"',
     '',
   ]);
   // A CSV isn't a backup.

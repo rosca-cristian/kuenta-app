@@ -16,6 +16,7 @@ const TABLE_NAMES: Record<BackupTable, [string, string]> = {
   budgetLimits: ['un presupuesto', 'presupuestos'],
   goals: ['un objetivo', 'objetivos'],
   importBatches: ['una importación', 'importaciones'],
+  reimbursements: ['un reembolso', 'reembolsos'],
   settings: ['un ajuste', 'ajustes'],
 };
 
@@ -59,6 +60,7 @@ function countsText(counts: BackupCounts): string {
     plural(counts.rules, 'regla', 'reglas'),
     plural(counts.budgets, 'presupuesto', 'presupuestos'),
     plural(counts.goals, 'objetivo', 'objetivos'),
+    plural(counts.reimbursements, 'reembolso', 'reembolsos'),
   ].join(', ');
 }
 

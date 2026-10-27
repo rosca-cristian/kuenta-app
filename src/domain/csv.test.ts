@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { csvFileName, transactionsCsv, type CsvTransaction } from './csv';
 
 const BBVA = 'bbva';
-const HEADER = 'Fecha;Tipo;Cuenta;Cuenta destino;Categoría;Comercio;Nota;Importe;Concepto banco';
+const HEADER = 'Fecha;Tipo;Cuenta;Cuenta destino;Categoría;Comercio;Nota;Importe;Reembolsado;Concepto banco';
 
 /** An imported expense of BBVA on 20/10/2026, as the repository's views have it. */
 function tx(overrides: Partial<CsvTransaction> = {}): CsvTransaction {
@@ -19,6 +19,7 @@ function tx(overrides: Partial<CsvTransaction> = {}): CsvTransaction {
     toAccount: null,
     category: { name: 'Supermercado' },
     payee: { name: 'Mercadona' },
+    reimbursement: null,
     ...overrides,
   };
 }
@@ -40,9 +41,9 @@ describe('the CSV export', () => {
   });
 
   it('writes the date as dd/mm/aaaa and the signed amount with a decimal comma, no thousands separator or "€"', () => {
-    expect(lines([tx()])).toEqual(['20/10/2026;Gasto;BBVA;;Supermercado;Mercadona;;-12,50;Mercadona']);
+    expect(lines([tx()])).toEqual(['20/10/2026;Gasto;BBVA;;Supermercado;Mercadona;;-12,50;;Mercadona']);
     expect(lines([tx({ type: 'income', amount: 150000, category: { name: 'Nómina' }, payee: null, bankConcept: 'Abono de nómina' })])).toEqual([
-      '20/10/2026;Ingreso;BBVA;;Nómina;;;1500,00;Abono de nómina',
+      '20/10/2026;Ingreso;BBVA;;Nómina;;;1500,00;;Abono de nómina',
     ]);
     expect(lines([tx({ amount: 5 })])[0]).toContain(';-0,05;');
     expect(lines([tx({ amount: 123456789 })])[0]).toContain(';-1234567,89;');
@@ -50,7 +51,7 @@ describe('the CSV export', () => {
 
   it('names the type: Gasto, Ingreso, Transferencia, or Ajuste de saldo for an adjustment', () => {
     const adjustment = tx({ type: 'income', source: 'adjustment', note: 'Ajuste de saldo', category: null, payee: null, bankConcept: null });
-    expect(lines([adjustment])).toEqual(['20/10/2026;Ajuste de saldo;BBVA;;;;Ajuste de saldo;12,50;']);
+    expect(lines([adjustment])).toEqual(['20/10/2026;Ajuste de saldo;BBVA;;;;Ajuste de saldo;12,50;;']);
     expect(lines([tx({ type: 'expense', source: 'adjustment', category: null })])[0]).toMatch(/^20\/10\/2026;Ajuste de saldo;.*;-12,50;/);
   });
 
@@ -69,39 +70,49 @@ describe('the CSV export', () => {
       bankConcept: 'Transferencia recibida',
     });
     expect(lines([incoming, outgoing])).toEqual([
-      '20/10/2026;Transferencia;BBVA;Revolut;;;;-200,00;Revolut**5625*',
-      '21/10/2026;Transferencia;Revolut;BBVA;;;;-80,00;Transferencia recibida',
+      '20/10/2026;Transferencia;BBVA;Revolut;;;;-200,00;;Revolut**5625*',
+      '21/10/2026;Transferencia;Revolut;BBVA;;;;-80,00;;Transferencia recibida',
     ]);
   });
 
   it('leaves the other account empty when it isn’t a transfer, and category, payee, note and concept when absent', () => {
     const bare = tx({ toAccount: { name: 'Revolut' }, category: null, payee: null, note: '', bankConcept: null });
-    expect(lines([bare])).toEqual(['20/10/2026;Gasto;BBVA;;;;;-12,50;']);
+    expect(lines([bare])).toEqual(['20/10/2026;Gasto;BBVA;;;;;-12,50;;']);
   });
 
   it('writes them oldest first: Movimientos’ newest-first order reversed', () => {
     const newest = tx({ date: '2026-10-21', bankConcept: 'Lidl' });
     const oldest = tx({ date: '2026-09-30', bankConcept: 'Septiembre' });
-    expect(lines([newest, tx(), oldest]).map((line) => line.split(';')[8])).toEqual(['Septiembre', 'Mercadona', 'Lidl']);
+    expect(lines([newest, tx(), oldest]).map((line) => line.split(';')[9])).toEqual(['Septiembre', 'Mercadona', 'Lidl']);
   });
 
   it('quotes a field with a semicolon, a quote or a line break, doubling its quotes', () => {
-    const note = (text: string) => lines([tx({ note: text })])[0].split(';').slice(6, -2).join(';');
+    const note = (text: string) => lines([tx({ note: text })])[0].split(';').slice(6, -3).join(';');
     expect(note('Cena; con Laura')).toBe('"Cena; con Laura"');
     expect(note('El "bueno"')).toBe('"El ""bueno"""');
     expect(note('Línea 1\nlínea 2')).toBe('"Línea 1\nlínea 2"');
     expect(note('Línea 1\rlínea 2')).toBe('"Línea 1\rlínea 2"');
     expect(note('Sin nada raro')).toBe('Sin nada raro');
     // CRLF inside a quoted note, so the line itself isn't split by it.
-    expect(transactionsCsv([tx({ note: 'a\r\nb' })])).toContain(';"a\r\nb";-12,50;');
+    expect(transactionsCsv([tx({ note: 'a\r\nb' })])).toContain(';"a\r\nb";-12,50;;');
   });
 
   it('puts a quote mark before text a spreadsheet would run as a formula, but leaves amounts alone', () => {
     const line = lines([
       tx({ account: { name: '=Cuenta' }, category: { name: '+Categoría' }, payee: { name: '@Comercio' }, note: '-nota', bankConcept: '=HYPERLINK("x")' }),
     ])[0];
-    expect(line).toBe(`20/10/2026;Gasto;'=Cuenta;;'+Categoría;'@Comercio;'-nota;-12,50;"'=HYPERLINK(""x"")"`);
+    expect(line).toBe(`20/10/2026;Gasto;'=Cuenta;;'+Categoría;'@Comercio;'-nota;-12,50;;"'=HYPERLINK(""x"")"`);
     expect(lines([tx({ note: 'nota = 3' })])[0]).toContain(';nota = 3;');
+  });
+
+  it('writes after the amount what was paid back of an expense or what an income pays back, positive, the amount still the bank’s', () => {
+    const dinner = tx({ amount: 7350, bankConcept: 'Bar Romera', reimbursement: { paidBack: 6355, spread: 0 } });
+    const bizum = tx({ type: 'income', amount: 3805, category: { name: 'Reembolsos' }, payee: null, bankConcept: 'Bizum', reimbursement: { paidBack: 0, spread: 3005 } });
+    expect(lines([bizum, dinner])).toEqual([
+      '20/10/2026;Gasto;BBVA;;Supermercado;Mercadona;;-73,50;63,55;Bar Romera',
+      '20/10/2026;Ingreso;BBVA;;Reembolsos;;;38,05;30,05;Bizum',
+    ]);
+    expect(lines([tx({ reimbursement: { paidBack: 5, spread: 0 } })])[0]).toContain(';-12,50;0,05;');
   });
 
   it('names the file with the date', () => {
