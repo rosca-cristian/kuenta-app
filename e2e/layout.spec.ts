@@ -25,7 +25,7 @@ const ROUTES: { path: string; heading: string; loaded: (page: Page) => Locator }
 
 /**
  * Three months of large amounts and long bank texts, a subscription, a non-imported account
- * with a long name, a budget and a goal: what makes a screen wider than the phone if anything does.
+ * with a long name, a budget, a goal and a monthly savings target: what makes a screen wider than the phone if anything does.
  */
 async function fillWithData(page: Page) {
   await page.goto('./');
@@ -74,11 +74,16 @@ async function fillWithData(page: Page) {
   await expect(sheet(page)).toHaveCount(0);
 
   await page.goto('./#/mas/objetivos');
-  await page.getByRole('button', { name: 'Nuevo objetivo' }).click();
+  await page.getByRole('button', { name: 'Nueva meta' }).click();
   await sheet(page).getByLabel('Nombre').fill('Entrada del piso en el centro de la ciudad');
   await sheet(page).getByLabel('Objetivo').fill('900.000');
   await sheet(page).getByRole('button', { name: /^Cuenta de ahorro/ }).click();
-  await sheet(page).getByRole('button', { name: 'Crear objetivo' }).click();
+  await sheet(page).getByRole('button', { name: 'Crear meta' }).click();
+  await expect(sheet(page)).toHaveCount(0);
+
+  await page.getByRole('button', { name: 'Elegir ahorro mensual' }).click();
+  await sheet(page).getByLabel('Ahorrar al mes').fill('100.000');
+  await sheet(page).getByRole('button', { name: 'Guardar' }).click();
   await expect(sheet(page)).toHaveCount(0);
 }
 

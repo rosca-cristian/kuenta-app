@@ -356,8 +356,8 @@ function DeleteForm({ account, onCancel, onDone }: { account: AccountView; onCan
           {accountGoals.length > 0 && (
             <Alert tone="warn">
               {accountGoals.length === 1
-                ? `Su objetivo «${accountGoals[0].name}» también se borrará.`
-                : `Sus ${accountGoals.length} objetivos también se borrarán.`}
+                ? `Su meta «${accountGoals[0].name}» también se borrará.`
+                : `Sus ${accountGoals.length} metas también se borrarán.`}
             </Alert>
           )}
         </>

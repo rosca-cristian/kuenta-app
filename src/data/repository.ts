@@ -6,6 +6,7 @@ import type { MonthlyEntry, MonthSummary } from '../domain/stats';
 import type { NetWorthPoint } from '../domain/balances';
 import type { BudgetStatus, BudgetTotals } from '../domain/budgets';
 import type { GoalProgress } from '../domain/goals';
+import type { SavingsProgress } from '../domain/savings';
 import type { Subscription, SubscriptionTotals } from '../domain/subscriptions';
 import type { BackupCounts, BackupFile, BackupReadResult } from '../domain/backup';
 import type { Account, AccountType, Category, CategoryKind, Goal, Id, ImportBatch, Payee, Rule, RuleActions, RuleMatch, Transaction, TxType } from '../domain/model';
@@ -369,6 +370,12 @@ export type GoalSaveResult =
   | { ok: false; reason: 'empty' }
   | { ok: false; reason: 'taken'; existing: Goal };
 
+/**
+ * Objetivos → Ahorro mensual for a month: its savings against the target in force that month,
+ * the "today" marker, the history and the streak; `{ target: null }` when the month has none.
+ */
+export type SavingsView = SavingsProgress | { target: null };
+
 /** One row of Análisis → Suscripciones. */
 export interface SubscriptionView extends Subscription {
   payee: Payee;
@@ -660,6 +667,23 @@ export interface DataRepository {
   deleteGoal(id: Id): Promise<void>;
 
   /**
+   * Objetivos → Ahorro mensual for a month (the current one, in Objetivos). Its savings are
+   * always `home(month).summary.savings`: reimbursements netted, incomes in their counting
+   * month, transfers and balance adjustments never counting. The history and the streak judge
+   * each earlier month against the target it had, and leave out the months before the first one
+   * anything counts in, as Análisis → Mensual does.
+   */
+  savings(month: Month): Promise<SavingsView>;
+  /**
+   * Sets the monthly savings target from `fromMonth` (the current month by default) on, in one
+   * transaction: it replaces the target starting that month and deletes the later ones, so
+   * earlier months keep theirs. 0 removes the target from that month. Saving the target already
+   * in force, with none after it, changes nothing. Throws, changing nothing, for a negative
+   * amount or one that isn't whole cents, and a month that isn't 'YYYY-MM'.
+   */
+  setSavingsTarget(amount: Cents, fromMonth?: Month): Promise<void>;
+
+  /**
    * Análisis → Suscripciones on today's date: one subscription per payee with an imported
    * expense in the category named "Suscripciones" (ignoring case and accents), its charges
    * being its expenses there, with the monthly and yearly totals. Empty without that category.
@@ -669,8 +693,8 @@ export interface DataRepository {
 
   /**
    * A backup of every table, read in one transaction so it's consistent, stamped with the
-   * clock and the app's version. Only the data settings go in it; the device's are left out.
-   * Making the backup doesn't count as one: the screen calls `markBackupMade` once the file
+   * clock and the app's version. Only the data settings go in it; the device's are left out,
+   * and so, until the next backup format, is the monthly savings target. Making the backup doesn't count as one: the screen calls `markBackupMade` once the file
    * reached the user.
    */
   exportBackup(): Promise<BackupFile>;
@@ -687,10 +711,10 @@ export interface DataRepository {
   dataCounts(): Promise<BackupCounts>;
   /**
    * Replaces all the data with the backup's in one transaction: every table is cleared and
-   * gets the backup's rows. This device's own settings (those that aren't data settings, such
-   * as `persistRequested`) stay, onboarding counts as done, and `lastBackupAt` and
-   * `lastChangeAt` become the backup's `exportedAt`, since the data now equals a copy the user
-   * has. Every screen refreshes.
+   * gets the backup's rows; backups don't carry the monthly savings target yet, so none is left.
+   * This device's own settings (those that aren't data settings, such as `persistRequested`)
+   * stay, onboarding counts as done, and `lastBackupAt` and `lastChangeAt` become the backup's
+   * `exportedAt`, since the data now equals a copy the user has. Every screen refreshes.
    */
   restoreBackup(backup: BackupFile): Promise<void>;
 }

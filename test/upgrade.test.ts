@@ -370,3 +370,49 @@ describe('updating an install to the schema with reimbursements', () => {
     expect((await open(name).home('2026-10')).summary).toMatchObject({ income: 0, expenses: 1000 });
   });
 });
+
+/** An install made before the monthly savings target: schema version 5, with a budget and a goal. */
+async function createSchemaFiveDatabase() {
+  const name = `kuenta-upgrade-${++dbCount}`;
+  const data = partOneData();
+  const db = new Dexie(name);
+  db.version(1).stores({
+    accounts: 'id, order',
+    categories: 'id, kind, order',
+    payees: 'id, &normalized',
+    transactions: 'id, date, [accountId+date], [toAccountId+date], categoryId, payeeId, &importHash, importBatchId, bookingDate',
+    importBatches: 'id, importedAt',
+    settings: 'key',
+  });
+  db.version(2).stores({ rules: 'id, order' });
+  db.version(3).stores({ budgetLimits: 'id, [categoryId+fromMonth]', goals: 'id, accountId' });
+  db.version(4).stores({ reimbursements: 'id, incomeId, expenseId' });
+  db.version(5).stores({});
+  await db.table('accounts').add(data.account);
+  await db.table('categories').bulkAdd(data.categories.map((category) => ({ ...category, nextMonthFromDay: null })));
+  await db.table('payees').bulkAdd(data.payees);
+  await db.table('transactions').bulkAdd(data.transactions);
+  await db.table('budgetLimits').add({ id: 'limit-1', categoryId: 'cat-1', fromMonth: '2026-09', amount: 30000 });
+  await db.table('settings').bulkPut([
+    { key: 'importAccountId', value: data.account.id },
+    { key: 'onboardingDone', value: true },
+    { key: 'starterDataVersion', value: STARTER_DATA_VERSION },
+  ]);
+  db.close();
+  return name;
+}
+
+describe('updating an install to the schema with the monthly savings target', () => {
+  it('starts with none, keeping the budgets and transactions', async () => {
+    const name = await createSchemaFiveDatabase();
+    const repo = open(name);
+
+    expect(await repo.savings('2026-10')).toEqual({ target: null });
+    expect((await repo.budgets('2026-10')).budgets).toMatchObject([{ category: { name: 'Restaurantes' }, limit: 30000 }]);
+    expect((await repo.home('2026-10')).summary).toMatchObject({ income: 0, expenses: 3000 });
+
+    // The new table takes the target, kept across startups.
+    await repo.setSavingsTarget(30000);
+    expect(await open(name).savings('2026-10')).toMatchObject({ target: 30000, saved: -3000 });
+  });
+});

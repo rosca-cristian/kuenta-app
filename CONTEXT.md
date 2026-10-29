@@ -62,8 +62,12 @@ _Avoid_: Filter, automation
 A rule Kuenta ships with for common Spanish merchants (supermarkets, fuel, delivery, cash withdrawals). Once created it's an ordinary rule the user can edit or delete.
 
 **Goal**:
-An amount the user wants to save in one account, optionally by a target month. Its progress is that account's current balance: money moved into the account counts, money spent from it reduces it. An account has at most one active goal. Shown in the Spanish UI as "Objetivo".
+An amount the user wants to save in one account, optionally by a target month. Its progress is that account's current balance: money moved into the account counts, money spent from it reduces it. An account has at most one active goal. Shown in the Spanish UI as "Meta de ahorro" (under Objetivos, after the monthly savings target).
 _Avoid_: Savings target, pot, hucha
+
+**Monthly savings target**:
+How much the user wants to save each month: the month's income minus its expenses, as Inicio counts them. A target applies from a month onwards, like a budget; changing it never rewrites earlier months. Shown in the Spanish UI as "Ahorro mensual".
+_Avoid_: savings goal (that's a Goal, "Meta de ahorro"), budget
 
 **Budget**:
 A monthly spending limit for one expense category. A limit applies from a month onwards, and setting a new one replaces it from that month on without rewriting earlier months. Spending is measured as the category's expenses minus its income in the month; transfers and uncategorized transactions never count. Shown in the Spanish UI as "Presupuesto".

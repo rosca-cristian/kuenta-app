@@ -86,11 +86,11 @@ test('hide every amount with the eye button, keep it after a reload, and show th
   await sheet(page).getByRole('button', { name: 'Añadir presupuesto' }).click();
   await expect(sheet(page)).toHaveCount(0);
   await openMore(page, 'Objetivos');
-  await page.getByRole('button', { name: 'Nuevo objetivo' }).click();
+  await page.getByRole('button', { name: 'Nueva meta' }).click();
   await sheet(page).getByLabel('Nombre').fill('Colchón');
   await sheet(page).getByLabel('Objetivo').fill('5.000');
   await sheet(page).getByRole('button', { name: /^BBVA/ }).click();
-  await sheet(page).getByRole('button', { name: 'Crear objetivo' }).click();
+  await sheet(page).getByRole('button', { name: 'Crear meta' }).click();
   await expect(sheet(page)).toHaveCount(0);
 
   // Off by default: Inicio shows the amounts.

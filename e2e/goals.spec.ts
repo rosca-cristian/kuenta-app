@@ -7,7 +7,7 @@ function thisMonth(day: number): string {
 }
 
 const sheet = (page: Page) => page.getByRole('dialog');
-const goalCard = (page: Page, name: string) => page.getByRole('list', { name: 'Objetivos' }).getByRole('listitem').filter({ hasText: name });
+const goalCard = (page: Page, name: string) => page.getByRole('list', { name: 'Metas de ahorro' }).getByRole('listitem').filter({ hasText: name });
 const topUpRow = (page: Page) => page.getByRole('button', { name: /Revolut\*\*5625/ });
 
 async function openGoals(page: Page) {
@@ -42,24 +42,24 @@ test('create a goal on Revolut and see it rise when an imported top-up becomes a
   await expect(sheet(page)).toHaveCount(0);
 
   await openGoals(page);
-  await expect(page.getByText('Aún no hay objetivos')).toBeVisible();
+  await expect(page.getByText('Aún no hay metas')).toBeVisible();
 
   // The sheet asks for a name, a target above 0 and an account; icon and colour follow the account's.
-  await page.getByRole('button', { name: 'Nuevo objetivo' }).click();
+  await page.getByRole('button', { name: 'Nueva meta' }).click();
   await expect(sheet(page).getByRole('group', { name: 'Cuenta' }).getByRole('button')).toHaveCount(2);
-  await sheet(page).getByRole('button', { name: 'Crear objetivo' }).click();
+  await sheet(page).getByRole('button', { name: 'Crear meta' }).click();
   await expect(sheet(page).getByRole('alert')).toHaveText('Escribe un nombre.');
   await sheet(page).getByLabel('Nombre').fill('Viaje Japón');
   await sheet(page).getByLabel('Objetivo').fill('0');
-  await sheet(page).getByRole('button', { name: 'Crear objetivo' }).click();
+  await sheet(page).getByRole('button', { name: 'Crear meta' }).click();
   await expect(sheet(page).getByRole('alert')).toContainText('mayor que 0');
   await sheet(page).getByLabel('Objetivo').fill('3.000');
-  await sheet(page).getByRole('button', { name: 'Crear objetivo' }).click();
+  await sheet(page).getByRole('button', { name: 'Crear meta' }).click();
   await expect(sheet(page).getByRole('alert')).toHaveText('Elige una cuenta.');
   await sheet(page).getByRole('button', { name: /^Revolut/ }).click();
   await expect(sheet(page).getByRole('button', { name: 'Cian', exact: true })).toHaveAttribute('aria-pressed', 'true');
   await sheet(page).getByRole('button', { name: 'Avión' }).click();
-  await sheet(page).getByRole('button', { name: 'Crear objetivo' }).click();
+  await sheet(page).getByRole('button', { name: 'Crear meta' }).click();
   await expect(sheet(page)).toHaveCount(0);
 
   const japan = goalCard(page, 'Viaje Japón');
@@ -69,7 +69,7 @@ test('create a goal on Revolut and see it rise when an imported top-up becomes a
   await expect(japan.getByTestId('goal-reached')).toHaveCount(0);
 
   // Revolut has its goal now, so a new one can only go on BBVA.
-  await page.getByRole('button', { name: 'Nuevo objetivo' }).click();
+  await page.getByRole('button', { name: 'Nueva meta' }).click();
   await expect(sheet(page).getByRole('group', { name: 'Cuenta' }).getByRole('button')).toHaveText([/^BBVA/]);
   await page.keyboard.press('Escape');
   await expect(sheet(page)).toHaveCount(0);
@@ -116,7 +116,7 @@ test('give a goal a target month, see how much to save per month, archive it and
 
   // 1.000 € three months from now: 333,333… € a month, rounded up to the cent.
   await openGoals(page);
-  await page.getByRole('button', { name: 'Nuevo objetivo' }).click();
+  await page.getByRole('button', { name: 'Nueva meta' }).click();
   await sheet(page).getByLabel('Nombre').fill('Viaje Japón');
   await sheet(page).getByLabel('Objetivo').fill('1.000');
   await expect(sheet(page).getByLabel('Sin fecha')).toBeChecked();
@@ -125,7 +125,7 @@ test('give a goal a target month, see how much to save per month, archive it and
   for (let i = 0; i < 3; i++) await sheet(page).getByRole('button', { name: 'Mes siguiente' }).click();
   await expect(sheet(page).getByText(monthFromNow(3), { exact: true })).toBeVisible();
   await sheet(page).getByRole('button', { name: /^Revolut/ }).click();
-  await sheet(page).getByRole('button', { name: 'Crear objetivo' }).click();
+  await sheet(page).getByRole('button', { name: 'Crear meta' }).click();
   await expect(sheet(page)).toHaveCount(0);
 
   const japan = goalCard(page, 'Viaje Japón');
@@ -134,7 +134,7 @@ test('give a goal a target month, see how much to save per month, archive it and
 
   // Moved to last month, the date has passed.
   await japan.getByRole('button').click();
-  await expect(sheet(page).getByRole('heading', { name: 'Editar objetivo' })).toBeVisible();
+  await expect(sheet(page).getByRole('heading', { name: 'Editar meta' })).toBeVisible();
   await expect(sheet(page).getByLabel('Objetivo')).toHaveValue('1.000,00');
   for (let i = 0; i < 4; i++) await sheet(page).getByRole('button', { name: 'Mes anterior' }).click();
   await expect(sheet(page).getByText(monthFromNow(-1), { exact: true })).toBeVisible();
@@ -142,19 +142,19 @@ test('give a goal a target month, see how much to save per month, archive it and
   await expect(sheet(page)).toHaveCount(0);
   await expect(japan.getByTestId('goal-plan')).toHaveText('Fecha superada · faltan 1.000,00 €');
 
-  // Archived, it goes to the collapsed Archivados section and frees Revolut.
+  // Archived, it goes to the collapsed Archivadas section and frees Revolut.
   await japan.getByRole('button').click();
-  await sheet(page).getByRole('button', { name: 'Archivar objetivo' }).click();
+  await sheet(page).getByRole('button', { name: 'Archivar meta' }).click();
   await expect(sheet(page)).toHaveCount(0);
-  await expect(page.getByRole('list', { name: 'Objetivos' })).toHaveCount(0);
-  await expect(page.getByText('No hay objetivos activos')).toBeVisible();
-  const archivedToggle = page.getByRole('button', { name: 'Archivados (1)' });
+  await expect(page.getByRole('list', { name: 'Metas de ahorro' })).toHaveCount(0);
+  await expect(page.getByText('No hay metas activas')).toBeVisible();
+  const archivedToggle = page.getByRole('button', { name: 'Archivadas (1)' });
   await expect(archivedToggle).toHaveAttribute('aria-expanded', 'false');
-  await expect(page.getByRole('list', { name: 'Archivados' })).toHaveCount(0);
+  await expect(page.getByRole('list', { name: 'Archivadas' })).toHaveCount(0);
   await archivedToggle.click();
-  const archivedJapan = page.getByRole('list', { name: 'Archivados' }).getByRole('listitem').filter({ hasText: 'Viaje Japón' });
+  const archivedJapan = page.getByRole('list', { name: 'Archivadas' }).getByRole('listitem').filter({ hasText: 'Viaje Japón' });
   await expect(archivedJapan.getByTestId('goal-progress')).toHaveText('0,00 € / 1.000,00 €');
-  await page.getByRole('button', { name: 'Nuevo objetivo' }).click();
+  await page.getByRole('button', { name: 'Nueva meta' }).click();
   await expect(sheet(page).getByRole('group', { name: 'Cuenta' }).getByRole('button')).toHaveText([/^BBVA/, /^Revolut/]);
   await page.keyboard.press('Escape');
   await expect(sheet(page)).toHaveCount(0);
@@ -164,21 +164,21 @@ test('give a goal a target month, see how much to save per month, archive it and
   await page.getByRole('link', { name: 'Cuentas' }).click();
   await page.getByRole('list', { name: 'Cuentas' }).getByRole('button', { name: /Revolut/ }).click();
   await sheet(page).getByRole('button', { name: 'Borrar cuenta' }).click();
-  await expect(sheet(page)).toContainText('Su objetivo «Viaje Japón» también se borrará.');
+  await expect(sheet(page)).toContainText('Su meta «Viaje Japón» también se borrará.');
   await page.keyboard.press('Escape');
   await expect(sheet(page)).toHaveCount(0);
 
   // Deleting the goal asks first, and leaves Revolut as it was.
   await openGoals(page);
-  await page.getByRole('button', { name: 'Archivados (1)' }).click();
+  await page.getByRole('button', { name: 'Archivadas (1)' }).click();
   await archivedJapan.getByRole('button').click();
-  await sheet(page).getByRole('button', { name: 'Borrar objetivo' }).click();
-  await expect(sheet(page).getByRole('heading', { name: 'Borrar objetivo' })).toBeVisible();
+  await sheet(page).getByRole('button', { name: 'Borrar meta' }).click();
+  await expect(sheet(page).getByRole('heading', { name: 'Borrar meta' })).toBeVisible();
   await expect(sheet(page)).toContainText('¿Borrar «Viaje Japón»?');
   await sheet(page).getByRole('button', { name: 'Borrar', exact: true }).click();
   await expect(sheet(page)).toHaveCount(0);
-  await expect(page.getByText('Aún no hay objetivos')).toBeVisible();
-  await expect(page.getByRole('button', { name: /^Archivados/ })).toHaveCount(0);
+  await expect(page.getByText('Aún no hay metas')).toBeVisible();
+  await expect(page.getByRole('button', { name: /^Archivadas/ })).toHaveCount(0);
   await page.getByRole('link', { name: 'Más' }).click();
   await page.getByRole('link', { name: 'Cuentas' }).click();
   await expect(page.getByRole('list', { name: 'Cuentas' }).getByRole('listitem').filter({ hasText: 'Revolut' })).toContainText('0,00 €');

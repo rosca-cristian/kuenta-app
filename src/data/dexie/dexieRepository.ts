@@ -8,6 +8,7 @@ import { monthForecast } from '../../domain/forecast';
 import { subscriptions, subscriptionTotals } from '../../domain/subscriptions';
 import { budgetMonth, limitFor } from '../../domain/budgets';
 import { goalProgress } from '../../domain/goals';
+import { savingsProgress, targetFor } from '../../domain/savings';
 import { leftToPayBack, netOfReimbursements } from '../../domain/reimbursements';
 import { countingMonthOf, inCountingMonths, isNextMonthDay } from '../../domain/countingMonth';
 import { netWorthSeries } from '../../domain/balances';
@@ -58,6 +59,7 @@ import type {
   ReimbursementView,
   RuleChanges,
   RuleDraft,
+  SavingsView,
   Settings,
   SpendingView,
   SubscriptionsView,
@@ -552,6 +554,22 @@ export function createDexieRepository(options: DexieRepositoryOptions = {}): Dat
     ]);
     const counted = inCountingMonths(await netted(txs), new Map(categories.map((category) => [category.id, category])));
     return counted.filter((tx) => monthOf(tx.date) >= from && monthOf(tx.date) <= to);
+  }
+
+  /**
+   * The first month anything counts in for income and spending: that of the first imported
+   * transaction, or the next one when every transaction of its month is a late salary. Null
+   * without any. Balance adjustments aren't data: they only correct a balance.
+   */
+  async function firstCountedMonth(): Promise<Month | null> {
+    const [first, categories] = await Promise.all([
+      db.transactions.orderBy('date').filter((tx) => tx.source === 'import').first(),
+      db.categories.toArray(),
+    ]);
+    if (!first) return null;
+    const byId = new Map(categories.map((category) => [category.id, category]));
+    const firstMonthTxs = (await transactionsIn(monthOf(first.date))).filter((tx) => tx.source === 'import');
+    return firstMonthTxs.map((tx) => countingMonthOf(tx, byId)).sort()[0] ?? null;
   }
 
   /** A category's budget limits, of every month. */
@@ -1296,17 +1314,8 @@ export function createDexieRepository(options: DexieRepositoryOptions = {}): Dat
     async monthly(months): Promise<MonthlyView> {
       const currentMonth = monthOf(today(now()));
       return db.transaction('r', db.categories, db.transactions, db.reimbursements, async () => {
-        const [txs, first, categories] = await Promise.all([
-          countedIn(addMonths(currentMonth, 1 - months), currentMonth),
-          // Balance adjustments aren't data: they only correct a balance.
-          db.transactions.orderBy('date').filter((tx) => tx.source === 'import').first(),
-          db.categories.toArray(),
-        ]);
-        // The data starts in the first month something counts in: that of the first transaction, or the next
-        // one when every transaction of its month is a late salary. Later ones count later still.
-        const byId = new Map(categories.map((category) => [category.id, category]));
-        const firstMonthTxs = first ? (await transactionsIn(monthOf(first.date))).filter((tx) => tx.source === 'import') : [];
-        const firstMonth = firstMonthTxs.map((tx) => countingMonthOf(tx, byId)).sort()[0] ?? null;
+        // The data starts in the first month something counts in.
+        const [txs, firstMonth] = await Promise.all([countedIn(addMonths(currentMonth, 1 - months), currentMonth), firstCountedMonth()]);
         return { entries: monthlySeries(txs, currentMonth, months, firstMonth) };
       });
     },
@@ -1350,6 +1359,39 @@ export function createDexieRepository(options: DexieRepositoryOptions = {}): Dat
         await db.budgetLimits.put({ id, categoryId, fromMonth, amount });
       });
       await dataChanged();
+    },
+
+    async savings(month): Promise<SavingsView> {
+      return db.transaction('r', db.categories, db.transactions, db.reimbursements, db.savingsTargets, async () => {
+        const [targets, firstMonth] = await Promise.all([db.savingsTargets.toArray(), firstCountedMonth()]);
+        if (targetFor(targets, month) <= 0) return { target: null };
+        // The history and the streak look back to the first month with data, or with a target if later.
+        const firstTarget = targets.filter((target) => target.amount > 0 && target.fromMonth <= month).map((target) => target.fromMonth).sort()[0];
+        const from = firstMonth === null || firstMonth > month ? month : firstMonth > firstTarget ? firstMonth : firstTarget;
+        // Each month's savings as Inicio's summary counts them, from the same netted, counting-month transactions.
+        const counted = await countedIn(from, month);
+        const savings = new Map<Month, number>();
+        for (let m = from; m <= month; m = addMonths(m, 1)) savings.set(m, monthSummary(counted, m).savings);
+        return savingsProgress({ month, targets, savings, today: today(now()), firstMonth }) ?? { target: null };
+      });
+    },
+
+    async setSavingsTarget(amount, fromMonth = monthOf(today(now()))) {
+      checkWholeCents(amount, 'A savings target');
+      if (amount < 0) throw new Error(`A savings target can't be negative: ${amount}`);
+      checkMonth(fromMonth);
+      const edited = await db.transaction('rw', db.savingsTargets, async () => {
+        const targets = await db.savingsTargets.toArray();
+        const later = targets.filter((target) => target.fromMonth > fromMonth);
+        // Saving the target already in force, with none after it, changes nothing.
+        if (later.length === 0 && targetFor(targets, fromMonth) === amount) return false;
+        // "A partir de este mes": this month's target is replaced and every later one goes.
+        await db.savingsTargets.bulkDelete(later.map((target) => target.id));
+        const id = targets.find((target) => target.fromMonth === fromMonth)?.id ?? crypto.randomUUID();
+        await db.savingsTargets.put({ id, fromMonth, amount });
+        return true;
+      });
+      if (edited) await dataChanged();
     },
 
     async listGoals(): Promise<GoalView[]> {
@@ -1543,6 +1585,7 @@ export function createDexieRepository(options: DexieRepositoryOptions = {}): Dat
         db.goals,
         db.importBatches,
         db.reimbursements,
+        db.savingsTargets,
         db.settings,
       ];
       await db.transaction('rw', tables, async () => {
@@ -1558,6 +1601,7 @@ export function createDexieRepository(options: DexieRepositoryOptions = {}): Dat
         await db.goals.bulkAdd(data.goals);
         await db.importBatches.bulkAdd(data.importBatches);
         await db.reimbursements.bulkAdd(data.reimbursements);
+        // Backups don't carry the monthly savings target yet: a restored copy has none.
         await db.settings.bulkPut([
           ...device,
           ...data.settings.filter((row) => BACKUP_SETTINGS.includes(row.key)),

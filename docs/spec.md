@@ -187,6 +187,13 @@ interface BudgetLimit {      // limit in force from a month onwards
 }
 // Setting a limit from month M replaces the one starting at M and deletes the category's later ones.
 
+interface SavingsTarget {    // the monthly savings target in force from a month onwards (§3.2)
+  id: Id;
+  fromMonth: string;         // 'YYYY-MM'
+  amount: Cents;             // 0 = no target from that month
+}
+// Setting a target from month M replaces the one starting at M and deletes the later ones. Not in backups yet.
+
 interface Goal {
   id: Id;
   name: string;
@@ -224,7 +231,7 @@ interface Setting { key: string; value: unknown }
 
 ### Dexie indexes
 
-Version 1 (part 1) has every table below except `rules`, `budgetLimits`, `goals` and `reimbursements`; version 2 (part 2) adds `rules`; version 3 (part 4) adds `budgetLimits` and `goals`; version 4 adds `reimbursements` (existing installs start with none, and no transaction changes); version 5 adds no index, and sets `nextMonthFromDay` to null on every existing category.
+Version 1 (part 1) has every table below except `rules`, `budgetLimits`, `goals` and `reimbursements`; version 2 (part 2) adds `rules`; version 3 (part 4) adds `budgetLimits` and `goals`; version 4 adds `reimbursements` (existing installs start with none, and no transaction changes); version 5 adds no index, and sets `nextMonthFromDay` to null on every existing category; version 6 adds `savingsTargets` (existing installs start with none).
 
 ```
 accounts:      id, order
@@ -235,6 +242,7 @@ transactions:  id, date, [accountId+date], [toAccountId+date], categoryId, payee
 rules:         id, order
 budgetLimits:  id, [categoryId+fromMonth]
 goals:         id, accountId
+savingsTargets: id, fromMonth
 reimbursements: id, incomeId, expenseId
 importBatches: id, importedAt
 settings:      key
@@ -270,6 +278,7 @@ Format, confirmed with real exports (October 2026). The file is what Google Shee
 - **Reimbursements**: an imported income (a Bizum from friends after a shared dinner, the parents paying back a purchase) can be linked to the imported expenses it pays back, each with a part. For income and spending (Inicio's summary and savings rate, Análisis → Gastos and Mensual, budgets, subscriptions) each expense counts as its amount minus the parts paid back of it, in the expense's own month, and each income as its amount minus the parts it spreads (0 when it pays back expenses whole), wherever the other side is dated. Balances, net worth, goals, the forecast, Movimientos and exports keep the bank's amounts: a reimbursement moves no money (the CSV adds the reimbursed part in its own column, §5.13). A link never outlives its transactions: undoing an import deletes, in the same transaction, every link to or from what it removes (the other side, even from another import, stays with fewer links or none), and making a linked income or expense a transfer deletes its links for good. Changing a category, payee or note keeps them. A link whose income or expense is gone or isn't one any more counts nowhere. Example: Bar Romera 73,50 € paid back by Bizum of 38,05 €, 9,85 € and 15,65 € leaves "Tu parte" 9,95 € in Restaurantes, and none of the Bizum is income.
 - **Counting month**: the month a transaction counts in for income and spending (Inicio's summary and savings rate, Análisis → Gastos and Mensual, budgets, subscriptions). It's its value date's month, except for an imported income in an income category with `nextMonthFromDay` = N, dated on day N or later: that one counts in the next month (December's in January), so a salary paid on the 29th for the month after counts there. A day past the month's last one counts as its last day ("a partir del día 31" is the 30th in November and the 28th or 29th in February). Expenses, transfers, balance adjustments and other incomes never move, and a reimbursement's income counts what it keeps in its counting month. Balances, net worth, goals, the forecast, Movimientos (its list, days and net), the uncategorized count and exports keep the bank's date. Análisis → Mensual shows a late salary of the current month only once its month is the current one, and starts at the first month anything counts in.
 - **Budget limit for month M** = the category's `BudgetLimit` with the most recent `fromMonth ≤ M`. Changing the limit in October doesn't rewrite September.
+- **Monthly savings target for month M** = the `SavingsTarget` with the most recent `fromMonth ≤ M`; none when it's 0 or there's none. A month's **savings** are exactly Inicio's for that month: income − expenses, reimbursements netted and incomes in their counting month, transfers and balance adjustments never counting. Progress = max(0, savings) / target. A month that's over is *met* when savings ≥ its target then, *missed* otherwise; the current month is *en curso* (and *Conseguido* once savings reach the target). The history lists, newest first, the months with a target among the last 12, none before the first month anything counts in (as Mensual); the streak counts the consecutive met months up to the one before the current month.
 - **Net worth at month end** = sum of the balances of all accounts, archived and non-imported included.
 - **Expected charge** (for the forecast): an expense of the previous month whose payee had an expense in each of the two previous months and has none yet in the current month. Its amount is last month's amount.
 
@@ -335,6 +344,15 @@ Tabs:
 - Tapping a card edits its limit "a partir de este mes" (this month and every later one) or removes it ("Quitar presupuesto", a 0 limit from this month). "Añadir presupuesto" offers the non-archived expense categories without a budget that month.
 
 ### 4.7 Objetivos
+Two sections: **Ahorro mensual** first, then **Metas de ahorro**.
+
+**Ahorro mensual** (the monthly savings target, §3.2):
+- Without a target this month: "Elige cuánto quieres ahorrar cada mes y Kuenta te dirá si lo vas consiguiendo." and "Elegir ahorro mensual".
+- With one, the current month's card: "Llevas X de Y", the percentage, a progress bar with the "today" marker (as in Presupuestos) and "Te faltan X", "Conseguido" or, when more went out than came in, "Vas por debajo de 0".
+- Tapping the card opens the "Ahorro mensual" sheet: "Ahorrar al mes" (above 0, or "Escribe un ahorro mayor que 0, por ejemplo 300 o 1.500."), "Guardar" and "Quitar ahorro mensual". Both act from the current month on ("Se aplica todos los meses desde este"): earlier months keep their target. In privacy mode the field starts empty.
+- "Historial": the months with a target among the last 12, newest first, each with its savings / its target then and ✓, ✗ or "en curso", and "N meses seguidos" (the streak) when there is one.
+
+**Metas de ahorro** (goals; the buttons say "Nueva meta", "Crear meta", "Archivar meta"…, and with none "Aún no hay metas"):
 - List with name, current / target, percentage and, when there is a target month, how much to save per month to get there ("ahorra X €/mes"), or "Fecha superada · faltan X €" once that month has passed unreached. At 100 % it shows "Conseguido".
 - Each goal shows its linked account's balance as progress (any account, the import account included). An account has at most one non-archived goal, so the account picker hides accounts that already have one.
 - Create and edit: name, target amount, optional target month (a `‹ junio 2027 ›` stepper, any month, or "Sin fecha"), account, icon and colour (defaulting to the account's). When editing, the account picker also offers the goal's own account, even an archived one. Archive (archived goals in a collapsed section, with no monthly amount), unarchive and delete.
@@ -488,6 +506,10 @@ All checked at a 390×844 viewport. Items marked 🧪 have a unit test.
 - 🧪 With a target month: "ahorra X €/mes" = (target − current) / months left, where months left = target month − current month (at least 1), rounded up to the cent. In October 2026 a goal for 2027-06 has 8 months left.
 - 🧪 Once the target month has passed unreached it shows "Fecha superada · faltan X €"; reached goals show "Conseguido" and no monthly amount.
 - 🧪 Creating a second non-archived goal on the same account is refused; an archived goal doesn't block it. Moving a non-archived goal to, or unarchiving one on, an account that already has another non-archived goal is refused too.
+
+- 🧪 A monthly savings target set in October applies from October on; changing it in November leaves October judged against the old one, and 0 removes it from that month. Saving the same target again isn't a change to the data.
+- 🧪 A month's savings always equal Inicio's for that month, with a reimbursement and with a late salary counting in the next month; a transfer to a savings account never lowers them.
+- 🧪 The history leaves out months without a target and those before the first data, marks the current month "en curso", and the streak stops at the first month not met.
 
 ### 5.13 Backups and CSV
 - **Backup format**: one JSON file with 2-space indentation:

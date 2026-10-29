@@ -118,6 +118,18 @@ export interface BudgetLimit {
   amount: Cents;
 }
 
+/**
+ * How much to save each month, in force from a month onwards until the next one: a month's
+ * savings are its income minus its expenses, as Inicio counts them. Setting a target from a
+ * month replaces the one starting then and deletes the later ones.
+ */
+export interface SavingsTarget {
+  id: Id;
+  fromMonth: Month;
+  /** 0 means no target from that month. */
+  amount: Cents;
+}
+
 /** An amount to save in one account; its progress is the account's balance. */
 export interface Goal {
   id: Id;

@@ -54,11 +54,11 @@ test('with two budgets and a goal, Inicio shows both blocks and their links open
 
   await page.getByRole('link', { name: 'Más' }).click();
   await page.getByRole('link', { name: 'Objetivos' }).click();
-  await page.getByRole('button', { name: 'Nuevo objetivo' }).click();
+  await page.getByRole('button', { name: 'Nueva meta' }).click();
   await sheet(page).getByLabel('Nombre').fill('Colchón');
   await sheet(page).getByLabel('Objetivo').fill('2.000');
   await sheet(page).getByRole('button', { name: /^BBVA/ }).click();
-  await sheet(page).getByRole('button', { name: 'Crear objetivo' }).click();
+  await sheet(page).getByRole('button', { name: 'Crear meta' }).click();
   await expect(sheet(page)).toHaveCount(0);
 
   // Below Cuentas: the budgets by percentage used, Superado in red and Cerca in amber.
@@ -93,7 +93,7 @@ test('with two budgets and a goal, Inicio shows both blocks and their links open
   await expect(page).toHaveURL(/\/mas\/objetivos$/);
 
   // Once reached, it says Conseguido instead of the percentage.
-  await listItem(page, 'Objetivos', 'Colchón').getByRole('button').click();
+  await listItem(page, 'Metas de ahorro', 'Colchón').getByRole('button').click();
   await sheet(page).getByLabel('Objetivo').fill('500');
   await sheet(page).getByRole('button', { name: 'Guardar' }).click();
   await expect(sheet(page)).toHaveCount(0);
