@@ -1525,10 +1525,11 @@ export function createDexieRepository(options: DexieRepositoryOptions = {}): Dat
         db.goals,
         db.importBatches,
         db.reimbursements,
+        db.savingsTargets,
         db.settings,
       ];
       return db.transaction('r', tables, async () => {
-        const [accounts, categories, payees, transactions, rules, budgetLimits, goals, importBatches, reimbursements, settings] = await Promise.all([
+        const [accounts, categories, payees, transactions, rules, budgetLimits, goals, importBatches, reimbursements, savingsTargets, settings] = await Promise.all([
           db.accounts.toArray(),
           db.categories.toArray(),
           db.payees.toArray(),
@@ -1538,6 +1539,7 @@ export function createDexieRepository(options: DexieRepositoryOptions = {}): Dat
           db.goals.toArray(),
           db.importBatches.toArray(),
           db.reimbursements.toArray(),
+          db.savingsTargets.toArray(),
           db.settings.toArray(),
         ]);
         const data = {
@@ -1551,6 +1553,7 @@ export function createDexieRepository(options: DexieRepositoryOptions = {}): Dat
           importBatches,
           // A link that counts nowhere stays out, so the copy always reads back.
           reimbursements: liveLinks(reimbursements, new Map(transactions.map((tx) => [tx.id, tx]))),
+          savingsTargets,
           settings,
         };
         return createBackup(data, stamp(), appVersion);
@@ -1601,7 +1604,7 @@ export function createDexieRepository(options: DexieRepositoryOptions = {}): Dat
         await db.goals.bulkAdd(data.goals);
         await db.importBatches.bulkAdd(data.importBatches);
         await db.reimbursements.bulkAdd(data.reimbursements);
-        // Backups don't carry the monthly savings target yet: a restored copy has none.
+        await db.savingsTargets.bulkAdd(data.savingsTargets);
         await db.settings.bulkPut([
           ...device,
           ...data.settings.filter((row) => BACKUP_SETTINGS.includes(row.key)),

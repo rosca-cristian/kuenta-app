@@ -471,7 +471,7 @@ describe('reimbursements and backups', () => {
     const { ids } = await linkedData(source.repo);
     await linkAll(source.repo, ids);
     const backup = await source.repo.exportBackup();
-    expect(backup.format).toBe(2);
+    expect(backup.format).toBe(3);
     expect(backup.data.reimbursements).toHaveLength(6);
 
     const target = await setup();

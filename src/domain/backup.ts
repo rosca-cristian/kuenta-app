@@ -1,12 +1,12 @@
 import { z } from 'zod';
 import type { IsoDate } from './dates';
-import type { Account, BudgetLimit, Category, Goal, ImportBatch, Payee, Reimbursement, Rule, Setting, Transaction } from './model';
+import type { Account, BudgetLimit, Category, Goal, ImportBatch, Payee, Reimbursement, Rule, SavingsTarget, Setting, Transaction } from './model';
 
 /**
  * The backup format version, independent of the Dexie schema version. A change to the format
  * raises it and adds a migration from the previous one, so older copies keep restoring.
  */
-export const BACKUP_FORMAT = 2;
+export const BACKUP_FORMAT = 3;
 
 /**
  * The settings that describe the user's data, the only ones a backup carries. The others belong
@@ -27,6 +27,8 @@ export interface BackupData {
   importBatches: ImportBatch[];
   /** Since format 2; a format 1 file restores with none. */
   reimbursements: Reimbursement[];
+  /** Since format 3; a format 1 or 2 file restores with none. */
+  savingsTargets: SavingsTarget[];
   /** Only the data settings (`BACKUP_SETTINGS`). */
   settings: Setting[];
 }
@@ -89,6 +91,8 @@ export interface BackupCounts {
   goals: number;
   /** Incomes linked as reimbursements: with at least one link. */
   reimbursements: number;
+  /** Whether there's a monthly savings target: one above 0 from some month. */
+  savingsTarget: boolean;
 }
 
 /** A backup's date and counts, shown before restoring it. */
@@ -160,7 +164,7 @@ const FIELD_NAMES: Record<string, string> = {
   'actions.categoryId': 'categoría',
   'actions.transferAccountId': 'cuenta de la transferencia',
   'actions.payeeName': 'nombre del comercio',
-  // Budget limits and goals.
+  // Budget limits, monthly savings targets and goals.
   fromMonth: 'mes de inicio',
   target: 'importe objetivo',
   targetMonth: 'mes objetivo',
@@ -198,6 +202,9 @@ export type BackupError = { reason: 'not-kuenta' } | { reason: 'newer' } | { rea
 
 export type BackupReadResult = { ok: true; backup: BackupFile; summary: BackupSummary } | { ok: false; error: BackupError };
 
+/** A JSON object, not null nor an array. */
+const isObject = (value: unknown): value is Record<string, unknown> => typeof value === 'object' && value !== null && !Array.isArray(value);
+
 /**
  * The format migrations, in order: the one at index `i` turns a format `i + 1` file into a
  * format `i + 2` one. A `data` that isn't an object is left for the schema to refuse.
@@ -207,8 +214,10 @@ const MIGRATIONS: ((file: Record<string, unknown>) => Record<string, unknown>)[]
   (file) => ({
     ...file,
     format: 2,
-    data: typeof file.data === 'object' && file.data !== null && !Array.isArray(file.data) ? { ...file.data, reimbursements: [] } : file.data,
+    data: isObject(file.data) ? { ...file.data, reimbursements: [] } : file.data,
   }),
+  // 2 → 3: the monthly savings targets, which format 2 didn't have.
+  (file) => ({ ...file, format: 3, data: isObject(file.data) ? { ...file.data, savingsTargets: [] } : file.data }),
 ];
 
 const id = z.string().min(1);
@@ -310,6 +319,8 @@ const importBatchSchema = z.object({
 
 const reimbursementSchema = z.object({ id, incomeId: id, expenseId: id, amount: cents.positive() });
 
+const savingsTargetSchema = z.object({ id, fromMonth: month, amount: cents.nonnegative() });
+
 /** The data settings' values; any other setting (a device's, or one Kuenta doesn't know) is dropped on reading. */
 const settingSchema = z.discriminatedUnion('key', [
   z.object({ key: z.literal('importAccountId'), value: id }),
@@ -333,6 +344,7 @@ const backupSchema = z.object({
     goals: z.array(goalSchema),
     importBatches: z.array(importBatchSchema),
     reimbursements: z.array(reimbursementSchema),
+    savingsTargets: z.array(savingsTargetSchema),
     settings: z
       .array(z.object({ key: z.string(), value: z.unknown() }))
       .transform((settings) => settings.filter((setting) => BACKUP_SETTINGS.includes(setting.key)))
@@ -350,6 +362,7 @@ const TABLES: readonly BackupTable[] = [
   'goals',
   'importBatches',
   'reimbursements',
+  'savingsTargets',
   'settings',
 ];
 
@@ -384,8 +397,9 @@ function fileSettingRow(file: Record<string, unknown>, index: number): number {
 
 /**
  * The first broken promise between the backup's tables: unique ids per table, unique
- * `importHash` and payee `normalized`, unique setting keys, every reference to another
- * row present in the copy, and the reimbursements' invariants. Null when there's none.
+ * `importHash`, payee `normalized` and savings target `fromMonth` (one target per month), unique
+ * setting keys, every reference to another row present in the copy, and the reimbursements'
+ * invariants. Null when there's none.
  */
 function damageIn(data: BackupData): BackupDamage | null {
   const ids = Object.fromEntries(
@@ -402,6 +416,7 @@ function damageIn(data: BackupData): BackupDamage | null {
     return { kind: 'duplicate', table: 'transactions', field: 'importHash' };
   }
   if (!unique(data.payees.map((payee) => payee.normalized))) return { kind: 'duplicate', table: 'payees', field: 'normalized' };
+  if (!unique(data.savingsTargets.map((target) => target.fromMonth))) return { kind: 'duplicate', table: 'savingsTargets', field: 'fromMonth' };
 
   const references: [BackupTable, string, BackupTable, (string | null | undefined)[]][] = [
     ['transactions', 'accountId', 'accounts', data.transactions.map((tx) => tx.accountId)],
@@ -465,6 +480,7 @@ export function countsOf(data: BackupData): BackupCounts {
     budgets: new Set(data.budgetLimits.filter((limit) => limit.amount > 0).map((limit) => limit.categoryId)).size,
     goals: data.goals.length,
     reimbursements: new Set(data.reimbursements.map((link) => link.incomeId)).size,
+    savingsTarget: data.savingsTargets.some((target) => target.amount > 0),
   };
 }
 
