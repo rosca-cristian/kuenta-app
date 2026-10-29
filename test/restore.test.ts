@@ -30,6 +30,7 @@ async function tables(db: KuentaDb) {
     goals: byId(await db.goals.toArray()),
     importBatches: byId(await db.importBatches.toArray()),
     reimbursements: byId(await db.reimbursements.toArray()),
+    savingsTargets: byId(await db.savingsTargets.toArray()),
     settings: Object.fromEntries((await db.settings.toArray()).map((setting) => [setting.key, setting.value])),
   };
 }
@@ -66,11 +67,12 @@ describe('restoring a backup', () => {
     await target.repo.restoreBackup(read(target.repo, text));
 
     const [before, after] = [await tables(source.db), await tables(target.db)];
-    const all = ['accounts', 'categories', 'payees', 'transactions', 'rules', 'budgetLimits', 'goals', 'importBatches', 'reimbursements'] as const;
+    const all = ['accounts', 'categories', 'payees', 'transactions', 'rules', 'budgetLimits', 'goals', 'importBatches', 'reimbursements', 'savingsTargets'] as const;
     for (const table of all) {
       expect(after[table], table).toEqual(before[table]);
     }
     expect(after.reimbursements).toHaveLength(1);
+    expect(after.savingsTargets).toHaveLength(2);
     const { importAccountId, starterDataVersion, starterRulesOffer, onboardingDone } = before.settings;
     expect(starterRulesOffer).toBe('done');
     expect(after.settings).toEqual({
@@ -88,6 +90,7 @@ describe('restoring a backup', () => {
     expect(await target.repo.listCategories({ withArchived: true })).toEqual(await source.repo.listCategories({ withArchived: true }));
     expect(await target.repo.listTransactions(null)).toEqual(await source.repo.listTransactions(null));
     expect(await target.repo.spending('2026-10')).toEqual(await source.repo.spending('2026-10'));
+    expect(await target.repo.savings('2026-10')).toEqual(await source.repo.savings('2026-10'));
     expect(await target.repo.getSettings()).toEqual({ onboardingDone: true, importAccountId, persistRequested: false, privacyMode: false });
   });
 
@@ -114,6 +117,7 @@ describe('restoring a backup', () => {
     await importFile(target.repo, [{ valor: '15/09/2026', concepto: 'Otro banco', movimiento: 'Pago con tarjeta', importe: -7 }], 300);
     await target.repo.createAccount({ name: 'Hucha', type: 'savings', icon: 'piggy-bank', color: 'green' });
     await target.repo.createRule({ name: 'Otro', match: { value: 'otro' }, actions: { payeeName: 'Otro' } });
+    await target.repo.setSavingsTarget(50000, '2026-08');
     await target.repo.setPersistRequested();
     target.clock.now = new Date('2026-10-24T08:00:00');
     await target.repo.markBackupMade();
@@ -134,6 +138,8 @@ describe('restoring a backup', () => {
     expect(after.importBatches).toEqual(byId(backup.data.importBatches));
     expect(after.payees).toEqual(byId(backup.data.payees));
     expect(after.reimbursements).toEqual(byId(backup.data.reimbursements));
+    expect(after.savingsTargets).toEqual(byId(backup.data.savingsTargets));
+    expect(after.savingsTargets.some((target) => target.fromMonth === '2026-08')).toBe(false);
     expect(after.settings.persistRequested).toBe(true);
     expect(after.settings.lastBackupAt).toBe(backup.exportedAt);
     expect(after.settings.lastChangeAt).toBe(backup.exportedAt);
@@ -223,6 +229,7 @@ describe('reading a backup', () => {
       budgets: 1,
       goals: 3,
       reimbursements: 1,
+      savingsTarget: true,
     });
     expect(result.ok && { exportedAt: result.summary.exportedAt, ...(await source.repo.dataCounts()) }).toEqual(result.ok && result.summary);
   });
@@ -230,7 +237,7 @@ describe('reading a backup', () => {
   const refusals: [string, (text: string) => string, unknown][] = [
     ['text that is not JSON', () => 'Fecha;Tipo;Cuenta\n20/10/2026;Gasto;BBVA', { reason: 'not-kuenta' }],
     ['JSON from another app', (text) => edited(text, (file) => void (file.app = 'otra')), { reason: 'not-kuenta' }],
-    ['a newer format', (text) => edited(text, (file) => void (file.format = 3)), { reason: 'newer' }],
+    ['a newer format', (text) => edited(text, (file) => void (file.format = 4)), { reason: 'newer' }],
     [
       'a wrong type in a table',
       (text) => edited(text, (file) => void (file.data.transactions[1].amount = '12,50')),
@@ -317,6 +324,36 @@ describe('reading a backup', () => {
       (text) => edited(text, (file) => void file.data.reimbursements.push({ ...file.data.reimbursements[0], id: 'otro', amount: 1 })),
       { reason: 'damaged', damage: { kind: 'duplicate', table: 'reimbursements', field: 'incomeId+expenseId' } },
     ],
+    [
+      'a missing monthly savings target table',
+      (text) => edited(text, (file) => void delete file.data.savingsTargets),
+      { reason: 'damaged', damage: { kind: 'invalid', table: 'savingsTargets', row: null, field: null } },
+    ],
+    [
+      'a negative monthly savings target',
+      (text) => edited(text, (file) => void (file.data.savingsTargets[1].amount = -100)),
+      { reason: 'damaged', damage: { kind: 'invalid', table: 'savingsTargets', row: 1, field: 'amount' } },
+    ],
+    [
+      'a monthly savings target that is not whole cents',
+      (text) => edited(text, (file) => void (file.data.savingsTargets[0].amount = 300.5)),
+      { reason: 'damaged', damage: { kind: 'invalid', table: 'savingsTargets', row: 0, field: 'amount' } },
+    ],
+    [
+      'a monthly savings target from something that is not a month',
+      (text) => edited(text, (file) => void (file.data.savingsTargets[0].fromMonth = '2026-13')),
+      { reason: 'damaged', damage: { kind: 'invalid', table: 'savingsTargets', row: 0, field: 'fromMonth' } },
+    ],
+    [
+      'two monthly savings targets with the same id',
+      (text) => edited(text, (file) => void (file.data.savingsTargets[1].id = file.data.savingsTargets[0].id)),
+      { reason: 'damaged', damage: { kind: 'duplicate', table: 'savingsTargets', field: 'id' } },
+    ],
+    [
+      'two monthly savings targets from the same month',
+      (text) => edited(text, (file) => void (file.data.savingsTargets[1].fromMonth = file.data.savingsTargets[0].fromMonth)),
+      { reason: 'damaged', damage: { kind: 'duplicate', table: 'savingsTargets', field: 'fromMonth' } },
+    ],
   ];
 
   it.each(refusals)('refuses %s, leaving the data untouched', async (_, damage, error) => {
@@ -330,11 +367,12 @@ describe('reading a backup', () => {
     expect(await tables(target.db)).toEqual(before);
   });
 
-  it('restores a format 1 copy, made before reimbursements, with none', async () => {
+  it('restores a format 1 copy, made before reimbursements and monthly savings targets, with none', async () => {
     const { source, backup } = await richBackup();
-    // What Kuenta wrote before format 2: the same tables but reimbursements.
-    const { reimbursements, ...data } = backup.data;
+    // What Kuenta wrote before format 2: the same tables but reimbursements and monthly savings targets.
+    const { reimbursements, savingsTargets, ...data } = backup.data;
     expect(reimbursements).toHaveLength(1);
+    expect(savingsTargets).toHaveLength(2);
     const formatOne = JSON.stringify({ ...backup, format: 1, data }, null, 2);
 
     // A phone with links of its own: restoring the copy leaves none.
@@ -342,15 +380,38 @@ describe('reading a backup', () => {
     await richData(target.repo, target.db);
     expect(await target.db.reimbursements.count()).toBe(1);
     const result = target.repo.readBackup(formatOne);
-    expect(result.ok && result.backup).toEqual({ ...backup, format: 2, data: { ...backup.data, reimbursements: [] } });
-    expect(result.ok && result.summary.reimbursements).toBe(0);
+    expect(result.ok && result.backup).toEqual({ ...backup, format: 3, data: { ...backup.data, reimbursements: [], savingsTargets: [] } });
+    expect(result.ok && result.summary).toMatchObject({ reimbursements: 0, savingsTarget: false });
     await target.repo.restoreBackup(read(target.repo, formatOne));
     const after = await tables(target.db);
     expect(after.transactions).toEqual(byId(backup.data.transactions));
     expect(after.reimbursements).toEqual([]);
+    expect(after.savingsTargets).toEqual([]);
     const bakery = await transactionId(target.repo, 'Panaderia Pepe');
     expect((await target.repo.getTransaction(bakery))!.reimbursement).toBeNull();
     expect((await source.repo.getTransaction(bakery))!.reimbursement).toMatchObject({ paidBack: 150 });
+  });
+
+  it('restores a format 2 copy, made before monthly savings targets, with none', async () => {
+    const { source, backup } = await richBackup();
+    // What Kuenta wrote before format 3: the same tables but monthly savings targets.
+    const { savingsTargets, ...data } = backup.data;
+    expect(savingsTargets).toHaveLength(2);
+    const formatTwo = JSON.stringify({ ...backup, format: 2, data }, null, 2);
+
+    // A phone with a target of its own: restoring the copy leaves none.
+    const target = await setup();
+    await richData(target.repo, target.db);
+    expect(await target.db.savingsTargets.count()).toBe(2);
+    const result = target.repo.readBackup(formatTwo);
+    expect(result.ok && result.backup).toEqual({ ...backup, data: { ...backup.data, savingsTargets: [] } });
+    expect(result.ok && result.summary).toMatchObject({ reimbursements: 1, savingsTarget: false });
+    await target.repo.restoreBackup(read(target.repo, formatTwo));
+    const after = await tables(target.db);
+    expect(after.reimbursements).toEqual(byId(backup.data.reimbursements));
+    expect(after.savingsTargets).toEqual([]);
+    expect(await target.repo.savings('2026-10')).toEqual({ target: null });
+    expect(await source.repo.savings('2026-10')).toMatchObject({ target: 20000 });
   });
 
   it("counts a setting's row among all the file's settings, the ones it doesn't restore included", async () => {

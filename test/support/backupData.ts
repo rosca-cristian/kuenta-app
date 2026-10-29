@@ -19,7 +19,7 @@ export async function transactionId(repo: DataRepository, concept: string) {
 /**
  * Data touching every table: an import with categorizations, a note and a renamed payee; a
  * Bizum paying back part of the bakery; a rule applied to it; a transfer to a non-imported account and a balance adjustment there; a
- * budget with two limits; a goal, an archived one and one without target month on an archived
+ * budget with two limits; a monthly savings target changed from a month on; a goal, an archived one and one without target month on an archived
  * account; a transfer rule and a rule disabled by deleting its category; an archived category
  * and the starter-rules offer closed; and a second import, undone. The repository can't archive
  * a category nor close an offer no update made, so those two go straight into `db`.
@@ -53,6 +53,8 @@ export async function richData(repo: DataRepository, db: KuentaDb) {
   await repo.updateAccountBalance(revolutId, 18000);
   await repo.setBudgetLimit(groceries, 30000, '2026-09');
   await repo.setBudgetLimit(groceries, 25000, '2026-10');
+  await repo.setSavingsTarget(30000, '2026-09');
+  await repo.setSavingsTarget(20000);
   const { id: carId } = (await repo.createGoal({ name: 'Coche', target: 500000, targetMonth: '2026-09', accountId: revolutId, icon: 'car', color: 'cyan' })) as {
     id: string;
   };

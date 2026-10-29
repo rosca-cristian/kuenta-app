@@ -192,7 +192,7 @@ interface SavingsTarget {    // the monthly savings target in force from a month
   fromMonth: string;         // 'YYYY-MM'
   amount: Cents;             // 0 = no target from that month
 }
-// Setting a target from month M replaces the one starting at M and deletes the later ones. Not in backups yet.
+// Setting a target from month M replaces the one starting at M and deletes the later ones. In backups since format 3.
 
 interface Goal {
   id: Id;
@@ -375,7 +375,7 @@ Cuentas · Categorías · Comercios · Reglas · Presupuestos · Objetivos · Co
 ### 4.11 Copias de seguridad
 At `#/mas/copias`, listed in Más.
 - "Exportar copia" downloads the JSON backup (§5.13) and "Compartir copia" opens the system menu with it (Drive, email, Telegram…), or downloads it when the browser can't share files. Either counts as a backup once the file is downloaded or shared; closing the share menu doesn't. If making or handing over the file fails, the screen says so ("No se ha podido exportar la copia." / "No se ha podido compartir la copia.") and "Última copia" doesn't change.
-- "Restaurar copia": pick the JSON and a sheet opens with its summary ("Copia del 12/10/2026: 3 cuentas, 845 movimientos, 21 categorías…": accounts, transactions, categories, payees, rules, budgets, goals and reimbursements, counted as the incomes linked) and the current data's counts, which will be replaced. "Exportar mis datos actuales antes" downloads a backup of the current data first (it counts as a backup); the destructive "Sustituir todos mis datos" replaces everything in one transaction and lands on Inicio with "Copia restaurada", shown once: it's gone after tapping it, leaving Inicio or reloading the app. A file that can't be restored shows why inline in the sheet and changes nothing (§5.13); one the browser can't read at all shows "No se ha podido leer el archivo.", and a failed "Exportar mis datos actuales antes" shows "No se han podido exportar tus datos actuales.". The first-run screen offers the same restore as "Restaurar una copia" (§4.1).
+- "Restaurar copia": pick the JSON and a sheet opens with its summary ("Copia del 12/10/2026: 3 cuentas, 845 movimientos, 21 categorías…": accounts, transactions, categories, payees, rules, budgets, goals ("metas de ahorro") and reimbursements, counted as the incomes linked, then "ahorro mensual: sí" or "no", whether there's a monthly savings target above 0 from some month) and the current data's counts, which will be replaced. "Exportar mis datos actuales antes" downloads a backup of the current data first (it counts as a backup); the destructive "Sustituir todos mis datos" replaces everything in one transaction and lands on Inicio with "Copia restaurada", shown once: it's gone after tapping it, leaving Inicio or reloading the app. A file that can't be restored shows why inline in the sheet and changes nothing (§5.13); one the browser can't read at all shows "No se ha podido leer el archivo.", and a failed "Exportar mis datos actuales antes" shows "No se han podido exportar tus datos actuales.". The first-run screen offers the same restore as "Restaurar una copia" (§4.1).
 - "Exportar movimientos (CSV)": native "Desde" and "Hasta" date inputs, defaulting to the whole history (the first transaction's date to today, or to the newest transaction's date when it's later, as a value date can be), and the number of transactions dated in that range, both days included. The button downloads them in Movimientos' CSV format (§5.13) as `kuenta-movimientos-AAAA-MM-DD.csv`. It's disabled, with a message saying why, when the range has no transactions ("No hay movimientos entre esas fechas.") or "Desde" is after "Hasta". A CSV can't be restored, so it doesn't count as a backup: "Última copia" doesn't change.
 - "Última copia: 12/10/2026", or "Nunca", the date of the last backup made on this phone.
 
@@ -516,13 +516,14 @@ All checked at a 390×844 viewport. Items marked 🧪 have a unit test.
   ```ts
   interface BackupFile {
     app: 'kuenta';
-    format: 2;               // backup format version, independent of the Dexie schema version
+    format: 3;               // backup format version, independent of the Dexie schema version
     exportedAt: string;      // ISO 8601, from the app's clock
     appVersion: string;
     data: {
       accounts: Account[]; categories: Category[]; payees: Payee[]; transactions: Transaction[];
       rules: Rule[]; budgetLimits: BudgetLimit[]; goals: Goal[]; importBatches: ImportBatch[];
       reimbursements: Reimbursement[];   // since format 2
+      savingsTargets: SavingsTarget[];   // since format 3
       settings: Setting[];
     };
   }
@@ -532,9 +533,9 @@ All checked at a 390×844 viewport. Items marked 🧪 have a unit test.
 - 🧪 Restore validates the whole file before writing anything. If anything fails, current data is untouched and the sheet explains the problem:
   - not JSON, or `app` missing or not `"kuenta"` → "El archivo no es una copia de Kuenta.";
   - `format` higher than the app knows → "Esta copia es de una versión más nueva de Kuenta. Actualiza la app para restaurarla.";
-  - `format` lower → the format migrations run in order (`format n → n+1`) before validating. Format 1 → 2 adds `reimbursements: []`: copies from before reimbursements restore with none;
+  - `format` lower → the format migrations run in order (`format n → n+1`) before validating. Format 1 → 2 adds `reimbursements: []`: copies from before reimbursements restore with none. Format 2 → 3 adds `savingsTargets: []`: copies from before the monthly savings target restore with none (a format 1 copy goes through both);
   - a category's `nextMonthFromDay` (§3) may be absent, as in copies made before it, and then reads as null (off); present, it's null or a day from 1 to 31. It needed no new format: older apps drop the field they don't know;
-  - each table against its schema (integer cents, `YYYY-MM-DD` dates, `YYYY-MM` months, enums, required fields), references (transaction account, destination, category, payee and import; rule category and transfer account; budget limit category; goal account; an import's account; the `importAccountId` setting, which must be present; a reimbursement's income and expense), uniqueness (ids per table, `importHash`, payee `normalized`, setting keys, a reimbursement's income and expense pair) and the reimbursements' invariants (§3: an imported income, an imported expense, parts above 0 and adding up to at most the income's amount and, across incomes, the expense's) → "La copia está dañada: …" naming the table, the row (counted among the file's rows, settings Kuenta doesn't restore included) and the field in Spanish ("hay datos no válidos en movimientos (fila 2, campo «importe»)", "hay datos no válidos en reembolsos (fila 1, campo «gasto»)"), or the reference.
+  - each table against its schema (integer cents, `YYYY-MM-DD` dates, `YYYY-MM` months, enums, required fields), references (transaction account, destination, category, payee and import; rule category and transfer account; budget limit category; goal account; an import's account; the `importAccountId` setting, which must be present; a reimbursement's income and expense), uniqueness (ids per table, `importHash`, payee `normalized`, setting keys, a reimbursement's income and expense pair, a monthly savings target's `fromMonth`) and the reimbursements' invariants (§3: an imported income, an imported expense, parts above 0 and adding up to at most the income's amount and, across incomes, the expense's) → "La copia está dañada: …" naming the table, the row (counted among the file's rows, settings Kuenta doesn't restore included) and the field in Spanish ("hay datos no válidos en movimientos (fila 2, campo «importe»)", "hay datos no válidos en reembolsos (fila 1, campo «gasto»)", "hay datos no válidos en ahorro mensual (fila 1, campo «importe»)"), or the reference.
 - 🧪 A backup from an older format version is migrated on restore; one from a newer version is rejected with a message.
 - 🧪 Restore replaces all data in one transaction: every table is cleared and gets the backup's rows. Settings the backup carries other than the data settings are ignored; this device's own settings (any that isn't a data setting, such as `persistRequested`) stay, `onboardingDone` is always true afterwards, and `lastBackupAt` and `lastChangeAt` become the backup's `exportedAt`, so the reminder stays quiet until the next change. Every screen refreshes.
 - 🧪 **CSV**: UTF-8 with BOM, `;` separator, CRLF line endings and columns `Fecha;Tipo;Cuenta;Cuenta destino;Categoría;Comercio;Nota;Importe;Reembolsado;Concepto banco`. Opens correctly in Spanish Excel with a double click.

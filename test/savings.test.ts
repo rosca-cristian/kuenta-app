@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { createDexieRepository } from '../src/data/dexie/dexieRepository';
 import { KuentaDb } from '../src/data/dexie/db';
 import type { DataRepository, SavingsView } from '../src/data/repository';
+import { backupJson } from '../src/domain/backup';
 import type { SampleMovement } from './support/bbvaXlsx';
 import { importFile } from './support/backupData';
 
@@ -216,17 +217,23 @@ describe('the history and the streak', () => {
   });
 });
 
-describe('restoring a backup', () => {
-  it('leaves no monthly savings target, which backups do not carry yet', async () => {
+describe('a backup', () => {
+  it('carries the monthly savings targets, and a restore brings them back, each month judged as before', async () => {
     const { repo } = await setup();
     await monthsOfData(repo);
-    await repo.setSavingsTarget(30000);
+    await repo.setSavingsTarget(30000, '2026-09');
+    await repo.setSavingsTarget(150000);
+    const before = await withTarget(repo, '2026-11');
     const backup = await repo.exportBackup();
-    expect(Object.keys(backup.data)).not.toContain('savingsTargets');
+    expect(backup.data.savingsTargets.map((target) => [target.fromMonth, target.amount]).sort()).toEqual([['2026-09', 30000], ['2026-11', 150000]]);
 
-    await repo.restoreBackup(backup);
-    expect(await repo.savings('2026-11')).toEqual({ target: null });
-    await repo.setSavingsTarget(30000);
-    expect(await targetIn(repo, '2026-11')).toBe(30000);
+    const target = await setup();
+    await target.repo.setSavingsTarget(10000);
+    const read = target.repo.readBackup(backupJson(backup));
+    if (!read.ok) throw new Error('Refused');
+    expect(read.summary.savingsTarget).toBe(true);
+    await target.repo.restoreBackup(read.backup);
+    expect(await withTarget(target.repo, '2026-11')).toEqual(before);
+    expect(await targetIn(target.repo, '2026-10')).toBe(30000);
   });
 });

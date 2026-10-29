@@ -22,7 +22,7 @@ describe('exporting a backup', () => {
     await richData(repo, db);
 
     const backup = await repo.exportBackup();
-    expect(backup).toMatchObject({ app: 'kuenta', format: 2, exportedAt: new Date('2026-10-20T10:00:00').toISOString(), appVersion: '1.2.3' });
+    expect(backup).toMatchObject({ app: 'kuenta', format: 3, exportedAt: new Date('2026-10-20T10:00:00').toISOString(), appVersion: '1.2.3' });
     expect(backup.data.accounts).toEqual(await db.accounts.toArray());
     expect(backup.data.categories).toEqual(await db.categories.toArray());
     expect(backup.data.payees).toEqual(await db.payees.toArray());
@@ -32,6 +32,7 @@ describe('exporting a backup', () => {
     expect(backup.data.goals).toEqual(await db.goals.toArray());
     expect(backup.data.importBatches).toEqual(await db.importBatches.toArray());
     expect(backup.data.reimbursements).toEqual(await db.reimbursements.toArray());
+    expect(backup.data.savingsTargets).toEqual(await db.savingsTargets.toArray());
 
     // What the data holds, to be sure the rich data really reached every table.
     expect(backup.data.accounts.map((a) => `${a.name}:${a.archived}`).sort()).toEqual(['BBVA:false', 'Hucha:true', 'Revolut:false']);
@@ -60,6 +61,7 @@ describe('exporting a backup', () => {
     expect(backup.data.importBatches.map((batch) => batch.undone).sort()).toEqual([false, true]);
     const bakery = backup.data.transactions.find((tx) => tx.bankConcept === 'Panaderia Pepe')!.id;
     expect(backup.data.reimbursements).toEqual([{ id: expect.any(String), incomeId: expect.any(String), expenseId: bakery, amount: 150 }]);
+    expect(backup.data.savingsTargets.map((target) => [target.fromMonth, target.amount]).sort()).toEqual([['2026-09', 30000], ['2026-10', 20000]]);
   });
 
   it("keeps the data settings and leaves out the device's", async () => {
@@ -103,7 +105,7 @@ describe('exporting a backup', () => {
     const backup = await repo.exportBackup();
 
     const json = backupJson(backup);
-    expect(json.startsWith('{\n  "app": "kuenta",\n  "format": 2,\n')).toBe(true);
+    expect(json.startsWith('{\n  "app": "kuenta",\n  "format": 3,\n')).toBe(true);
     expect(JSON.parse(json)).toEqual(backup);
   });
 });

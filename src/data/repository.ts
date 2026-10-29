@@ -711,7 +711,7 @@ export interface DataRepository {
   dataCounts(): Promise<BackupCounts>;
   /**
    * Replaces all the data with the backup's in one transaction: every table is cleared and
-   * gets the backup's rows; backups don't carry the monthly savings target yet, so none is left.
+   * gets the backup's rows (a copy from before the monthly savings target leaves none).
    * This device's own settings (those that aren't data settings, such as `persistRequested`)
    * stay, onboarding counts as done, and `lastBackupAt` and `lastChangeAt` become the backup's
    * `exportedAt`, since the data now equals a copy the user has. Every screen refreshes.

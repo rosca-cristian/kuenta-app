@@ -54,6 +54,7 @@ test('restore a backup over changed data and get the original data back', async 
   await page.getByTestId('backup-input').setInputFiles(backupPath);
   const sheet = page.getByRole('dialog', { name: 'Restaurar copia' });
   await expect(sheet.getByTestId('backup-summary')).toHaveText(/^Copia del 20\/10\/2026: 1 cuenta, 2 movimientos, \d+ categorías/);
+  await expect(sheet.getByTestId('backup-summary')).toContainText('0 metas de ahorro, 0 reembolsos, ahorro mensual: no.');
   await expect(sheet.getByTestId('current-data')).toContainText('1 cuenta, 0 movimientos');
   await expectNoHorizontalScroll(page);
 
