@@ -69,6 +69,10 @@ _Avoid_: Savings target, pot, hucha
 A monthly spending limit for one expense category. A limit applies from a month onwards, and setting a new one replaces it from that month on without rewriting earlier months. Spending is measured as the category's expenses minus its income in the month; transfers and uncategorized transactions never count. Shown in the Spanish UI as "Presupuesto".
 _Avoid_: Spending goal, cap
 
+**Counting month**:
+The month a transaction counts in for income and spending. It's the month of its value date, except for an imported income in an income category the user set to count late incomes in the next month ("A partir del día 25"): arriving on that day or later, it counts in the next month, as the salary paid at the end of the month for the month after. Balances and Movimientos keep the value date.
+_Avoid_: Accounting month, payroll month, shifted date
+
 **Reimbursement**:
 A part of an imported income linked to an imported expense it pays back. The part counts as making the expense smaller, in the expense's month, and isn't income. Balances don't change. Shown in the Spanish UI as "Reembolso".
 _Avoid_: refund (a merchant's refund is ordinary income in the expense's category), split

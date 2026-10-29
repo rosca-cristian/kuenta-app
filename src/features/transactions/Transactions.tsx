@@ -6,7 +6,7 @@ import { IconBadge, TransferBadge } from '../../ui/icons';
 import { useRepoQuery } from '../../lib/repo';
 import { Money } from '../../lib/money';
 import { PrivacyButton } from '../../ui/PrivacyButton';
-import { formatDayHeader, monthOf, today, type Month } from '../../domain/dates';
+import { formatDayHeader, formatMonth, monthOf, today, type Month } from '../../domain/dates';
 import { listNet } from '../../domain/stats';
 import type { TransactionFilter, TransactionView } from '../../data/repository';
 import { EditTransactionSheet } from './EditTransactionSheet';
@@ -37,24 +37,37 @@ function subtitle(tx: TransactionView): string {
   return `${tx.source === 'adjustment' ? 'Ajuste de saldo' : tx.category?.name ?? 'Sin categoría'} · ${tx.account.name}`;
 }
 
+/** The month a late salary counts in, as its row says it: "noviembre", or "enero 2027" in another year than its date's. */
+function countingMonthName(tx: TransactionView, month: Month): string {
+  const name = formatMonth(month);
+  return month.slice(0, 4) === tx.date.slice(0, 4) ? name.split(' ')[0] : name;
+}
+
 /**
  * A row's amount, always the bank's: under it, "Reembolso" on an income that pays back expenses
- * and "Tu parte" on an expense paid back, what it really cost.
+ * and "Tu parte" on an expense paid back, what it really cost, and "Cuenta en noviembre" on an
+ * income that counts in another month than its date's.
  */
 function RowAmount({ tx }: { tx: TransactionView }) {
   if (tx.type === 'transfer') return <Amount cents={tx.amount} kind="neutral" className="text-muted" />;
   const amount = <Amount cents={tx.amount} kind={tx.type} />;
-  if (!tx.reimbursement) return amount;
+  if (!tx.reimbursement && !tx.countingMonth) return amount;
   return (
     <span className="flex shrink-0 flex-col items-end">
       {amount}
-      {tx.type === 'income' ? (
-        <span className="rounded-full bg-card-2 px-1.5 text-xs text-muted" data-testid="reimbursement-mark">
-          Reembolso
-        </span>
-      ) : (
-        <span className="whitespace-nowrap text-xs text-muted" data-testid="row-your-share">
-          Tu parte <Money cents={tx.amount - tx.reimbursement.paidBack} className="tabular-nums" />
+      {tx.reimbursement &&
+        (tx.type === 'income' ? (
+          <span className="rounded-full bg-card-2 px-1.5 text-xs text-muted" data-testid="reimbursement-mark">
+            Reembolso
+          </span>
+        ) : (
+          <span className="whitespace-nowrap text-xs text-muted" data-testid="row-your-share">
+            Tu parte <Money cents={tx.amount - tx.reimbursement.paidBack} className="tabular-nums" />
+          </span>
+        ))}
+      {tx.countingMonth && (
+        <span className="whitespace-nowrap text-xs text-muted" data-testid="row-counting-month">
+          Cuenta en {countingMonthName(tx, tx.countingMonth)}
         </span>
       )}
     </span>

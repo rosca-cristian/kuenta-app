@@ -7,6 +7,7 @@ import { ColorPicker, IconPicker } from '../../ui/pickers';
 import { useRepo, useRepoQuery } from '../../lib/repo';
 import type { Category, CategoryKind, Id } from '../../domain/model';
 import type { CategoryDraft, CategorySaveResult } from '../../data/repository';
+import { isNextMonthDay } from '../../domain/countingMonth';
 
 const KINDS: { kind: CategoryKind; label: string; title: string }[] = [
   { kind: 'expense', label: 'Gasto', title: 'Gastos' },
@@ -14,6 +15,9 @@ const KINDS: { kind: CategoryKind; label: string; title: string }[] = [
 ];
 
 const countText = (n: number, one: string, many: string) => (n === 1 ? `1 ${one}` : `${n} ${many}`);
+
+/** The day "A partir del día" proposes when the setting is turned on: the last week of the month, when salaries tend to arrive. */
+const DEFAULT_NEXT_MONTH_DAY = 25;
 
 /** The sheet shows either the editor of a category (a new one when `category` is null) or the confirmation to delete it. */
 type Editing = { mode: 'edit'; category: Category | null } | { mode: 'delete'; category: Category };
@@ -123,6 +127,10 @@ function CategoryForm({
     () => category ?? { name: '', kind: 'expense', icon: ICON_NAMES[0], color: 'blue' },
   );
   const [error, setError] = useState<string | null>(null);
+  // Income categories: whether a late income counts in the next month, and from which day, as typed.
+  const [late, setLate] = useState(category?.nextMonthFromDay != null);
+  const [day, setDay] = useState(String(category?.nextMonthFromDay ?? DEFAULT_NEXT_MONTH_DAY));
+  const [dayError, setDayError] = useState<string | null>(null);
   const change = (changes: Partial<CategoryDraft>) => {
     setDraft({ ...draft, ...changes });
     setError(null);
@@ -130,7 +138,13 @@ function CategoryForm({
 
   async function save(event: FormEvent) {
     event.preventDefault();
-    const fields = { name: draft.name, kind: draft.kind, icon: draft.icon, color: draft.color };
+    const counted = draft.kind === 'income' && late;
+    if (counted && !isNextMonthDay(Number(day))) {
+      setDayError('Escribe un día del 1 al 31.');
+      return;
+    }
+    // Only an income category counts late incomes in the next month; an expense one is saved with it off.
+    const fields = { name: draft.name, kind: draft.kind, icon: draft.icon, color: draft.color, nextMonthFromDay: counted ? Number(day) : null };
     const result: CategorySaveResult = category ? await repo.updateCategory(category.id, fields) : await repo.createCategory(fields);
     if (result.ok) onDone();
     else if (result.reason === 'empty') setError('Escribe un nombre.');
@@ -172,6 +186,50 @@ function CategoryForm({
           ))}
         </div>
       </fieldset>
+
+      {draft.kind === 'income' && (
+        <div className="flex flex-col gap-2">
+          <button
+            type="button"
+            role="switch"
+            aria-checked={late}
+            onClick={() => {
+              setLate(!late);
+              setDayError(null);
+            }}
+            className="flex min-h-11 items-center gap-3 text-left text-sm"
+          >
+            <span className={`flex h-6 w-10 shrink-0 items-center rounded-full p-0.5 transition-colors ${late ? 'bg-accent' : 'bg-line'}`}>
+              <span className={`size-5 rounded-full bg-white transition-transform ${late ? 'translate-x-4' : ''}`} />
+            </span>
+            Contar en el mes siguiente si llega tarde
+          </button>
+          {late && (
+            <label className="flex flex-col gap-1 text-sm text-muted">
+              A partir del día
+              <input
+                inputMode="numeric"
+                value={day}
+                aria-invalid={dayError !== null}
+                onChange={(event) => {
+                  setDay(event.target.value.trim());
+                  setDayError(null);
+                }}
+                className="min-h-11 w-24 rounded-xl border border-line bg-card-2 px-3 text-base tabular-nums text-text outline-none focus:border-accent"
+              />
+            </label>
+          )}
+          {dayError && (
+            <p role="alert" className="text-sm text-danger">
+              {dayError}
+            </p>
+          )}
+          <span className="text-xs text-muted">
+            Una nómina que llega a partir de ese día cuenta como ingreso del mes siguiente en Inicio, Análisis y Presupuestos. Movimientos y los saldos
+            siguen con la fecha del banco.
+          </span>
+        </div>
+      )}
 
       <IconPicker value={draft.icon} color={draft.color} onChange={(icon) => change({ icon })} />
       <ColorPicker value={draft.color} onChange={(color) => change({ color })} />

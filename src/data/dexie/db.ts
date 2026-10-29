@@ -30,5 +30,11 @@ export class KuentaDb extends Dexie {
     this.version(3).stores({ budgetLimits: 'id, [categoryId+fromMonth]', goals: 'id, accountId' });
     // Reimbursements: existing installs start with none, and no transaction changes.
     this.version(4).stores({ reimbursements: 'id, incomeId, expenseId' });
+    // A late income counting in the next month: off for every existing category. No index, so no table changes.
+    this.version(5).stores({}).upgrade(async (tx) => {
+      await tx.table<Category>('categories').toCollection().modify((category) => {
+        category.nextMonthFromDay ??= null;
+      });
+    });
   }
 }

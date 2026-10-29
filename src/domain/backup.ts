@@ -135,6 +135,8 @@ const FIELD_NAMES: Record<string, string> = {
   // Accounts and payees.
   openingBalance: 'saldo inicial',
   normalized: 'nombre normalizado',
+  // Categories.
+  nextMonthFromDay: 'día desde el que cuenta para el mes siguiente',
   // Transactions.
   toAccountId: 'cuenta destino',
   payeeId: 'comercio',
@@ -236,6 +238,8 @@ const categorySchema = z.object({
   color: z.string(),
   order: z.number(),
   archived: z.boolean(),
+  // Since a late income could count in the next month; copies made before it have none, which is off.
+  nextMonthFromDay: z.number().int().min(1).max(31).nullable().default(null),
 });
 
 const payeeSchema = z.object({ id, name: z.string(), normalized: z.string() });

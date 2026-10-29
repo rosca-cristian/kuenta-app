@@ -29,6 +29,12 @@ export interface Category {
   color: string;
   order: number;
   archived: boolean;
+  /**
+   * Income categories only: an imported income in it that arrives on this day of the month or
+   * later (1–31; past the month's last day, on its last day) counts in the next month, its
+   * counting month (`countingMonthOf`). Null counts every income in its own month.
+   */
+  nextMonthFromDay: number | null;
 }
 
 export interface Payee {

@@ -9,6 +9,7 @@ import { subscriptions, subscriptionTotals } from '../../domain/subscriptions';
 import { budgetMonth, limitFor } from '../../domain/budgets';
 import { goalProgress } from '../../domain/goals';
 import { leftToPayBack, netOfReimbursements } from '../../domain/reimbursements';
+import { countingMonthOf, inCountingMonths, isNextMonthDay } from '../../domain/countingMonth';
 import { netWorthSeries } from '../../domain/balances';
 import { addDays, addMonths, daysBetween, isMonth, monthOf, today, type Month } from '../../domain/dates';
 import { normalizeText } from '../../domain/text';
@@ -251,7 +252,7 @@ export function createDexieRepository(options: DexieRepositoryOptions = {}): Dat
     for (const starter of STARTER_CATEGORIES) {
       if (categoryIds.has(normalizeText(starter.name))) continue;
       const id = crypto.randomUUID();
-      await db.categories.add({ ...starter, id, order: ++categoryOrder, archived: false });
+      await db.categories.add({ ...starter, id, order: ++categoryOrder, archived: false, nextMonthFromDay: null });
       categoryIds.set(normalizeText(starter.name), id);
     }
 
@@ -404,6 +405,10 @@ export function createDexieRepository(options: DexieRepositoryOptions = {}): Dat
     if (!Number.isSafeInteger(cents)) throw new Error(`${what} must be whole cents, not ${cents}`);
   }
 
+  function checkNextMonthDay(day: number | null) {
+    if (day !== null && !isNextMonthDay(day)) throw new Error(`Not a day from 1 to 31: ${day}`);
+  }
+
   function checkMonth(month: Month) {
     if (!isMonth(month)) throw new Error(`Not a month: ${month}`);
   }
@@ -518,18 +523,36 @@ export function createDexieRepository(options: DexieRepositoryOptions = {}): Dat
     const accountMap = byId(accounts);
     const categoryMap = byId(categories);
     const payeeMap = byId(payees);
-    return txs.map((tx) => ({
-      ...tx,
-      account: accountMap.get(tx.accountId)!,
-      toAccount: tx.toAccountId ? accountMap.get(tx.toAccountId) ?? null : null,
-      category: tx.categoryId ? categoryMap.get(tx.categoryId) ?? null : null,
-      payee: tx.payeeId ? payeeMap.get(tx.payeeId) ?? null : null,
-      reimbursement: reimbursementOf(tx, links, linked),
-    }));
+    return txs.map((tx) => {
+      const countingMonth = countingMonthOf(tx, categoryMap);
+      return {
+        ...tx,
+        account: accountMap.get(tx.accountId)!,
+        toAccount: tx.toAccountId ? accountMap.get(tx.toAccountId) ?? null : null,
+        category: tx.categoryId ? categoryMap.get(tx.categoryId) ?? null : null,
+        payee: tx.payeeId ? payeeMap.get(tx.payeeId) ?? null : null,
+        reimbursement: reimbursementOf(tx, links, linked),
+        countingMonth: countingMonth === monthOf(tx.date) ? null : countingMonth,
+      };
+    });
   }
 
   /** A month's transactions, by their date. */
   const transactionsIn = (month: Month) => db.transactions.where('date').between(`${month}-01`, `${addMonths(month, 1)}-01`).toArray();
+
+  /**
+   * The transactions that count for income and spending in the months `from` to `to`: netted of
+   * reimbursements and in their counting month (`inCountingMonths`). The month before `from` is
+   * read too, for a late salary that counts in `from`; one of `to` that counts after it is left out.
+   */
+  async function countedIn(from: Month, to: Month = from): Promise<Transaction[]> {
+    const [txs, categories] = await Promise.all([
+      db.transactions.where('date').between(`${addMonths(from, -1)}-01`, `${addMonths(to, 1)}-01`).toArray(),
+      db.categories.toArray(),
+    ]);
+    const counted = inCountingMonths(await netted(txs), new Map(categories.map((category) => [category.id, category])));
+    return counted.filter((tx) => monthOf(tx.date) >= from && monthOf(tx.date) <= to);
+  }
 
   /** A category's budget limits, of every month. */
   const limitsOf = (categoryId: Id) => db.budgetLimits.where('[categoryId+fromMonth]').between([categoryId, ''], [categoryId, '￿']);
@@ -716,11 +739,13 @@ export function createDexieRepository(options: DexieRepositoryOptions = {}): Dat
     async createCategory(draft: CategoryDraft): Promise<CategorySaveResult> {
       const id = crypto.randomUUID();
       const name = tidyName(draft.name);
+      const nextMonthFromDay = draft.nextMonthFromDay ?? null;
+      checkNextMonthDay(nextMonthFromDay);
       const result = await db.transaction('rw', db.categories, async (): Promise<CategorySaveResult> => {
         const refused = await refuseCategoryName(name, id);
         if (refused) return refused;
         const last = await db.categories.orderBy('order').last();
-        await db.categories.add({ ...draft, name, id, order: last ? last.order + 1 : 0, archived: false });
+        await db.categories.add({ ...draft, name, id, order: last ? last.order + 1 : 0, archived: false, nextMonthFromDay });
         return { ok: true, id };
       });
       if (result.ok) await dataChanged();
@@ -729,6 +754,8 @@ export function createDexieRepository(options: DexieRepositoryOptions = {}): Dat
 
     async updateCategory(id, changes: CategoryChanges): Promise<CategorySaveResult> {
       const update = changes.name === undefined ? { ...changes } : { ...changes, name: tidyName(changes.name) };
+      if (update.nextMonthFromDay === undefined) delete update.nextMonthFromDay;
+      else checkNextMonthDay(update.nextMonthFromDay);
       let edited = false;
       const result = await db.transaction('rw', db.categories, async (): Promise<CategorySaveResult> => {
         const category = await db.categories.get(id);
@@ -1211,8 +1238,9 @@ export function createDexieRepository(options: DexieRepositoryOptions = {}): Dat
     async home(month): Promise<HomeData> {
       const allAccounts = await repository.listAccounts();
       const accountId = await importAccountId();
-      const [monthTxs, lastImport, chain, currentBudgets, goals, forecastTxs, backup] = await Promise.all([
+      const [monthTxs, counted, lastImport, chain, currentBudgets, goals, forecastTxs, backup] = await Promise.all([
         transactionsIn(month),
+        countedIn(month),
         db.importBatches.orderBy('importedAt').reverse().filter((batch) => !batch.undone).first(),
         chainOf(accountId),
         // Budgets can only be acted on in the current month, whichever month Inicio shows.
@@ -1225,8 +1253,9 @@ export function createDexieRepository(options: DexieRepositoryOptions = {}): Dat
       return {
         // Archived accounts still hold money: they count in the total, but aren't listed.
         totalBalance: allAccounts.reduce((sum, account) => sum + account.balance, 0),
-        // Reimbursements make expenses smaller and aren't income; balances, goals and the forecast take the bank's amounts.
-        summary: monthSummary(await netted(monthTxs), month),
+        // Reimbursements make expenses smaller and aren't income, and a late salary counts in the next month;
+        // balances, goals and the forecast take the bank's amounts and dates.
+        summary: monthSummary(counted, month),
         accounts: allAccounts.filter((account) => !account.archived),
         daysSinceLastImport: lastImport ? daysBetween(today(new Date(lastImport.importedAt)), today(now())) : null,
         // Of the month shown, like the Movimientos list its alert opens.
@@ -1242,9 +1271,9 @@ export function createDexieRepository(options: DexieRepositoryOptions = {}): Dat
 
     async spending(month): Promise<SpendingView> {
       return db.transaction('r', db.categories, db.transactions, db.reimbursements, async () => {
-        const [categories, txs] = await Promise.all([db.categories.orderBy('order').toArray(), transactionsIn(month)]);
+        const [categories, txs] = await Promise.all([db.categories.orderBy('order').toArray(), countedIn(month)]);
         const byId = new Map(categories.map((category) => [category.id, category]));
-        const { entries, total } = monthSpending(await netted(txs), month, categories.map((category) => category.id));
+        const { entries, total } = monthSpending(txs, month, categories.map((category) => category.id));
         return {
           entries: entries.map(({ categoryId, ...entry }) => ({ category: categoryId === null ? null : byId.get(categoryId)!, ...entry })),
           total,
@@ -1264,25 +1293,31 @@ export function createDexieRepository(options: DexieRepositoryOptions = {}): Dat
 
     async monthly(months): Promise<MonthlyView> {
       const currentMonth = monthOf(today(now()));
-      return db.transaction('r', db.transactions, db.reimbursements, async () => {
-        const [txs, first] = await Promise.all([
-          db.transactions.where('date').between(`${addMonths(currentMonth, 1 - months)}-01`, `${addMonths(currentMonth, 1)}-01`).toArray(),
+      return db.transaction('r', db.categories, db.transactions, db.reimbursements, async () => {
+        const [txs, first, categories] = await Promise.all([
+          countedIn(addMonths(currentMonth, 1 - months), currentMonth),
           // Balance adjustments aren't data: they only correct a balance.
           db.transactions.orderBy('date').filter((tx) => tx.source === 'import').first(),
+          db.categories.toArray(),
         ]);
-        return { entries: monthlySeries(await netted(txs), currentMonth, months, first ? monthOf(first.date) : null) };
+        // The data starts in the first month something counts in: that of the first transaction, or the next
+        // one when every transaction of its month is a late salary. Later ones count later still.
+        const byId = new Map(categories.map((category) => [category.id, category]));
+        const firstMonthTxs = first ? (await transactionsIn(monthOf(first.date))).filter((tx) => tx.source === 'import') : [];
+        const firstMonth = firstMonthTxs.map((tx) => countingMonthOf(tx, byId)).sort()[0] ?? null;
+        return { entries: monthlySeries(txs, currentMonth, months, firstMonth) };
       });
     },
 
     async budgets(month): Promise<BudgetsView> {
       return db.transaction('r', db.categories, db.budgetLimits, db.transactions, db.reimbursements, async () => {
-        const [categories, limits, txs] = await Promise.all([db.categories.orderBy('order').toArray(), db.budgetLimits.toArray(), transactionsIn(month)]);
+        const [categories, limits, txs] = await Promise.all([db.categories.orderBy('order').toArray(), db.budgetLimits.toArray(), countedIn(month)]);
         const byId = new Map(categories.map((category) => [category.id, category]));
         const { budgets, totals, today: marker } = budgetMonth({
           month,
           categoryIds: categories.map((category) => category.id),
           limits,
-          transactions: await netted(txs),
+          transactions: txs,
           today: today(now()),
         });
         return { budgets: budgets.map(({ categoryId, ...budget }) => ({ category: byId.get(categoryId)!, ...budget })), totals, today: marker };
@@ -1412,8 +1447,9 @@ export function createDexieRepository(options: DexieRepositoryOptions = {}): Dat
 
     async subscriptions(): Promise<SubscriptionsView> {
       return db.transaction('r', db.categories, db.transactions, db.payees, db.reimbursements, async () => {
+        const categories = await db.categories.toArray();
         // The category whose payees are the subscriptions, by name: it survives being recreated or seeded again.
-        const category = await db.categories.filter((c) => normalizeText(c.name) === 'suscripciones').first();
+        const category = categories.find((c) => normalizeText(c.name) === 'suscripciones');
         if (!category) return { subscriptions: [], totals: { monthly: 0, yearly: 0, spentThisMonth: 0 } };
         const date = today(now());
         const [charges, recent] = await Promise.all([
@@ -1428,7 +1464,8 @@ export function createDexieRepository(options: DexieRepositoryOptions = {}): Dat
           subscriptions: list
             .map((subscription, i) => ({ ...subscription, payee: payees[i]! }))
             .sort((a, b) => a.payee.name.localeCompare(b.payee.name, 'es-ES')),
-          totals: subscriptionTotals(list, transactions, category.id, monthOf(date)),
+          // This month's spending counts a late income in the category in its counting month, as `spending` does.
+          totals: subscriptionTotals(list, inCountingMonths(transactions, new Map(categories.map((c) => [c.id, c]))), category.id, monthOf(date)),
         };
       });
     },

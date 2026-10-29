@@ -50,6 +50,11 @@ export interface TransactionView extends Transaction {
   toAccount: Account | null;
   /** Its reimbursements, with `amount` as the bank's; null when it has none. */
   reimbursement: ReimbursementView | null;
+  /**
+   * The month it counts in for income and spending when it isn't its own: a late salary in a
+   * category set to count in the next month (`countingMonthOf`). Null for every other transaction.
+   */
+  countingMonth: Month | null;
 }
 
 /** One reimbursement as either of its two transactions sees it. */
@@ -214,6 +219,11 @@ export interface CategoryDraft {
   icon: string;
   /** A palette token. */
   color: string;
+  /**
+   * Income categories: the day from which an imported income in it counts in the next month
+   * (1–31; null or absent, never). Ignored for expense categories.
+   */
+  nextMonthFromDay?: number | null;
 }
 
 export type CategoryChanges = Partial<CategoryDraft>;
@@ -566,8 +576,9 @@ export interface DataRepository {
 
   /**
    * Inicio for a month. Its summary counts reimbursements: each expense smaller by what was paid
-   * back of it, in its own month, and only what incomes don't pay back as income. Balances,
-   * goals and the forecast count the bank's amounts.
+   * back of it, in its own month, and only what incomes don't pay back as income. Incomes count
+   * in their counting month (`countingMonthOf`): a late salary in the next one. Balances, goals,
+   * the forecast and the uncategorized count take the bank's amounts and dates.
    */
   home(month: Month): Promise<HomeData>;
 
@@ -576,7 +587,7 @@ export interface DataRepository {
    * `budgets` measures it (expenses − income), leaving out those at 0 or below, plus the
    * uncategorized expenses as "Sin categoría". Transfers and balance adjustments never count.
    * Reimbursements make each expense smaller, and the incomes that pay them back count only
-   * for what's left, wherever the other side is dated.
+   * for what's left, wherever the other side is dated. Incomes count in their counting month.
    */
   spending(month: Month): Promise<SpendingView>;
 
@@ -592,14 +603,16 @@ export interface DataRepository {
    * Análisis → Mensual: each month's income and expenses, as Inicio's summary counts them,
    * for the last 6 or 12 months ending at the current one, which is marked in progress.
    * The months before the first one with imported transactions are left out. Reimbursements
-   * count as in the summary.
+   * and counting months count as in the summary: a late salary of the current month counts in
+   * the next one, which isn't shown until it's the current month, and the series starts at the
+   * first month anything counts in.
    */
   monthly(months: MonthlyRange): Promise<MonthlyView>;
 
   /**
    * The budgets of a month with their spending by transaction date. Transfers, balance
-   * adjustments and uncategorized transactions never count. Reimbursements count as in
-   * `spending`.
+   * adjustments and uncategorized transactions never count. Reimbursements and counting months
+   * count as in `spending`.
    */
   budgets(month: Month): Promise<BudgetsView>;
   /** The non-archived expense categories without a budget in the month, in order: those "Añadir presupuesto" offers. */
@@ -650,7 +663,7 @@ export interface DataRepository {
    * Análisis → Suscripciones on today's date: one subscription per payee with an imported
    * expense in the category named "Suscripciones" (ignoring case and accents), its charges
    * being its expenses there, with the monthly and yearly totals. Empty without that category.
-   * Charges and the month's spending count reimbursements as `spending` does.
+   * Charges and the month's spending count reimbursements, and the month's spending counting months, as `spending` does.
    */
   subscriptions(): Promise<SubscriptionsView>;
 

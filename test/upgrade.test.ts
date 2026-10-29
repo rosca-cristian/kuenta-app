@@ -24,7 +24,8 @@ function partOneData(extraCategories: [string, Category['kind']][] = []) {
     id: 'acc-bbva', name: 'BBVA', type: 'bank', openingBalance: 100000, color: 'blue', icon: 'landmark',
     archived: false, order: 0, createdAt: stamp, updatedAt: stamp,
   };
-  const categories: Category[] = [...PART_ONE_CATEGORIES, ...extraCategories].map(([name, kind], order) => ({
+  // Made before a category could count late incomes in the next month: version 5 sets it off.
+  const categories: Omit<Category, 'nextMonthFromDay'>[] = [...PART_ONE_CATEGORIES, ...extraCategories].map(([name, kind], order) => ({
     id: `cat-${order}`, name, kind, icon: 'ellipsis', color: 'gray', order, archived: false,
   }));
   const payees: Payee[] = [
@@ -96,7 +97,7 @@ describe('updating a Part 1 install', () => {
     const [account] = await repo.listAccounts();
     expect(account).toMatchObject({ ...data.account, balance: 91000, isImportAccount: true });
     const categories = await repo.listCategories();
-    for (const category of data.categories) expect(categories).toContainEqual(category);
+    for (const category of data.categories) expect(categories).toContainEqual({ ...category, nextMonthFromDay: null });
 
     const txs = [...(await repo.listTransactions('2026-09')), ...(await repo.listTransactions('2026-10'))];
     expect(txs.map((tx) => tx.id).sort()).toEqual(['tx-1', 'tx-2', 'tx-3']);
@@ -309,7 +310,7 @@ describe('updating a Part 3 install to the schema with budgets and goals', () =>
       ['acc-bbva', 86000],
       ['acc-revolut', 5000],
     ]);
-    expect(await repo.listCategories()).toEqual(data.categories);
+    expect(await repo.listCategories()).toEqual(data.categories.map((category) => ({ ...category, nextMonthFromDay: null })));
     expect(await repo.listRules()).toEqual([data.rule]);
     const txs = [...(await repo.listTransactions('2026-09')), ...(await repo.listTransactions('2026-10'))];
     expect(txs).toHaveLength(4);
