@@ -276,6 +276,8 @@ Format, confirmed with real exports (October 2026). The file is what Google Shee
 
 Fixed bottom navigation: **Inicio · Movimientos · Importar · Análisis · Más**. Every screen with a period uses the same `‹ octubre 2026 ›` selector. The eye icon for privacy mode (a toggle named "Ocultar importes": an open eye, or a crossed-out eye while pressed) sits in the header of Inicio and Movimientos; it turns the mode on or off for the whole app. While it's on, each amount is a blurred smudge with the shape of an amount, where the amount would be; the layout and labels stay sharp.
 
+Forms open in bottom sheets. Only the handle on top drags a sheet down: swiping or scrolling inside it never closes it; the cross ("Cerrar"), a tap outside or Escape do. While the phone's keyboard is up the sheet sits above it, and the field being typed in scrolls into view.
+
 ### 4.1 First run
 1. Welcome: what Kuenta is, that data only lives on this phone, and the weekly import routine. "Empezar" goes on; the secondary "Restaurar una copia" brings a backup back instead (below).
 2. Name the import account (proposed: "BBVA"). No balance is asked: it's derived from the first import.
