@@ -217,6 +217,31 @@ describe('the history and the streak', () => {
   });
 });
 
+describe("Inicio's savings card", () => {
+  it("is the month's savings view, judged against that month's target, and null without one", async () => {
+    const { repo } = await setup();
+    await monthsOfData(repo);
+    expect((await repo.home('2026-11')).savings).toBeNull();
+
+    await repo.setSavingsTarget(30000, '2026-10');
+    for (const month of ['2026-10', '2026-11']) {
+      const home = await repo.home(month);
+      expect(home.savings, month).toEqual(await withTarget(repo, month));
+      expect(home.savings?.saved, month).toBe(home.summary.savings);
+    }
+    // October is met and has no "today" marker; November is under way, with it.
+    expect((await repo.home('2026-10')).savings).toMatchObject({ target: 30000, saved: 150000 - 6000 - (7350 - 3805), status: 'met', today: null });
+    expect((await repo.home('2026-11')).savings).toMatchObject({ target: 30000, saved: 158000, status: 'inProgress', reached: true, today: 10 / 30 });
+    // September had no target.
+    expect((await repo.home('2026-09')).savings).toBeNull();
+
+    // Removed from November on, October keeps its card.
+    await repo.setSavingsTarget(0);
+    expect((await repo.home('2026-11')).savings).toBeNull();
+    expect((await repo.home('2026-10')).savings).toMatchObject({ target: 30000 });
+  });
+});
+
 describe('a backup', () => {
   it('carries the monthly savings targets, and a restore brings them back, each month judged as before', async () => {
     const { repo } = await setup();

@@ -45,7 +45,7 @@ test('with two budgets and a goal, Inicio shows both blocks and their links open
   await openInicio(page);
   await expect(page.getByRole('heading', { name: 'Cuentas' })).toBeVisible();
   await expect(page.getByRole('heading', { name: 'Presupuestos' })).toHaveCount(0);
-  await expect(page.getByRole('heading', { name: 'Objetivos' })).toHaveCount(0);
+  await expect(page.getByRole('heading', { name: 'Metas de ahorro' })).toHaveCount(0);
 
   await page.getByRole('link', { name: 'Más' }).click();
   await page.getByRole('link', { name: 'Presupuestos' }).click();
@@ -63,7 +63,7 @@ test('with two budgets and a goal, Inicio shows both blocks and their links open
 
   // Below Cuentas: the budgets by percentage used, Superado in red and Cerca in amber.
   await openInicio(page);
-  await expect(page.getByRole('heading', { level: 2 })).toHaveText(['Cuentas', 'Presupuestos', 'Objetivos']);
+  await expect(page.getByRole('heading', { level: 2 })).toHaveText(['Cuentas', 'Presupuestos', 'Metas de ahorro']);
   await expect(page.getByRole('list', { name: 'Presupuestos' }).getByRole('listitem')).toHaveText([/^Restaurantes/, /^Supermercado/]);
   const restaurantes = listItem(page, 'Presupuestos', 'Restaurantes');
   await expect(restaurantes.getByTestId('budget-spent')).toHaveText('60,00 € / 50,00 €');
@@ -75,7 +75,7 @@ test('with two budgets and a goal, Inicio shows both blocks and their links open
   await expect(supermercado.getByRole('progressbar')).toHaveAttribute('aria-valuetext', '88 % · Cerca');
 
   // The goal's progress is BBVA's balance: 1.000 € − 140 €.
-  const colchon = listItem(page, 'Objetivos', 'Colchón');
+  const colchon = listItem(page, 'Metas de ahorro', 'Colchón');
   await expect(colchon.getByTestId('goal-progress')).toHaveText('860,00 € / 2.000,00 €');
   await expect(colchon.getByTestId('goal-percent')).toHaveText('43 %');
   await expect(colchon.getByTestId('goal-reached')).toHaveCount(0);

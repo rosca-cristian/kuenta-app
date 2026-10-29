@@ -184,6 +184,12 @@ export interface HomeData {
   topBudgets: BudgetView[];
   /** The non-archived goals, in the goals list's order, with their progress. */
   goals: GoalView[];
+  /**
+   * The month shown against its monthly savings target, as `savings(month)` gives it: its saved
+   * amount is `summary.savings`, and the "today" marker shows only in the current month. Null
+   * when that month has no target.
+   */
+  savings: SavingsProgress | null;
   /** Where the month's spending is heading, with its expected charges; null for other months than the current one and before the 3rd. */
   forecast: Cents | null;
   /** Whether to remind the user to make a backup: see `BackupStatus.due`. */
@@ -584,8 +590,9 @@ export interface DataRepository {
   /**
    * Inicio for a month. Its summary counts reimbursements: each expense smaller by what was paid
    * back of it, in its own month, and only what incomes don't pay back as income. Incomes count
-   * in their counting month (`countingMonthOf`): a late salary in the next one. Balances, goals,
-   * the forecast and the uncategorized count take the bank's amounts and dates.
+   * in their counting month (`countingMonthOf`): a late salary in the next one, and so do the
+   * month's savings against its monthly savings target. Balances, goals, the forecast and the
+   * uncategorized count take the bank's amounts and dates.
    */
   home(month: Month): Promise<HomeData>;
 
