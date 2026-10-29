@@ -583,7 +583,7 @@ export interface DataRepository {
   home(month: Month): Promise<HomeData>;
 
   /**
-   * Análisis → Gastos: each category's spending in the month by transaction date, as
+   * Análisis → Gastos: each category's spending in the month (by transaction date, incomes by counting month), as
    * `budgets` measures it (expenses − income), leaving out those at 0 or below, plus the
    * uncategorized expenses as "Sin categoría". Transfers and balance adjustments never count.
    * Reimbursements make each expense smaller, and the incomes that pay them back count only
@@ -610,7 +610,7 @@ export interface DataRepository {
   monthly(months: MonthlyRange): Promise<MonthlyView>;
 
   /**
-   * The budgets of a month with their spending by transaction date. Transfers, balance
+   * The budgets of a month with their spending by transaction date (incomes by counting month). Transfers, balance
    * adjustments and uncategorized transactions never count. Reimbursements and counting months
    * count as in `spending`.
    */

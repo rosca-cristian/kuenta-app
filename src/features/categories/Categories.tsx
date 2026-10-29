@@ -139,7 +139,7 @@ function CategoryForm({
   async function save(event: FormEvent) {
     event.preventDefault();
     const counted = draft.kind === 'income' && late;
-    if (counted && !isNextMonthDay(Number(day))) {
+    if (counted && !(/^\d{1,2}$/.test(day.trim()) && isNextMonthDay(Number(day)))) {
       setDayError('Escribe un día del 1 al 31.');
       return;
     }
@@ -225,8 +225,8 @@ function CategoryForm({
             </p>
           )}
           <span className="text-xs text-muted">
-            Una nómina que llega a partir de ese día cuenta como ingreso del mes siguiente en Inicio, Análisis y Presupuestos. Movimientos y los saldos
-            siguen con la fecha del banco.
+            Una nómina que llega a partir de ese día cuenta como ingreso del mes siguiente en Inicio y Análisis. Movimientos y los saldos siguen con la
+            fecha del banco.
           </span>
         </div>
       )}

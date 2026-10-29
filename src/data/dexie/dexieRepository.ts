@@ -739,7 +739,8 @@ export function createDexieRepository(options: DexieRepositoryOptions = {}): Dat
     async createCategory(draft: CategoryDraft): Promise<CategorySaveResult> {
       const id = crypto.randomUUID();
       const name = tidyName(draft.name);
-      const nextMonthFromDay = draft.nextMonthFromDay ?? null;
+      // Only an income counts in another month: an expense category keeps no day.
+      const nextMonthFromDay = draft.kind === 'income' ? (draft.nextMonthFromDay ?? null) : null;
       checkNextMonthDay(nextMonthFromDay);
       const result = await db.transaction('rw', db.categories, async (): Promise<CategorySaveResult> => {
         const refused = await refuseCategoryName(name, id);
@@ -762,6 +763,7 @@ export function createDexieRepository(options: DexieRepositoryOptions = {}): Dat
         if (!category) throw new Error(`Category ${id} not found`);
         const refused = update.name === undefined ? null : await refuseCategoryName(update.name, id);
         if (refused) return refused;
+        if ((update.kind ?? category.kind) === 'expense') update.nextMonthFromDay = null;
         edited = differs(category, update);
         if (edited) await db.categories.update(id, update);
         return { ok: true, id };

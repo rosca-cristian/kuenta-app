@@ -170,6 +170,17 @@ describe('the setting of a category', () => {
     expect((await repo.listCategories()).find((c) => c.id === nomina)!.nextMonthFromDay).toBeNull();
     expect((await repo.listCategories()).some((c) => c.name === 'Extra')).toBe(false);
   });
+
+  it('keeps no day on an expense category, created as one or turned into one', async () => {
+    const repo = await setup();
+    const { id } = (await repo.createCategory({ name: 'Extra', kind: 'expense', icon: 'briefcase', color: 'green', nextMonthFromDay: 25 })) as { id: string };
+    const nomina = await categoryId(repo, 'Nómina');
+    await repo.updateCategory(nomina, { nextMonthFromDay: 25 });
+    await repo.updateCategory(nomina, { kind: 'expense' });
+    const categories = await repo.listCategories();
+    expect(categories.find((c) => c.id === id)!.nextMonthFromDay).toBeNull();
+    expect(categories.find((c) => c.id === nomina)!.nextMonthFromDay).toBeNull();
+  });
 });
 
 describe('the setting in backups', () => {

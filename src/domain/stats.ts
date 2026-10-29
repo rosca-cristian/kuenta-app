@@ -61,7 +61,7 @@ export interface MonthSpending {
 
 /**
  * Where a month's money went, for Análisis → Gastos: each category's spending as budgets
- * measure it (expenses − income, by transaction date), leaving out the categories whose
+ * measure it (expenses − income, by transaction date, incomes by counting month), leaving out the categories whose
  * spending is 0 or negative, plus the uncategorized expenses as one entry. Transfers and
  * balance adjustments never count. Ties keep the order of `categoryIds`, "Sin categoría" last.
  */

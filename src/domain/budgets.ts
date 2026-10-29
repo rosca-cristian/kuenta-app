@@ -47,8 +47,8 @@ export function limitFor(limits: BudgetLimit[], categoryId: Id, month: Month): C
 }
 
 /**
- * Each category's spending in a month by the transaction's date: its expenses minus its
- * income. Transfers, balance adjustments and uncategorized transactions never count.
+ * Each category's spending in a month by the transaction's date (the counting month, once the
+ * repository has moved late incomes there): its expenses minus its income. Transfers, balance adjustments and uncategorized transactions never count.
  */
 export function spendingByCategory(transactions: Transaction[], month: Month): Map<Id, Cents> {
   const spending = new Map<Id, Cents>();

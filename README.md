@@ -18,7 +18,7 @@ When friends pay you back a dinner by Bizum, open the received Bizum in **Movimi
 
 ## Salary paid at the end of the month
 
-If your salary arrives on the last days of the month for the next one, open **Más → Categorías → Nómina** and turn on **Contar en el mes siguiente si llega tarde** with the day it usually arrives from (**A partir del día 25**): from then on a salary on or after that day counts as the next month's income in Inicio, Análisis and budgets, while Movimientos keeps it on the bank's date with "Cuenta en noviembre" under it, and balances don't change.
+If your salary arrives on the last days of the month for the next one, open **Más → Categorías → Nómina** and turn on **Contar en el mes siguiente si llega tarde** with the day it usually arrives from (**A partir del día 25**): from then on a salary on or after that day counts as the next month's income in Inicio and Análisis, while Movimientos keeps it on the bank's date with "Cuenta en noviembre" under it, and balances don't change.
 
 ## Privacy mode
 
