@@ -3,12 +3,18 @@ import { bbvaXlsxFile } from './support/xlsx';
 
 const sheet = (page: Page) => page.getByRole('dialog');
 const savingsCard = (page: Page) => page.getByRole('button', { name: /^(septiembre|octubre) 2026/ });
+const homeCard = (page: Page) => page.getByRole('link', { name: /^Ahorro del mes/ });
 const historyRow = (page: Page, month: string) => page.getByRole('list', { name: 'Historial' }).getByRole('listitem').filter({ hasText: month });
 
 async function openGoals(page: Page) {
   await page.getByRole('link', { name: 'Más' }).click();
   await page.getByRole('link', { name: 'Objetivos' }).click();
   await expect(page.getByRole('heading', { name: 'Objetivos' })).toBeVisible();
+}
+
+async function openInicio(page: Page) {
+  await page.getByRole('link', { name: 'Inicio' }).click();
+  await expect(page.getByTestId('total-balance')).toBeVisible();
 }
 
 test('set 300 € a month, follow it through the month, change it next month and keep the old one in the history', async ({ page }) => {
@@ -110,4 +116,85 @@ test('set 300 € a month, follow it through the month, change it next month and
   await expect(sheet(page)).toHaveCount(0);
   await expect(page.getByRole('button', { name: 'Elegir ahorro mensual' })).toBeVisible();
   await expect(page.getByRole('list', { name: 'Historial' })).toHaveCount(0);
+});
+
+test("Inicio's Ahorro del mes card follows the month shown, opens Objetivos and goes once the target is removed", async ({ page }) => {
+  // Thursday 17 September 2026: August and September are imported.
+  await page.clock.setFixedTime(new Date('2026-09-17T12:00:00'));
+  await page.goto('./');
+  await page.getByRole('button', { name: 'Empezar' }).click();
+  await page.getByRole('button', { name: 'Continuar' }).click();
+  await page.getByTestId('file-input').setInputFiles(
+    bbvaXlsxFile(
+      [
+        { valor: '01/08/2026', concepto: 'Abono de nómina', movimiento: 'Empresa ejemplo', importe: 1500 },
+        { valor: '05/08/2026', concepto: 'Mercadona', movimiento: 'Pago con tarjeta', importe: -100 },
+        { valor: '01/09/2026', concepto: 'Abono de nómina', movimiento: 'Empresa ejemplo', importe: 1500 },
+        { valor: '10/09/2026', concepto: 'Mercadona', movimiento: 'Pago con tarjeta', importe: -1320 },
+      ],
+      { startBalance: 1000 },
+    ),
+  );
+  await page.getByRole('button', { name: 'Importar 4' }).click();
+  await expect(page.getByTestId('balance-check')).toHaveText('✓ Cuadra');
+
+  // Without a target, Inicio has no card.
+  await openInicio(page);
+  await expect(page.getByRole('heading', { level: 2 })).toHaveText(['Cuentas']);
+
+  // 300 € a month from September: the card comes after Cuentas, with Inicio's month savings and the "today" marker.
+  await openGoals(page);
+  await page.getByRole('button', { name: 'Elegir ahorro mensual' }).click();
+  await sheet(page).getByLabel('Ahorrar al mes').fill('300');
+  await sheet(page).getByRole('button', { name: 'Guardar' }).click();
+  await expect(sheet(page)).toHaveCount(0);
+  await openInicio(page);
+  await expect(page.getByRole('heading', { level: 2 })).toHaveText(['Cuentas', 'Ahorro del mes']);
+  await expect(page.getByTestId('month-savings')).toHaveText('180,00 €');
+  await expect(homeCard(page).getByTestId('savings-progress')).toHaveText('Llevas 180,00 € de 300,00 €');
+  await expect(homeCard(page).getByTestId('savings-percent')).toHaveText('60 %');
+  await expect(homeCard(page).getByTestId('savings-status')).toHaveText('Te faltan 120,00 €');
+  await expect(homeCard(page).getByTestId('today-marker')).toBeAttached();
+  expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
+
+  // August had no target: no card. Back in September, it's there again.
+  await page.getByRole('button', { name: 'Mes anterior' }).click();
+  await expect(page.getByTestId('month-savings')).toHaveText('1.400,00 €');
+  await expect(homeCard(page)).toHaveCount(0);
+  await page.getByRole('button', { name: 'Mes siguiente' }).click();
+  await expect(homeCard(page).getByTestId('savings-progress')).toHaveText('Llevas 180,00 € de 300,00 €');
+
+  // Privacy mode blurs its amounts and keeps the percentage.
+  await page.getByRole('button', { name: 'Ocultar importes' }).click();
+  await expect(homeCard(page).getByTestId('savings-percent')).toHaveText('60 %');
+  await expect(homeCard(page).getByTestId('savings-progress').locator('.masked-amount')).toHaveCount(2);
+  await expect(homeCard(page).getByTestId('savings-status').locator('.masked-amount')).toHaveCount(1);
+  await expect(homeCard(page)).not.toContainText('300,00');
+  await page.getByRole('button', { name: 'Ocultar importes' }).click();
+
+  // Tapping it opens Objetivos.
+  await homeCard(page).click();
+  await expect(page.getByRole('heading', { name: 'Objetivos' })).toBeVisible();
+  await expect(page).toHaveURL(/\/mas\/objetivos$/);
+
+  // Thursday 8 October: nothing saved yet this month; September, shown again, is over and has no marker.
+  await page.clock.setFixedTime(new Date('2026-10-08T12:00:00'));
+  await page.reload();
+  await openInicio(page);
+  await expect(homeCard(page).getByTestId('savings-progress')).toHaveText('Llevas 0,00 € de 300,00 €');
+  await expect(homeCard(page).getByTestId('today-marker')).toBeAttached();
+  await page.getByRole('button', { name: 'Mes anterior' }).click();
+  await expect(homeCard(page).getByTestId('savings-progress')).toHaveText('Llevas 180,00 € de 300,00 €');
+  await expect(homeCard(page).getByTestId('today-marker')).toHaveCount(0);
+
+  // Removed from October on: the card goes from October, and September keeps its own.
+  await openGoals(page);
+  await savingsCard(page).click();
+  await sheet(page).getByRole('button', { name: 'Quitar ahorro mensual' }).click();
+  await expect(sheet(page)).toHaveCount(0);
+  await openInicio(page);
+  await expect(page.getByRole('heading', { level: 2 })).toHaveText(['Cuentas']);
+  await expect(homeCard(page)).toHaveCount(0);
+  await page.getByRole('button', { name: 'Mes anterior' }).click();
+  await expect(homeCard(page).getByTestId('savings-progress')).toHaveText('Llevas 180,00 € de 300,00 €');
 });

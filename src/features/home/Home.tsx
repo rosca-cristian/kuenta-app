@@ -8,6 +8,8 @@ import { PrivacyButton } from '../../ui/PrivacyButton';
 import { formatDate, monthOf, today } from '../../domain/dates';
 import { BUDGET_STATUS } from '../../ui/budgetStatus';
 import type { BudgetView, GoalView } from '../../data/repository';
+import type { SavingsProgress } from '../../domain/savings';
+import { SavingsMeter } from '../goals/SavingsMeter';
 import { transactionsLink } from '../transactions/filters';
 import { RestoredAlert } from '../more/RestoreBackup';
 
@@ -106,10 +108,20 @@ export function Home() {
             ))}
           </ul>
         </Card>
+        {home.savings && <MonthSavings progress={home.savings} />}
         {home.topBudgets.length > 0 && <TopBudgets budgets={home.topBudgets} />}
         {home.goals.length > 0 && <GoalsProgress goals={home.goals} />}
       </div>
     </>
+  );
+}
+
+/** "Ahorro del mes": the month shown against its monthly savings target, as in Objetivos, which tapping it opens. */
+function MonthSavings({ progress }: { progress: SavingsProgress }) {
+  return (
+    <Link to="/mas/objetivos" className="block rounded-2xl border border-line bg-card p-4 active:bg-card-2">
+      <SavingsMeter title={<h2 className="font-medium">Ahorro del mes</h2>} progress={progress} />
+    </Link>
   );
 }
 
@@ -154,8 +166,8 @@ function TopBudgets({ budgets }: { budgets: BudgetView[] }) {
 function GoalsProgress({ goals }: { goals: GoalView[] }) {
   return (
     <Card>
-      <h2 className="mb-2 font-medium">Objetivos</h2>
-      <ul aria-label="Objetivos" className="-mx-2 flex flex-col">
+      <h2 className="mb-2 font-medium">Metas de ahorro</h2>
+      <ul aria-label="Metas de ahorro" className="-mx-2 flex flex-col">
         {goals.map(({ id, name, color, current, target, percent, reached }) => (
           <li key={id}>
             <Link to="/mas/objetivos" className="block rounded-xl px-2 py-1.5 active:bg-card-2">

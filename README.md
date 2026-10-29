@@ -22,7 +22,7 @@ If your salary arrives on the last days of the month for the next one, open **M�
 
 ## Monthly savings target
 
-In **Más → Objetivos**, **Ahorro mensual** lets you set how much you want to save each month (**Ahorrar al mes**), once: it applies to this month and every one after, like a budget. The month's savings are the same as Inicio's (income minus expenses, with reimbursements and late salaries counted as there; moving money to your own accounts doesn't count as spending). The card shows **Llevas X de Y**, a bar with today's mark and what's left, and below it the **Historial** of the last 12 months with ✓ or ✗ and how many months in a row you made it. Changing or removing the target only affects this month on. Backups don't include it yet. The goals tied to an account are below, as **Metas de ahorro**.
+In **Más → Objetivos**, **Ahorro mensual** lets you set how much you want to save each month (**Ahorrar al mes**), once: it applies to this month and every one after, like a budget. The month's savings are the same as Inicio's (income minus expenses, with reimbursements and late salaries counted as there; moving money to your own accounts doesn't count as spending). The card shows **Llevas X de Y**, a bar with today's mark and what's left, and below it the **Historial** of the last 12 months with ✓ or ✗ and how many months in a row you made it. Inicio shows the month's progress in an **Ahorro del mes** card that opens Objetivos. Changing or removing the target only affects this month on. Backups don't include it yet. The goals tied to an account are below, as **Metas de ahorro**.
 
 ## Privacy mode
 

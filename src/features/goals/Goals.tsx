@@ -2,6 +2,7 @@ import { useState, type FormEvent } from 'react';
 import { ChevronDown } from 'lucide-react';
 import { Button, Card, Choice, EmptyState, MonthSelector, PageHeader, formatPercent } from '../../ui/components';
 import { Sheet } from '../../ui/Sheet';
+import { SavingsMeter } from './SavingsMeter';
 import { IconBadge, colorFor } from '../../ui/icons';
 import { ColorPicker, IconPicker } from '../../ui/pickers';
 import { useRepo, useRepoQuery } from '../../lib/repo';
@@ -141,55 +142,11 @@ function MonthlySavings() {
   );
 }
 
-/**
- * "Llevas X de Y", the percentage, a bar with the "today" marker (the month's pace) and the
- * status: what's left, *Conseguido*, or that the month is below 0. Tapping it edits the target.
- */
+/** The current month against the target (see `SavingsMeter`). Tapping it edits the target. */
 function SavingsCard({ view, onEdit }: { view: Exclude<SavingsView, { target: null }>; onEdit: () => void }) {
-  const { month, target, saved, percent, reached, today: marker } = view;
   return (
     <button onClick={onEdit} className="block w-full rounded-2xl border border-line bg-card p-4 text-left active:bg-card-2">
-      <div className="flex items-baseline justify-between gap-2">
-        <span>{formatMonth(month)}</span>
-        <span className="text-sm tabular-nums text-muted" data-testid="savings-percent">
-          {formatPercent(percent)}
-        </span>
-      </div>
-      <div className="mt-1 text-sm tabular-nums" data-testid="savings-progress">
-        Llevas <Money cents={saved} /> <span className="text-muted">de <Money cents={target} /></span>
-      </div>
-      <div
-        role="progressbar"
-        aria-label="Ahorrado este mes"
-        aria-valuemin={0}
-        aria-valuemax={100}
-        aria-valuenow={Math.min(100, Math.floor(percent))}
-        aria-valuetext={formatPercent(percent)}
-        className="relative mt-2 h-2 rounded-full bg-card-2"
-      >
-        <div className={`h-full rounded-full ${reached ? 'bg-income' : 'bg-accent'}`} style={{ width: `${Math.min(100, percent)}%` }} />
-        {marker !== null && (
-          <div
-            data-testid="today-marker"
-            title="Hoy"
-            className="absolute -top-1 -bottom-1 w-0.5 -translate-x-1/2 rounded-full bg-text"
-            style={{ left: `${marker * 100}%` }}
-          />
-        )}
-      </div>
-      {saved < 0 ? (
-        <div className="mt-2 text-sm text-danger" data-testid="savings-status">
-          Vas por debajo de 0
-        </div>
-      ) : reached ? (
-        <div className="mt-2 text-sm font-medium text-income" data-testid="savings-status">
-          Conseguido
-        </div>
-      ) : (
-        <div className="mt-2 text-sm tabular-nums text-muted" data-testid="savings-status">
-          Te faltan <Money cents={target - saved} />
-        </div>
-      )}
+      <SavingsMeter title={<span>{formatMonth(view.month)}</span>} progress={view} />
     </button>
   );
 }

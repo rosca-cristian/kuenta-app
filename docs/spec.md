@@ -303,8 +303,9 @@ Forms open in bottom sheets. Only the handle on top drags a sheet down: swiping 
 - Alerts, only when they apply: "Han pasado N días desde la última importación" (from 8 days), "N movimientos sin categoría" (of the month shown), "Hay un hueco entre el 07/10 y el 14/10", "N presupuestos superados", "Haz una copia de seguridad".
 - After an update that brought starter rules, when they would change transactions already imported: "Aplicar las reglas de serie a N movimientos ya importados" (only those never edited), with Aplicar, which reports how many changed, and Descartar. Either one hides it for good.
 - Accounts with their balance (archived ones hidden; non-imported ones labelled "no importada").
+- "Ahorro del mes", only when the month shown has a monthly savings target (§4.7): that month's savings (the summary's) against its target, as in Objetivos: "Llevas X de Y", the percentage, the bar with the "today" marker (current month only) and "Te faltan X", "Conseguido" or "Vas por debajo de 0". It follows the month selector, and tapping it opens Objetivos.
 - Budgets: the 3 with the highest percentage used, linking to the full screen.
-- Goals: a progress bar for each.
+- Goals ("Metas de ahorro"): a progress bar for each, opening Objetivos.
 
 ### 4.3 Movimientos
 - **Search box** under the header: finds text in the payee, note, bank concept and movement, ignoring case and accents (§5.8). Results update as you type; a button clears it. Combined with the filters below (all must hold).
