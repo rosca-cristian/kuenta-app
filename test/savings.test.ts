@@ -116,7 +116,7 @@ describe('setting the monthly savings target', () => {
     repo.subscribe(() => notified++);
     const lastChangeAt = async () => (await db.settings.get('lastChangeAt'))?.value;
 
-    // Removing a target there isn't changes nothing.
+    // Removing a target when there's none changes nothing.
     await repo.setSavingsTarget(0);
     expect(notified).toBe(0);
     expect(await lastChangeAt()).toBeUndefined();

@@ -371,7 +371,7 @@ describe('updating an install to the schema with reimbursements', () => {
   });
 });
 
-/** An install made before the monthly savings target: schema version 5, with a budget and a goal. */
+/** An install made before the monthly savings target: schema version 5, with a budget. */
 async function createSchemaFiveDatabase() {
   const name = `kuenta-upgrade-${++dbCount}`;
   const data = partOneData();
