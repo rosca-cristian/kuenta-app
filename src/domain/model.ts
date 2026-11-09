@@ -157,6 +157,24 @@ export interface Reimbursement {
   amount: Cents;
 }
 
+/**
+ * Something paid with cash, noted down by hand: the only transactions not imported from the
+ * bank (ADR-0002). Kuenta pays it from the cash pocket, the withdrawals' unspent cash, oldest
+ * withdrawal first (`cashPocket`); that allocation is computed, never stored.
+ */
+export interface CashExpense {
+  id: Id;
+  /** Above 0. */
+  amount: Cents;
+  /** An expense category other than "Efectivo". */
+  categoryId: Id;
+  /** Never in the future. */
+  date: IsoDate;
+  note: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
 export interface ImportBatch {
   id: Id;
   importedAt: string;

@@ -1,6 +1,7 @@
 import Dexie from 'dexie';
 import { describe, expect, it } from 'vitest';
 import { createDexieRepository } from '../src/data/dexie/dexieRepository';
+import { KuentaDb } from '../src/data/dexie/db';
 import { STARTER_DATA_VERSION } from '../src/data/seed';
 import type { Account, Category, Payee, Rule, Transaction } from '../src/domain/model';
 import { bbvaXlsx } from './support/bbvaXlsx';
@@ -157,6 +158,19 @@ describe('updating a Part 1 install', () => {
     const october = await repo.listTransactions('2026-10');
     expect(october.find((tx) => tx.date === '2026-10-15')!.category?.name).toBe('Supermercado');
     expect(october.find((tx) => tx.id === 'tx-3')!.categoryId).toBeNull();
+  });
+
+  it('counts cash from the first day of the month it first starts in, keeping it on later startups', async () => {
+    const { name } = await createPartOneDatabase();
+    await open(name).listRules();
+    const db = new KuentaDb(name);
+    expect((await db.settings.get('cashFromDate'))?.value).toBe('2026-10-01');
+    db.close();
+
+    await createDexieRepository({ name, now: () => new Date('2026-12-05T10:00:00') }).listRules();
+    const again = new KuentaDb(name);
+    expect((await again.settings.get('cashFromDate'))?.value).toBe('2026-10-01');
+    again.close();
   });
 
   it('adds nothing to an install that never finished the first run, which seeds it instead', async () => {

@@ -20,6 +20,10 @@ When friends pay you back a dinner by Bizum, open the received Bizum in **Movimi
 
 If your salary arrives on the last days of the month for the next one, open **Más → Categorías → Nómina** and turn on **Contar en el mes siguiente si llega tarde** with the day it usually arrives from (**A partir del día 25**): from then on a salary on or after that day counts as the next month's income in Inicio and Análisis, while Movimientos keeps it on the bank's date with "Cuenta en noviembre" under it, and balances don't change.
 
+## Cash
+
+From the month you start using this version, taking cash out of a cashpoint (a movement in **Efectivo**) no longer counts as spending. Open the withdrawal in **Movimientos** and tap **Apuntar gasto en efectivo** to note down what the cash paid for: the amount, the category, the date (today by default) and a note. Each cash expense counts in its category and month in Inicio, Análisis, budgets and the monthly savings target. Kuenta pays it from your oldest cash first, and won't take more cash than you had on that date ("Solo tienes X € de efectivo a esa fecha"). The withdrawal's sheet shows **Repartido X de Y** and the expenses it paid. Bank balances don't change. Withdrawals from before still count as spent, as they did.
+
 ## Monthly savings target
 
 In **Más → Objetivos**, **Ahorro mensual** lets you set how much you want to save each month (**Ahorrar al mes**), once: it applies to this month and every one after, like a budget. The month's savings are the same as Inicio's (income minus expenses, with reimbursements and late salaries counted as there; moving money to your own accounts doesn't count as spending). The card shows **Llevas X de Y**, a bar with today's mark and what's left, and below it the **Historial** of the last 12 months with ✓ or ✗ and how many months in a row you made it. Changing or removing the target only affects this month on. Inicio shows the month's progress in an **Ahorro del mes** card that opens Objetivos. Backups include it (older copies, made before it, restore with none). The goals tied to an account are below, as **Metas de ahorro**.

@@ -12,13 +12,15 @@ import { savingsProgress, targetFor } from '../../domain/savings';
 import { leftToPayBack, netOfReimbursements } from '../../domain/reimbursements';
 import { countingMonthOf, inCountingMonths, isNextMonthDay } from '../../domain/countingMonth';
 import { netWorthSeries } from '../../domain/balances';
-import { addDays, addMonths, daysBetween, isMonth, monthOf, today, type Month } from '../../domain/dates';
+import { cashCategoryOf, cashPocket, checkCashExpense, isWithdrawal, withCash, type CashPocket } from '../../domain/cash';
+import { addDays, addMonths, daysBetween, isIsoDate, isMonth, monthOf, today, type IsoDate, type Month } from '../../domain/dates';
 import { normalizeText } from '../../domain/text';
 import { BACKUP_SETTINGS, countsOf, createBackup, isBackupDue, readBackup, type BackupCounts, type BackupFile } from '../../domain/backup';
 import { shapeByBankSign, transferAccountOf } from '../../domain/transfers';
 import {
   signedAmount,
   type Account,
+  type CashExpense,
   type Goal,
   type Id,
   type ImportBatch,
@@ -37,6 +39,9 @@ import type {
   BackupStatus,
   BalanceCheck,
   BudgetsView,
+  CashExpenseChanges,
+  CashExpenseSaveResult,
+  CashExpenseView,
   CategoryChanges,
   CategoryDraft,
   CategorySaveResult,
@@ -108,6 +113,9 @@ function tidyActions(actions: RuleActions): RuleActions {
  * Absent when no update brought them (e.g. a first run).
  */
 const STARTER_RULES_OFFER = 'starterRulesOffer';
+
+/** The data setting holding the first day whose cash withdrawals go to the cash pocket. */
+const CASH_FROM_DATE = 'cashFromDate';
 type StarterRulesOffer = 'pending' | 'done';
 
 /** How far back, in days, "Es un reembolso" looks for the expenses an income pays back, and each "Ver gastos anteriores" more. */
@@ -152,6 +160,9 @@ export function createDexieRepository(options: DexieRepositoryOptions = {}): Dat
     const row = await db.settings.get(key);
     return row === undefined ? fallback : (row.value as T);
   }
+
+  /** The first day of the current month. */
+  const firstDayOfMonth = (): IsoDate => `${monthOf(today(now()))}-01`;
 
   const setStarterRulesOffer = (state: StarterRulesOffer) => db.settings.put({ key: STARTER_RULES_OFFER, value: state });
 
@@ -377,6 +388,17 @@ export function createDexieRepository(options: DexieRepositoryOptions = {}): Dat
       .catch((error: unknown) => console.error('Could not add the starter data', error)),
   );
 
+  // An install made before cash expenses counts cash from the first day of the month it first
+  // starts in: earlier withdrawals keep counting as spent, so past months don't change.
+  db.on('ready', () =>
+    db
+      .transaction('rw', db.settings, async () => {
+        if (!(await setting('onboardingDone', false)) || (await db.settings.get(CASH_FROM_DATE))) return;
+        await db.settings.put({ key: CASH_FROM_DATE, value: firstDayOfMonth() });
+      })
+      .catch((error: unknown) => console.error('Could not set when cash starts counting', error)),
+  );
+
   /** Points rules that set one of these payees (by normalized name) to the payee's new name. */
   async function renameInRules(normalizedNames: string[], name: string) {
     const targets = new Set(normalizedNames);
@@ -514,11 +536,12 @@ export function createDexieRepository(options: DexieRepositoryOptions = {}): Dat
   }
 
   async function toViews(txs: Transaction[]): Promise<TransactionView[]> {
-    const [accounts, categories, payees, { links, linked }] = await Promise.all([
+    const [accounts, categories, payees, { links, linked }, { pocket }] = await Promise.all([
       db.accounts.toArray(),
       db.categories.toArray(),
       db.payees.bulkGet([...new Set(txs.map((tx) => tx.payeeId).filter((id): id is Id => id !== null))]),
       linksOf(txs.map((tx) => tx.id)),
+      cashState(),
     ]);
     const byId = <T extends { id: Id }>(items: (T | undefined)[]) =>
       new Map(items.filter((item): item is T => item !== undefined).map((item) => [item.id, item]));
@@ -535,7 +558,43 @@ export function createDexieRepository(options: DexieRepositoryOptions = {}): Dat
         payee: tx.payeeId ? payeeMap.get(tx.payeeId) ?? null : null,
         reimbursement: reimbursementOf(tx, links, linked),
         countingMonth: countingMonth === monthOf(tx.date) ? null : countingMonth,
+        cash: pocket.withdrawals.get(tx.id) ?? null,
       };
+    });
+  }
+
+  /**
+   * The cash pocket: the withdrawals (imported expenses in "Efectivo" from `cashFromDate` on),
+   * every cash expense, and how the cash pays them. Call it inside a transaction on settings,
+   * categories, transactions and cash expenses.
+   */
+  async function cashState(): Promise<{ withdrawals: Transaction[]; expenses: CashExpense[]; pocket: CashPocket }> {
+    const [categories, from, expenses] = await Promise.all([db.categories.toArray(), setting<IsoDate | null>(CASH_FROM_DATE, null), db.cashExpenses.toArray()]);
+    const cashId = cashCategoryOf(categories)?.id ?? null;
+    const inCategory = cashId === null ? [] : await db.transactions.where('categoryId').equals(cashId).toArray();
+    const withdrawals = inCategory.filter((tx) => isWithdrawal(tx, cashId, from));
+    return { withdrawals, expenses, pocket: cashPocket(withdrawals, expenses) };
+  }
+
+  /**
+   * Saves a cash expense, new or edited, when the cash pays it (`checkCashExpense`); throws for
+   * an amount, date or category it can't have.
+   */
+  async function saveCashExpense(expense: CashExpense): Promise<CashExpenseSaveResult> {
+    checkWholeCents(expense.amount, 'A cash expense');
+    if (expense.amount <= 0) throw new Error(`A cash expense must be above 0, not ${expense.amount}`);
+    if (!isIsoDate(expense.date)) throw new Error(`Not a date: ${expense.date}`);
+    if (expense.date > today(now())) throw new Error(`A cash expense can't be in the future: ${expense.date}`);
+    return db.transaction('rw', [db.settings, db.categories, db.transactions, db.cashExpenses], async (): Promise<CashExpenseSaveResult> => {
+      const [category, categories] = await Promise.all([db.categories.get(expense.categoryId), db.categories.toArray()]);
+      if (!category) throw new Error(`Category ${expense.categoryId} not found`);
+      if (category.kind !== 'expense') throw new Error(`A cash expense needs an expense category, not ${category.name}`);
+      if (category.id === cashCategoryOf(categories)?.id) throw new Error('A cash expense says what the cash paid for: not "Efectivo"');
+      const { withdrawals, expenses, pocket } = await cashState();
+      const check = checkCashExpense(withdrawals, expenses.filter((other) => other.id !== expense.id), expense, pocket);
+      if (!check.ok) return { ok: false, reason: 'notEnough', available: check.available, later: check.later };
+      await db.cashExpenses.put(expense);
+      return { ok: true, id: expense.id };
     });
   }
 
@@ -544,15 +603,20 @@ export function createDexieRepository(options: DexieRepositoryOptions = {}): Dat
 
   /**
    * The transactions that count for income and spending in the months `from` to `to`: netted of
-   * reimbursements and in their counting month (`inCountingMonths`). The month before `from` is
-   * read too, for a late salary that counts in `from`; one of `to` that counts after it is left out.
+   * reimbursements, in their counting month (`inCountingMonths`), and with cash (`withCash`):
+   * withdrawals count 0 and covered cash expenses count in their category and on their date. The
+   * month before `from` is read too, for a late salary that counts in `from`; one of `to` that
+   * counts after it is left out. Call it inside a transaction on settings, categories,
+   * transactions, reimbursements and cash expenses.
    */
   async function countedIn(from: Month, to: Month = from): Promise<Transaction[]> {
-    const [txs, categories] = await Promise.all([
+    const [txs, categories, cash] = await Promise.all([
       db.transactions.where('date').between(`${addMonths(from, -1)}-01`, `${addMonths(to, 1)}-01`).toArray(),
       db.categories.toArray(),
+      cashState(),
     ]);
-    const counted = inCountingMonths(await netted(txs), new Map(categories.map((category) => [category.id, category])));
+    const shifted = inCountingMonths(await netted(txs), new Map(categories.map((category) => [category.id, category])));
+    const counted = withCash(shifted, cash.pocket, cash.expenses, { from: `${from}-01`, to: `${to}-31` });
     return counted.filter((tx) => monthOf(tx.date) >= from && monthOf(tx.date) <= to);
   }
 
@@ -637,6 +701,7 @@ export function createDexieRepository(options: DexieRepositoryOptions = {}): Dat
         await db.settings.bulkPut([
           { key: 'importAccountId', value: accountId },
           { key: 'onboardingDone', value: true },
+          { key: CASH_FROM_DATE, value: firstDayOfMonth() },
         ]);
       });
       // Only the starter data so far: nothing a backup would save yet.
@@ -1043,7 +1108,7 @@ export function createDexieRepository(options: DexieRepositoryOptions = {}): Dat
     },
 
     async reimbursementCandidates(incomeId, { text = '', before } = {}): Promise<ReimbursementCandidate[]> {
-      const tables = [db.transactions, db.reimbursements, db.settings, db.accounts, db.categories, db.payees];
+      const tables = [db.transactions, db.reimbursements, db.settings, db.accounts, db.categories, db.payees, db.cashExpenses];
       return db.transaction('r', tables, async () => {
         const income = await db.transactions.get(incomeId);
         if (!income || income.source !== 'import' || income.type !== 'income') return [];
@@ -1097,6 +1162,43 @@ export function createDexieRepository(options: DexieRepositoryOptions = {}): Dat
         return true;
       });
       if (edited) await dataChanged();
+    },
+
+    async getCashExpense(id): Promise<CashExpenseView | null> {
+      return db.transaction('r', [db.settings, db.categories, db.transactions, db.cashExpenses], async () => {
+        const expense = await db.cashExpenses.get(id);
+        if (!expense) return null;
+        const [category, { pocket }] = await Promise.all([db.categories.get(expense.categoryId), cashState()]);
+        return { ...expense, category: category ?? null, uncovered: pocket.uncovered.has(id) };
+      });
+    },
+
+    async addCashExpense(draft): Promise<CashExpenseSaveResult> {
+      const createdAt = stamp();
+      const expense: CashExpense = { id: crypto.randomUUID(), amount: draft.amount, categoryId: draft.categoryId, date: draft.date, note: draft.note ?? '', createdAt, updatedAt: createdAt };
+      const result = await saveCashExpense(expense);
+      if (result.ok) await dataChanged();
+      return result;
+    },
+
+    async updateCashExpense(id, changes: CashExpenseChanges): Promise<CashExpenseSaveResult> {
+      const existing = await db.cashExpenses.get(id);
+      if (!existing) throw new Error(`Cash expense ${id} not found`);
+      const { amount, categoryId, date, note } = changes;
+      const update: Partial<CashExpense> = Object.fromEntries(Object.entries({ amount, categoryId, date, note }).filter(([, value]) => value !== undefined));
+      // Saving what it already has changes nothing.
+      if (!differs(existing, update)) return { ok: true, id };
+      const result = await saveCashExpense({ ...existing, ...update, updatedAt: stamp() });
+      if (result.ok) await dataChanged();
+      return result;
+    },
+
+    async deleteCashExpense(id) {
+      await db.transaction('rw', db.cashExpenses, async () => {
+        if (!(await db.cashExpenses.get(id))) throw new Error(`Cash expense ${id} not found`);
+        await db.cashExpenses.delete(id);
+      });
+      await dataChanged();
     },
 
     async listPayees(): Promise<PayeeView[]> {
@@ -1258,7 +1360,7 @@ export function createDexieRepository(options: DexieRepositoryOptions = {}): Dat
     async home(month): Promise<HomeData> {
       const allAccounts = await repository.listAccounts();
       const accountId = await importAccountId();
-      const [monthTxs, counted, lastImport, chain, currentBudgets, goals, savings, forecastTxs, backup] = await Promise.all([
+      const [monthTxs, counted, lastImport, chain, currentBudgets, goals, savings, forecastTxs, backup, cash] = await Promise.all([
         transactionsIn(month),
         countedIn(month),
         db.importBatches.orderBy('importedAt').reverse().filter((batch) => !batch.undone).first(),
@@ -1271,6 +1373,7 @@ export function createDexieRepository(options: DexieRepositoryOptions = {}): Dat
         // Expected charges look at the two months before.
         db.transactions.where('date').between(`${addMonths(month, -2)}-01`, `${addMonths(month, 1)}-01`).toArray(),
         repository.backupStatus(),
+        cashState(),
       ]);
       return {
         // Archived accounts still hold money: they count in the total, but aren't listed.
@@ -1287,13 +1390,14 @@ export function createDexieRepository(options: DexieRepositoryOptions = {}): Dat
         topBudgets: [...currentBudgets.budgets].sort((a, b) => b.percent - a.percent || b.spent - a.spent).slice(0, TOP_BUDGETS),
         goals: goals.filter((goal) => !goal.archived),
         savings: savings.target === null ? null : savings,
-        forecast: monthForecast(forecastTxs, month, today(now())),
+        // Taking cash out isn't spending: what the cash paid for is.
+        forecast: monthForecast(withCash(forecastTxs, cash.pocket, cash.expenses), month, today(now())),
         backupDue: backup.due,
       };
     },
 
     async spending(month): Promise<SpendingView> {
-      return db.transaction('r', db.categories, db.transactions, db.reimbursements, async () => {
+      return db.transaction('r', [db.settings, db.categories, db.transactions, db.reimbursements, db.cashExpenses], async () => {
         const [categories, txs] = await Promise.all([db.categories.orderBy('order').toArray(), countedIn(month)]);
         const byId = new Map(categories.map((category) => [category.id, category]));
         const { entries, total } = monthSpending(txs, month, categories.map((category) => category.id));
@@ -1316,7 +1420,7 @@ export function createDexieRepository(options: DexieRepositoryOptions = {}): Dat
 
     async monthly(months): Promise<MonthlyView> {
       const currentMonth = monthOf(today(now()));
-      return db.transaction('r', db.categories, db.transactions, db.reimbursements, async () => {
+      return db.transaction('r', [db.settings, db.categories, db.transactions, db.reimbursements, db.cashExpenses], async () => {
         // The data starts in the first month something counts in.
         const [txs, firstMonth] = await Promise.all([countedIn(addMonths(currentMonth, 1 - months), currentMonth), firstCountedMonth()]);
         return { entries: monthlySeries(txs, currentMonth, months, firstMonth) };
@@ -1324,7 +1428,7 @@ export function createDexieRepository(options: DexieRepositoryOptions = {}): Dat
     },
 
     async budgets(month): Promise<BudgetsView> {
-      return db.transaction('r', db.categories, db.budgetLimits, db.transactions, db.reimbursements, async () => {
+      return db.transaction('r', [db.settings, db.categories, db.budgetLimits, db.transactions, db.reimbursements, db.cashExpenses], async () => {
         const [categories, limits, txs] = await Promise.all([db.categories.orderBy('order').toArray(), db.budgetLimits.toArray(), countedIn(month)]);
         const byId = new Map(categories.map((category) => [category.id, category]));
         const { budgets, totals, today: marker } = budgetMonth({
@@ -1365,7 +1469,7 @@ export function createDexieRepository(options: DexieRepositoryOptions = {}): Dat
     },
 
     async savings(month): Promise<SavingsView> {
-      return db.transaction('r', db.categories, db.transactions, db.reimbursements, db.savingsTargets, async () => {
+      return db.transaction('r', [db.settings, db.categories, db.transactions, db.reimbursements, db.savingsTargets, db.cashExpenses], async () => {
         const [targets, firstMonth] = await Promise.all([db.savingsTargets.toArray(), firstCountedMonth()]);
         if (targetFor(targets, month) <= 0) return { target: null };
         // The history and the streak look back to the first month with data, or with a target if later.
@@ -1493,7 +1597,7 @@ export function createDexieRepository(options: DexieRepositoryOptions = {}): Dat
     },
 
     async subscriptions(): Promise<SubscriptionsView> {
-      return db.transaction('r', db.categories, db.transactions, db.payees, db.reimbursements, async () => {
+      return db.transaction('r', [db.settings, db.categories, db.transactions, db.payees, db.reimbursements, db.cashExpenses], async () => {
         const categories = await db.categories.toArray();
         // The category whose payees are the subscriptions, by name: it survives being recreated or seeded again.
         const category = categories.find((c) => normalizeText(c.name) === 'suscripciones');
@@ -1504,15 +1608,20 @@ export function createDexieRepository(options: DexieRepositoryOptions = {}): Dat
           // Missing charges look at the two months before this one, whatever their category; this month's spending at this month.
           db.transactions.where('date').between(`${addMonths(monthOf(date), -2)}-01`, `${addMonths(monthOf(date), 1)}-01`).toArray(),
         ]);
-        const transactions = await netted([...new Map([...charges, ...recent].map((tx) => [tx.id, tx])).values()]);
+        const [transactions, cash] = await Promise.all([netted([...new Map([...charges, ...recent].map((tx) => [tx.id, tx])).values()]), cashState()]);
         const list = subscriptions(transactions, category.id, date);
         const payees = await db.payees.bulkGet(list.map((subscription) => subscription.payeeId));
         return {
           subscriptions: list
             .map((subscription, i) => ({ ...subscription, payee: payees[i]! }))
             .sort((a, b) => a.payee.name.localeCompare(b.payee.name, 'es-ES')),
-          // This month's spending counts a late income in the category in its counting month, as `spending` does.
-          totals: subscriptionTotals(list, inCountingMonths(transactions, new Map(categories.map((c) => [c.id, c]))), category.id, monthOf(date)),
+          // This month's spending counts a late income in the category in its counting month, and cash, as `spending` does.
+          totals: subscriptionTotals(
+            list,
+            withCash(inCountingMonths(transactions, new Map(categories.map((c) => [c.id, c]))), cash.pocket, cash.expenses),
+            category.id,
+            monthOf(date),
+          ),
         };
       });
     },

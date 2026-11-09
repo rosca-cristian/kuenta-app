@@ -8,9 +8,10 @@ import { useRepo, useRepoQuery } from '../../lib/repo';
 import { formatDate } from '../../domain/dates';
 import { signedAmount, type Category, type Id } from '../../domain/model';
 import { shapeByBankSign, transferAccountOf } from '../../domain/transfers';
-import type { AccountView, ReimbursementLinkView, RuleSuggestion, TransactionChanges, TransactionView } from '../../data/repository';
+import type { AccountView, CashExpenseView, ReimbursementLinkView, RuleSuggestion, TransactionChanges, TransactionView } from '../../data/repository';
 import { QuickRuleSheet } from '../rules/QuickRuleSheet';
 import { ReimbursementForm } from './ReimbursementForm';
+import { CashExpenseForm } from './CashExpenseForm';
 import { transactionTitle } from './titles';
 
 /** A rule to propose once the edit sheet closes: the suggestion plus what the question shows. */
@@ -21,6 +22,7 @@ type Proposal = RuleSuggestion & { categoryId: Id; payeeName: string };
  * whether it's a transfer to another account. After the user sets a category, it may
  * propose a rule for the payee's other transactions. An imported income can be linked to the
  * expenses it pays back ("Es un reembolso"), and either side of a reimbursement opens the other.
+ * A cash withdrawal notes down what its cash paid for ("Apuntar gasto en efectivo") and lists it.
  */
 export function EditTransactionSheet({ id, onClose }: { id: Id | null; onClose: () => void }) {
   // The transaction shown: the one asked for, or one linked to it the user opened from the sheet.
@@ -28,10 +30,13 @@ export function EditTransactionSheet({ id, onClose }: { id: Id | null; onClose: 
   const [shownId, setShownId] = useState(id);
   // "Es un reembolso" takes over the sheet, keeping the edit form's changes underneath.
   const [linking, setLinking] = useState(false);
+  // A cash expense being noted down (null) or edited takes over the sheet the same way.
+  const [cashExpense, setCashExpense] = useState<CashExpenseView | null | undefined>(undefined);
   if (id !== askedId) {
     setAskedId(id);
     setShownId(id);
     setLinking(false);
+    setCashExpense(undefined);
   }
   const tx = useRepoQuery((r) => (shownId ? r.getTransaction(shownId) : Promise.resolve(null)), [shownId]);
   const accounts = useRepoQuery((r) => r.listAccounts());
@@ -39,6 +44,7 @@ export function EditTransactionSheet({ id, onClose }: { id: Id | null; onClose: 
   function open(next: Id) {
     setShownId(next);
     setLinking(false);
+    setCashExpense(undefined);
   }
   // Kept after the proposal closes, so the sheet doesn't change while it slides away.
   const [proposal, setProposal] = useState<Proposal | null>(null);
@@ -57,14 +63,33 @@ export function EditTransactionSheet({ id, onClose }: { id: Id | null; onClose: 
       <Sheet
         open={id !== null}
         onClose={onClose}
-        title={linking ? '¿Qué gastos te devuelve?' : tx?.source === 'adjustment' ? 'Ajuste de saldo' : 'Movimiento'}
+        title={
+          linking
+            ? '¿Qué gastos te devuelve?'
+            : cashExpense !== undefined
+              ? 'Gasto en efectivo'
+              : tx?.source === 'adjustment'
+                ? 'Ajuste de saldo'
+                : 'Movimiento'
+        }
       >
         {tx && accounts && (
           <>
-            <div hidden={linking}>
-              <EditForm key={tx.id} tx={tx} accounts={accounts} onDone={done} onOpen={open} onLink={() => setLinking(true)} />
+            <div hidden={linking || cashExpense !== undefined}>
+              <EditForm
+                key={tx.id}
+                tx={tx}
+                accounts={accounts}
+                onDone={done}
+                onOpen={open}
+                onLink={() => setLinking(true)}
+                onCashExpense={setCashExpense}
+              />
             </div>
             {linking && <ReimbursementForm key={tx.id} income={tx} onDone={() => setLinking(false)} />}
+            {cashExpense !== undefined && (
+              <CashExpenseForm key={cashExpense?.id ?? 'new'} expense={cashExpense ?? undefined} onDone={() => setCashExpense(undefined)} />
+            )}
           </>
         )}
       </Sheet>
@@ -85,6 +110,7 @@ function EditForm({
   onDone,
   onOpen,
   onLink,
+  onCashExpense,
 }: {
   tx: TransactionView;
   accounts: AccountView[];
@@ -93,6 +119,8 @@ function EditForm({
   onOpen: (id: Id) => void;
   /** Opens "Es un reembolso" for this income. */
   onLink: () => void;
+  /** Opens a cash expense of this withdrawal, or a new one (null). */
+  onCashExpense: (expense: CashExpenseView | null) => void;
 }) {
   const repo = useRepo();
   const categories = useRepoQuery((r) => r.listCategories());
@@ -179,6 +207,18 @@ function EditForm({
           </dl>
           <LinkedTransactions title="Te lo devolvieron" links={tx.reimbursement.links} onOpen={onOpen} />
         </>
+      )}
+
+      {tx.cash && (
+        <div className="flex flex-col gap-2">
+          <p className="text-sm text-muted" data-testid="cash-spread">
+            Repartido <Money cents={tx.cash.spread} className="tabular-nums" /> de <Money cents={tx.amount} className="tabular-nums" />
+          </p>
+          {tx.cash.expenses.length > 0 && <CashExpenses parts={tx.cash.expenses} onOpen={onCashExpense} />}
+          <Button variant="secondary" onClick={() => onCashExpense(null)}>
+            Apuntar gasto en efectivo
+          </Button>
+        </div>
       )}
 
       {tx.source === 'import' && tx.type === 'income' && transferTo === null && (
@@ -317,5 +357,36 @@ function LinkedTransactions({ title, links, onOpen }: { title: string; links: Re
         })}
       </ul>
     </section>
+  );
+}
+
+/** The cash expenses a withdrawal paid, each with the part it paid; tapping one edits it. */
+function CashExpenses({ parts, onOpen }: { parts: { id: Id; amount: number }[]; onOpen: (expense: CashExpenseView) => void }) {
+  const expenses = useRepoQuery((r) => Promise.all(parts.map((part) => r.getCashExpense(part.id))), [parts]);
+  return (
+    <ul className="overflow-hidden rounded-xl border border-line" aria-label="Gastos en efectivo">
+      {parts.map((part, i) => {
+        const expense = expenses?.[i];
+        return (
+          <li key={part.id} className="border-b border-line last:border-b-0">
+            <button
+              type="button"
+              disabled={!expense}
+              className="flex min-h-14 w-full items-center gap-3 bg-card-2 px-3 py-2 text-left active:opacity-70"
+              onClick={() => expense && onOpen(expense)}
+            >
+              <IconBadge icon={expense?.category?.icon} color={expense?.category?.color} size={32} />
+              <span className="min-w-0 flex-1">
+                <span className="block truncate">{expense ? expense.note || (expense.category?.name ?? 'Sin categoría') : ''}</span>
+                <span className="block truncate text-xs text-muted">
+                  {expense ? (expense.note ? `${expense.category?.name ?? 'Sin categoría'} · ${formatDate(expense.date)}` : formatDate(expense.date)) : ''}
+                </span>
+              </span>
+              <Money cents={part.amount} className="shrink-0 tabular-nums" />
+            </button>
+          </li>
+        );
+      })}
+    </ul>
   );
 }
