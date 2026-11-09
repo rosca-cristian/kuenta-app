@@ -81,7 +81,10 @@ export interface CashExpenseView extends CashExpense {
 export interface CashPocketView {
   /** The unspent cash of every withdrawal. */
   total: Cents;
-  /** Whether the pocket ever had cash: a withdrawal from `cashFromDate` on. Without, the "Efectivo" line is hidden. */
+  /**
+   * Whether the pocket ever had cash: there's a withdrawal from `cashFromDate` on, or a cash
+   * expense (whose withdrawal may be gone). Without, the "Efectivo" line is hidden.
+   */
   everHad: boolean;
   /** The withdrawals with cash left, oldest first: what the next cash expenses take from. */
   withdrawals: { transaction: TransactionView; left: Cents }[];
@@ -238,7 +241,7 @@ export interface ImportOutcome {
 export interface HomeData {
   /** The sum of every account's balance, archived ones included, and the unspent cash. */
   totalBalance: Cents;
-  /** The unspent cash, Inicio's "Efectivo" line; null while the pocket never had any. */
+  /** The unspent cash, Inicio's "Efectivo" line; null while the pocket never had any (`CashPocketView.everHad`). */
   cash: Cents | null;
   /**
    * The unspent cash to remind the user of ("Tienes X € de efectivo sin repartir"): there's some,

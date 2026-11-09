@@ -322,11 +322,14 @@ function DeleteForm({
         </Alert>
       )}
       {usage.budget && <Alert tone="warn">También se borrará su presupuesto, incluido el de meses anteriores.</Alert>}
+      {cashOnly && others.length === 0 && (
+        <Alert tone="warn">Sus gastos en efectivo necesitan otra categoría de gasto. Crea una antes de borrar esta.</Alert>
+      )}
       <div className="flex gap-3">
         <Button variant="secondary" className="flex-1" onClick={onCancel} disabled={busy}>
           Cancelar
         </Button>
-        <Button variant="danger" className="flex-1" onClick={remove} disabled={busy}>
+        <Button variant="danger" className="flex-1" onClick={remove} disabled={busy || (cashOnly && others.length === 0)}>
           Borrar
         </Button>
       </div>

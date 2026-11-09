@@ -54,7 +54,13 @@ export function More() {
             <dd>{importAccount?.name ?? '—'}</dd>
             <dt className="text-muted">Contar el efectivo desde</dt>
             <dd>
-              <button type="button" className="-my-3 min-h-11 text-accent active:opacity-70" onClick={() => setMovingCashStart(true)} data-testid="cash-from-date">
+              <button
+                type="button"
+                className="-my-3 min-h-11 text-accent active:opacity-70 disabled:text-text"
+                disabled={!settings?.cashFromDate}
+                onClick={() => setMovingCashStart(true)}
+                data-testid="cash-from-date"
+              >
                 {settings?.cashFromDate ? formatDate(settings.cashFromDate) : '—'}
               </button>
             </dd>

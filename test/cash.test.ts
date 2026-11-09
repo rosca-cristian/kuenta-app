@@ -407,6 +407,9 @@ describe('keeping cash expenses when their cash goes away', () => {
     expect(await repo.cashExpensesUncoveredBy({ undoImport: batch.id })).toBe(3);
     await repo.undoImport(batch.id);
     expect((await repo.cashPocket()).uncovered.map((e) => e.id)).toEqual([ids.e3, ids.e2, ids.e1]);
+    // The "Efectivo" line stays, so the cash screen with them can still be reached.
+    expect((await repo.cashPocket()).everHad).toBe(true);
+    expect((await repo.home('2026-11')).cash).toBe(0);
     expect((await repo.listMovements(null, { type: 'cash' })).every((m) => m.kind === 'cash' && m.uncovered)).toBe(true);
     await importFile(repo, movements, 2000);
     expect((await repo.cashPocket()).uncovered).toEqual([]);
@@ -435,6 +438,7 @@ describe('keeping cash expenses when their cash goes away', () => {
     const { ids, ocio } = await cashData(repo);
     await repo.createRule({ name: 'Todo ocio', match: { value: 'a' }, actions: { categoryId: ocio } });
     await repo.applyRules();
+    await repo.acceptStarterRulesOffer();
     expect(await repo.getCashExpense(ids.e1)).toMatchObject({ category: { name: 'Restaurantes' }, note: 'Cena' });
   });
 
@@ -543,6 +547,7 @@ describe('cash expenses in backups', () => {
     ['the "Efectivo" category', (file: BackupJson) => void (file.data.cashExpenses[2].categoryId = categoryNamed(file, 'Efectivo')), { kind: 'invalid', table: 'cashExpenses', row: 2, field: 'categoryId' }],
     ['an income category', (file: BackupJson) => void (file.data.cashExpenses[0].categoryId = categoryNamed(file, 'Nómina')), { kind: 'invalid', table: 'cashExpenses', row: 0, field: 'categoryId' }],
     ['a repeated id', (file: BackupJson) => void (file.data.cashExpenses[1].id = file.data.cashExpenses[0].id), { kind: 'duplicate', table: 'cashExpenses', field: 'id' }],
+    ['no start date', (file: BackupJson) => void (file.data.settings = file.data.settings.filter((s) => s.key !== 'cashFromDate')), { kind: 'invalid', table: 'settings', row: null, field: 'cashFromDate' }],
     ['a start date that is not a date', (file: BackupJson) => void (file.data.settings.find((s) => s.key === 'cashFromDate')!.value = 'octubre'), { kind: 'invalid', table: 'settings', row: expect.any(Number), field: 'value' }],
   ])('refuse a copy with a cash expense with %s', async (_, damage, expected) => {
     const { repo } = await setup();

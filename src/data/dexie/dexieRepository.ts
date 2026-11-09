@@ -1259,7 +1259,7 @@ export function createDexieRepository(options: DexieRepositoryOptions = {}): Dat
         const newestFirst = await cashViews([...expenses].sort((a, b) => b.date.localeCompare(a.date) || b.createdAt.localeCompare(a.createdAt)));
         return {
           total: pocket.left,
-          everHad: withdrawals.length > 0,
+          everHad: withdrawals.length > 0 || expenses.length > 0,
           withdrawals: (await toViews(withLeft)).map((transaction) => ({ transaction, left: pocket.withdrawals.get(transaction.id)!.left })),
           latest: newestFirst.slice(0, LATEST_CASH_EXPENSES),
           uncovered: newestFirst.filter((expense) => expense.uncovered),
@@ -1502,7 +1502,8 @@ export function createDexieRepository(options: DexieRepositoryOptions = {}): Dat
       return {
         // Archived accounts still hold money: they count in the total, but aren't listed. So does unspent cash.
         totalBalance: allAccounts.reduce((sum, account) => sum + account.balance, 0) + left,
-        cash: cash.withdrawals.length > 0 ? left : null,
+        // Shown once there's been cash, so cash expenses left without it can still be reached.
+        cash: cash.withdrawals.length > 0 || cash.expenses.length > 0 ? left : null,
         cashReminder: cashReminderDue(left, [lastWithdrawal, dayOf(lastExpense), dayOf(reminderAt)], today(now())) ? left : null,
         // Reimbursements make expenses smaller and aren't income, and a late salary counts in the next month;
         // balances, goals and the forecast take the bank's amounts and dates.

@@ -35,6 +35,26 @@ const dayHeight = (rows: number) => 24 + rows * 65;
 /** The bank's rows among Movimientos' rows: only they make up the day nets and the summary's net. */
 const bankRows = (movements: MovementView[]) => movements.filter((movement): movement is TransactionView => movement.kind === 'bank');
 
+/**
+ * The summary line: the bank's rows and their net, as the bank has them, then how many cash
+ * expenses are listed too: "12 movimientos · neto −345,20 € · 2 gastos en efectivo".
+ */
+function MovementsSummary({ movements }: { movements: MovementView[] }) {
+  const bank = bankRows(movements);
+  const cash = movements.length - bank.length;
+  return (
+    <>
+      {bank.length > 0 && (
+        <>
+          {bank.length === 1 ? '1 movimiento' : `${bank.length} movimientos`} · neto <Money cents={listNet(bank)} format="signed" className="tabular-nums" />
+        </>
+      )}
+      {bank.length > 0 && cash > 0 && ' · '}
+      {cash > 0 && (cash === 1 ? '1 gasto en efectivo' : `${cash} gastos en efectivo`)}
+    </>
+  );
+}
+
 /** The grey line under the title: category and account, or the accounts a transfer moves money between. */
 function subtitle(tx: TransactionView): string {
   if (tx.type === 'transfer') return `${tx.account.name} → ${tx.toAccount?.name ?? ''}`;
@@ -190,8 +210,7 @@ export function Transactions() {
       <FilterBar filter={filter} onOpen={() => setFiltering(true)} onRemove={(field) => update((current) => withoutFilter(current, field))} />
       {transactions && transactions.length > 0 && (
         <p className="px-5 pb-3 text-sm text-muted" data-testid="summary">
-          {transactions.length === 1 ? '1 movimiento' : `${transactions.length} movimientos`} · neto{' '}
-          <Money cents={listNet(bankRows(transactions))} format="signed" className="tabular-nums" />
+          <MovementsSummary movements={transactions} />
         </p>
       )}
       {transactions &&

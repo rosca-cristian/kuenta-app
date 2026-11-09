@@ -149,7 +149,7 @@ test('cash expenses in Movimientos: their rows, the filter, and editing and dele
   await expect(cashRow.getByTestId('cash-mark')).toHaveText('Efectivo');
   await expect(cashRow).toContainText('Restaurantes');
   await expect(cashRow).toContainText('−12,50 €');
-  await expect(page.getByTestId('summary')).toHaveText('3 movimientos · neto −70,00 €');
+  await expect(page.getByTestId('summary')).toHaveText('2 movimientos · neto −70,00 € · 1 gasto en efectivo');
   await expect(row(page, 'Retirada cajero').getByTestId('row-cash-spread')).toHaveText('Repartido 12,50 € de 50,00 €');
   await expectNoHorizontalScroll(page);
 

@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import type { IsoDate } from './dates';
+import { monthOf, today, type IsoDate } from './dates';
 import { normalizeText } from './text';
 import type { Account, BudgetLimit, CashExpense, Category, Goal, ImportBatch, Payee, Reimbursement, Rule, SavingsTarget, Setting, Transaction } from './model';
 
@@ -223,7 +223,7 @@ const MIGRATIONS: ((file: Record<string, unknown>) => Record<string, unknown>)[]
   }),
   // 2 → 3: the monthly savings targets, which format 2 didn't have.
   (file) => ({ ...file, format: 3, data: isObject(file.data) ? { ...file.data, savingsTargets: [] } : file.data }),
-  // 3 → 4: cash expenses, which format 3 didn't have. Cash counts from the month of the copy, so
+  // 3 → 4: cash expenses, which format 3 didn't have. Cash counts from the (local) month of the copy, so
   // the withdrawals before it keep counting as spent and the past stays as it was.
   (file) => ({
     ...file,
@@ -234,7 +234,7 @@ const MIGRATIONS: ((file: Record<string, unknown>) => Record<string, unknown>)[]
           cashExpenses: [],
           settings:
             Array.isArray(file.data.settings) && typeof file.exportedAt === 'string' && !file.data.settings.some((row) => isObject(row) && row.key === 'cashFromDate')
-              ? [...file.data.settings, { key: 'cashFromDate', value: `${file.exportedAt.slice(0, 7)}-01` }]
+              ? [...file.data.settings, { key: 'cashFromDate', value: `${monthOf(today(new Date(file.exportedAt)))}-01` }]
               : file.data.settings,
         }
       : file.data,
@@ -464,8 +464,8 @@ function damageIn(data: BackupData): BackupDamage | null {
     const present = ids[target as Exclude<BackupTable, 'settings'>];
     if (values.some((value) => value != null && !present.has(value))) return { kind: 'reference', table, field, target };
   }
-  if (!data.settings.some((setting) => setting.key === 'importAccountId')) {
-    return { kind: 'invalid', table: 'settings', row: null, field: 'importAccountId' };
+  for (const key of ['importAccountId', 'cashFromDate']) {
+    if (!data.settings.some((setting) => setting.key === key)) return { kind: 'invalid', table: 'settings', row: null, field: key };
   }
   return reimbursementDamage(data) ?? cashExpenseDamage(data);
 }
