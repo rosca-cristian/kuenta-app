@@ -8,8 +8,9 @@ import { Money } from '../../lib/money';
 import { PrivacyButton } from '../../ui/PrivacyButton';
 import { formatDayHeader, formatMonth, monthOf, today, type Month } from '../../domain/dates';
 import { listNet } from '../../domain/stats';
-import type { TransactionFilter, TransactionView } from '../../data/repository';
+import type { CashExpenseView, MovementView, TransactionFilter, TransactionView } from '../../data/repository';
 import { EditTransactionSheet } from './EditTransactionSheet';
+import { CashExpenseSheet } from './CashExpenseSheet';
 import { transactionTitle } from './titles';
 import { ExportCsvButton } from './ExportCsvButton';
 import { FiltersSheet } from './FiltersSheet';
@@ -31,6 +32,9 @@ const SEARCH_DELAY_MS = 150;
 /** A day section's height before it's laid out: its header and rows, so the scrollbar stays put. */
 const dayHeight = (rows: number) => 24 + rows * 65;
 
+/** The bank's rows among Movimientos' rows: only they make up the day nets and the summary's net. */
+const bankRows = (movements: MovementView[]) => movements.filter((movement): movement is TransactionView => movement.kind === 'bank');
+
 /** The grey line under the title: category and account, or the accounts a transfer moves money between. */
 function subtitle(tx: TransactionView): string {
   if (tx.type === 'transfer') return `${tx.account.name} → ${tx.toAccount?.name ?? ''}`;
@@ -45,13 +49,13 @@ function countingMonthName(tx: TransactionView, month: Month): string {
 
 /**
  * A row's amount, always the bank's: under it, "Reembolso" on an income that pays back expenses
- * and "Tu parte" on an expense paid back, what it really cost, and "Cuenta en noviembre" on an
- * income that counts in another month than its date's.
+ * and "Tu parte" on an expense paid back, what it really cost, "Cuenta en noviembre" on an
+ * income that counts in another month than its date's, and "Repartido X de Y" on a cash withdrawal.
  */
 function RowAmount({ tx }: { tx: TransactionView }) {
   if (tx.type === 'transfer') return <Amount cents={tx.amount} kind="neutral" className="text-muted" />;
   const amount = <Amount cents={tx.amount} kind={tx.type} />;
-  if (!tx.reimbursement && !tx.countingMonth) return amount;
+  if (!tx.reimbursement && !tx.countingMonth && !tx.cash) return amount;
   return (
     <span className="flex shrink-0 flex-col items-end">
       {amount}
@@ -70,7 +74,47 @@ function RowAmount({ tx }: { tx: TransactionView }) {
           Cuenta en {countingMonthName(tx, tx.countingMonth)}
         </span>
       )}
+      {tx.cash && (
+        <span className="whitespace-nowrap text-xs text-muted" data-testid="row-cash-spread">
+          Repartido <Money cents={tx.cash.spread} className="tabular-nums" /> de <Money cents={tx.amount} className="tabular-nums" />
+        </span>
+      )}
     </span>
+  );
+}
+
+/** A transaction's row: tapping it opens its sheet. */
+function BankRow({ tx, onOpen }: { tx: TransactionView; onOpen: () => void }) {
+  return (
+    <button className="flex min-h-16 w-full items-center gap-3 px-3 py-2 text-left active:bg-card-2" onClick={onOpen}>
+      {tx.type === 'transfer' ? <TransferBadge /> : <IconBadge icon={tx.category?.icon} color={tx.category?.color} />}
+      <span className="min-w-0 flex-1">
+        <span className="block truncate">{transactionTitle(tx)}</span>
+        <span className={`block truncate text-xs ${tx.category || tx.type === 'transfer' ? 'text-muted' : 'text-warn'}`}>{subtitle(tx)}</span>
+      </span>
+      <RowAmount tx={tx} />
+      {tx.editedAt && <Check size={14} className="text-muted" aria-label="Revisado" />}
+    </button>
+  );
+}
+
+/** A cash expense's row, marked "Efectivo": its note or else its category, and what it cost. Tapping it opens its sheet. */
+function CashRow({ expense, onOpen }: { expense: CashExpenseView; onOpen: () => void }) {
+  const categoryName = expense.category?.name ?? 'Categoría borrada';
+  return (
+    <button className="flex min-h-16 w-full items-center gap-3 px-3 py-2 text-left active:bg-card-2" onClick={onOpen}>
+      <IconBadge icon={expense.category?.icon} color={expense.category?.color} />
+      <span className="min-w-0 flex-1">
+        <span className="block truncate">{expense.note || categoryName}</span>
+        <span className="flex min-w-0 items-center gap-1 text-xs text-muted">
+          <span className="shrink-0 rounded-full bg-card-2 px-1.5" data-testid="cash-mark">
+            Efectivo
+          </span>
+          {expense.note && <span className="truncate">{categoryName}</span>}
+        </span>
+      </span>
+      <Amount cents={expense.amount} kind="expense" />
+    </button>
   );
 }
 
@@ -99,15 +143,16 @@ export function Transactions() {
   const text = textParam(params);
   const filter = filterParams(params);
   const [editing, setEditing] = useState<string | null>(null);
+  const [editingCash, setEditingCash] = useState<CashExpenseView | null>(null);
   const [filtering, setFiltering] = useState(false);
-  const current = useRepoQuery((repo) => repo.listTransactions(period, { ...filter, text }), [period, filter, text]);
+  const current = useRepoQuery((repo) => repo.listMovements(period, { ...filter, text }), [period, filter, text]);
   // The list keeps the previous results while new ones load; the export waits for them.
   const transactions = useLatest(current);
   const search = useCallback((next: string) => update((current) => withText(current, next)), [update]);
   const searching = text.trim() !== '' || filter !== null;
 
   const days = useMemo(() => {
-    const groups = new Map<string, TransactionView[]>();
+    const groups = new Map<string, MovementView[]>();
     for (const tx of transactions ?? []) {
       const day = groups.get(tx.date);
       if (day) day.push(tx);
@@ -123,7 +168,7 @@ export function Transactions() {
         action={
           <div className="flex shrink-0 items-center">
             <PrivacyButton />
-            <ExportCsvButton transactions={current} />
+            <ExportCsvButton transactions={current && bankRows(current)} />
           </div>
         }
       />
@@ -143,7 +188,7 @@ export function Transactions() {
       {transactions && transactions.length > 0 && (
         <p className="px-5 pb-3 text-sm text-muted" data-testid="summary">
           {transactions.length === 1 ? '1 movimiento' : `${transactions.length} movimientos`} · neto{' '}
-          <Money cents={listNet(transactions)} format="signed" className="tabular-nums" />
+          <Money cents={listNet(bankRows(transactions))} format="signed" className="tabular-nums" />
         </p>
       )}
       {transactions &&
@@ -157,7 +202,7 @@ export function Transactions() {
         ))}
       <div className="flex flex-col gap-4 px-4 pb-4">
         {days.map(([date, txs]) => {
-          const net = listNet(txs);
+          const net = listNet(bankRows(txs));
           return (
             // Off-screen days aren't laid out, so a month of 500 transactions scrolls smoothly.
             <section key={date} style={{ contentVisibility: 'auto', containIntrinsicSize: `auto ${dayHeight(txs.length)}px` }}>
@@ -166,19 +211,13 @@ export function Transactions() {
                 <Money cents={net} format="signed" className="tabular-nums" />
               </h2>
               <ul className="overflow-hidden rounded-2xl border border-line bg-card">
-                {txs.map((tx) => (
-                  <li key={tx.id} className="border-b border-line last:border-b-0">
-                    <button className="flex min-h-16 w-full items-center gap-3 px-3 py-2 text-left active:bg-card-2" onClick={() => setEditing(tx.id)}>
-                      {tx.type === 'transfer' ? <TransferBadge /> : <IconBadge icon={tx.category?.icon} color={tx.category?.color} />}
-                      <span className="min-w-0 flex-1">
-                        <span className="block truncate">{transactionTitle(tx)}</span>
-                        <span className={`block truncate text-xs ${tx.category || tx.type === 'transfer' ? 'text-muted' : 'text-warn'}`}>
-                          {subtitle(tx)}
-                        </span>
-                      </span>
-                      <RowAmount tx={tx} />
-                      {tx.editedAt && <Check size={14} className="text-muted" aria-label="Revisado" />}
-                    </button>
+                {txs.map((movement) => (
+                  <li key={movement.id} className="border-b border-line last:border-b-0">
+                    {movement.kind === 'bank' ? (
+                      <BankRow tx={movement} onOpen={() => setEditing(movement.id)} />
+                    ) : (
+                      <CashRow expense={movement} onOpen={() => setEditingCash(movement)} />
+                    )}
                   </li>
                 ))}
               </ul>
@@ -187,6 +226,7 @@ export function Transactions() {
         })}
       </div>
       <EditTransactionSheet id={editing} onClose={() => setEditing(null)} />
+      <CashExpenseSheet expense={editingCash} onClose={() => setEditingCash(null)} />
       <FiltersSheet
         open={filtering}
         filter={filter ?? {}}

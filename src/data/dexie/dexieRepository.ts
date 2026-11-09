@@ -42,6 +42,7 @@ import type {
   CashExpenseChanges,
   CashExpenseSaveResult,
   CashExpenseView,
+  MovementView,
   CategoryChanges,
   CategoryDraft,
   CategorySaveResult,
@@ -552,6 +553,7 @@ export function createDexieRepository(options: DexieRepositoryOptions = {}): Dat
       const countingMonth = countingMonthOf(tx, categoryMap);
       return {
         ...tx,
+        kind: 'bank' as const,
         account: accountMap.get(tx.accountId)!,
         toAccount: tx.toAccountId ? accountMap.get(tx.toAccountId) ?? null : null,
         category: tx.categoryId ? categoryMap.get(tx.categoryId) ?? null : null,
@@ -596,6 +598,13 @@ export function createDexieRepository(options: DexieRepositoryOptions = {}): Dat
       await db.cashExpenses.put(expense);
       return { ok: true, id: expense.id };
     });
+  }
+
+  /** The cash expenses with their category and whether the cash pays them. */
+  async function cashViews(expenses: CashExpense[]): Promise<CashExpenseView[]> {
+    const [categories, { pocket }] = await Promise.all([db.categories.toArray(), cashState()]);
+    const byId = new Map(categories.map((category) => [category.id, category]));
+    return expenses.map((expense) => ({ ...expense, kind: 'cash', category: byId.get(expense.categoryId) ?? null, uncovered: pocket.uncovered.has(expense.id) }));
   }
 
   /** A month's transactions, by their date. */
@@ -1059,6 +1068,39 @@ export function createDexieRepository(options: DexieRepositoryOptions = {}): Dat
       return text === '' ? views : views.filter((tx) => matchesText(tx, text));
     },
 
+    async listMovements(period, filter: TransactionFilter = {}) {
+      const { accountId, categoryId, type, payeeId, from, to } = filter;
+      const bank = type === 'cash' ? [] : repository.listTransactions(period, filter);
+      const cashListed = (type === undefined || type === 'cash') && accountId === undefined && categoryId !== null && payeeId === undefined;
+      const expenses = !cashListed
+        ? []
+        : await (period === null ? db.cashExpenses.toArray() : db.cashExpenses.where('date').between(`${period}-01`, `${addMonths(period, 1)}-01`).toArray());
+      const text = normalizeText(filter.text ?? '');
+      const cash = (await cashViews(expenses)).filter(
+        (expense) =>
+          (categoryId === undefined || expense.categoryId === categoryId) &&
+          (from === undefined || expense.date >= from) &&
+          (to === undefined || expense.date <= to) &&
+          (text === '' || normalizeText(`${expense.note} ${expense.category?.name ?? ''}`).includes(text)),
+      );
+      // Newest first; within a day, the cash expenses (the last noted down first) before the bank's rows.
+      const byDay = new Map<string, MovementView[]>();
+      for (const expense of cash.sort((a, b) => b.date.localeCompare(a.date) || b.createdAt.localeCompare(a.createdAt))) {
+        byDay.set(expense.date, [...(byDay.get(expense.date) ?? []), expense]);
+      }
+      const movements: MovementView[] = [];
+      for (const tx of await bank) {
+        for (const [date, day] of byDay) {
+          if (date < tx.date) break;
+          movements.push(...day);
+          byDay.delete(date);
+        }
+        movements.push(tx);
+      }
+      for (const day of byDay.values()) movements.push(...day);
+      return movements;
+    },
+
     async transactionDateRange() {
       return db.transaction('r', db.transactions, async () => {
         const [first, last] = await Promise.all([db.transactions.orderBy('date').first(), db.transactions.orderBy('date').last()]);
@@ -1167,9 +1209,7 @@ export function createDexieRepository(options: DexieRepositoryOptions = {}): Dat
     async getCashExpense(id): Promise<CashExpenseView | null> {
       return db.transaction('r', [db.settings, db.categories, db.transactions, db.cashExpenses], async () => {
         const expense = await db.cashExpenses.get(id);
-        if (!expense) return null;
-        const [category, { pocket }] = await Promise.all([db.categories.get(expense.categoryId), cashState()]);
-        return { ...expense, category: category ?? null, uncovered: pocket.uncovered.has(id) };
+        return expense ? (await cashViews([expense]))[0] : null;
       });
     },
 

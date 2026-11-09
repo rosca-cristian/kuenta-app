@@ -4,6 +4,10 @@ import { bbvaXlsxFile } from './support/xlsx';
 const sheet = (page: Page) => page.getByRole('dialog');
 const row = (page: Page, text: string) => page.locator('main').getByRole('listitem').filter({ hasText: text });
 
+async function expectNoHorizontalScroll(page: Page) {
+  expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
+}
+
 async function openMovimientos(page: Page) {
   await page.getByRole('link', { name: 'Movimientos' }).click();
   await expect(page.getByRole('heading', { name: 'Movimientos' })).toBeVisible();
@@ -110,4 +114,73 @@ test('the cash expense amount starts empty in privacy mode, and the spread is hi
   await expect(sheet(page).getByTestId('cash-spread').getByTestId('hidden-amount')).toHaveCount(2);
   await sheet(page).getByRole('list', { name: 'Gastos en efectivo' }).getByRole('button').click();
   await expect(sheet(page).getByLabel('Importe')).toHaveValue('');
+});
+
+test('cash expenses in Movimientos: their rows, the filter, and editing and deleting them from their sheet', async ({ page }) => {
+  await page.clock.setFixedTime(new Date('2026-10-20T12:00:00'));
+  await page.goto('./');
+  await page.getByRole('button', { name: 'Empezar' }).click();
+  await page.getByRole('button', { name: 'Continuar' }).click();
+  await page.getByRole('link', { name: 'Importar' }).click();
+  await page.getByTestId('file-input').setInputFiles(
+    bbvaXlsxFile(
+      [
+        { valor: '02/10/2026', concepto: 'Retirada cajero', movimiento: 'Retirada en cajero', importe: -50 },
+        { valor: '15/10/2026', concepto: 'Mercadona', movimiento: 'Pago con tarjeta', importe: -20 },
+      ],
+      { startBalance: 1000 },
+    ),
+  );
+  await page.getByRole('button', { name: 'Importar 2' }).click();
+  await expect(page.getByTestId('balance-check')).toHaveText('✓ Cuadra');
+
+  // A 12,50 € coffee and pastries today, noted down from the withdrawal.
+  await openMovimientos(page);
+  await row(page, 'Retirada cajero').click();
+  await sheet(page).getByRole('button', { name: 'Apuntar gasto en efectivo' }).click();
+  await sheet(page).getByLabel('Importe').fill('12,50');
+  await sheet(page).getByRole('button', { name: 'Restaurantes', exact: true }).click();
+  await sheet(page).getByRole('textbox', { name: 'Nota' }).fill('Desayuno');
+  await sheet(page).getByRole('button', { name: 'Guardar' }).click();
+  await sheet(page).getByRole('button', { name: 'Cerrar' }).click();
+
+  // Its own row on its date, marked "Efectivo"; the day net and the summary stay the bank's.
+  const cashRow = row(page, 'Desayuno');
+  await expect(cashRow.getByTestId('cash-mark')).toHaveText('Efectivo');
+  await expect(cashRow).toContainText('Restaurantes');
+  await expect(cashRow).toContainText('−12,50 €');
+  await expect(page.getByTestId('summary')).toHaveText('3 movimientos · neto −70,00 €');
+  await expect(row(page, 'Retirada cajero').getByTestId('row-cash-spread')).toHaveText('Repartido 12,50 € de 50,00 €');
+  await expectNoHorizontalScroll(page);
+
+  // Found by its category name, and by "Gastos en efectivo".
+  await page.getByRole('searchbox', { name: 'Buscar movimientos' }).fill('restaurantes');
+  await expect(page.locator('main').getByRole('listitem')).toHaveCount(1);
+  await page.getByRole('button', { name: 'Borrar búsqueda' }).click();
+  await page.getByRole('button', { name: 'Filtros' }).click();
+  await sheet(page).getByRole('radio', { name: 'Gastos en efectivo' }).check();
+  await sheet(page).getByRole('button', { name: 'Aplicar' }).click();
+  await expect(page).toHaveURL(/tipo=efectivo/);
+  await expect(page.locator('main').getByRole('listitem')).toHaveCount(1);
+  await expect(page.locator('main').getByRole('listitem')).toContainText('Desayuno');
+
+  // Its sheet edits it, refusing more than the cash held then, and deletes it.
+  await cashRow.click();
+  await expect(sheet(page).getByRole('heading', { name: 'Gasto en efectivo' })).toBeVisible();
+  await sheet(page).getByLabel('Importe').fill('60');
+  await sheet(page).getByRole('button', { name: 'Guardar' }).click();
+  await expect(sheet(page).getByRole('alert')).toHaveText('Solo tienes 50,00 € de efectivo a esa fecha');
+  await sheet(page).getByLabel('Importe').fill('15');
+  await sheet(page).getByRole('button', { name: 'Guardar' }).click();
+  await expect(sheet(page)).toHaveCount(0);
+  await expect(cashRow).toContainText('−15,00 €');
+
+  await page.getByRole('button', { name: 'Ocultar importes' }).click();
+  await expect(cashRow.getByTestId('hidden-amount')).toHaveCount(1);
+  await page.getByRole('button', { name: 'Ocultar importes' }).click();
+
+  await cashRow.click();
+  await sheet(page).getByRole('button', { name: 'Borrar' }).click();
+  await expect(sheet(page)).toHaveCount(0);
+  await expect(page.locator('main').getByRole('listitem')).toHaveCount(0);
 });

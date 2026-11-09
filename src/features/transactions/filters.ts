@@ -5,8 +5,8 @@ import type { TransactionFilter } from '../../data/repository';
 /**
  * Movimientos' query parameters, which hold its whole state and which Análisis and Inicio link
  * with: `mes` (YYYY-MM, or `todos` for all months), `q` (the search), `cuenta` (an account's id),
- * `categoria` (a category's id or `sin-categoria`), `tipo` (`gasto`, `ingreso`, `transferencia`
- * or `reembolso`) and `comercio` (a payee's id).
+ * `categoria` (a category's id or `sin-categoria`), `tipo` (`gasto`, `ingreso`, `transferencia`,
+ * `reembolso` or `efectivo`) and `comercio` (a payee's id).
  */
 const MONTH = 'mes';
 const ALL_MONTHS = 'todos';
@@ -17,10 +17,10 @@ const TYPE = 'tipo';
 const PAYEE = 'comercio';
 const UNCATEGORIZED = 'sin-categoria';
 type TypeFilter = NonNullable<TransactionFilter['type']>;
-const TYPES: Record<TypeFilter, string> = { expense: 'gasto', income: 'ingreso', transfer: 'transferencia', reimbursement: 'reembolso' };
+const TYPES: Record<TypeFilter, string> = { expense: 'gasto', income: 'ingreso', transfer: 'transferencia', reimbursement: 'reembolso', cash: 'efectivo' };
 
 /** The type filter's options as the filters sheet and the chips name them. */
-export const TYPE_FILTER_NAMES: Record<TypeFilter, string> = { ...TX_TYPE_NAMES, reimbursement: 'Reembolsos' };
+export const TYPE_FILTER_NAMES: Record<TypeFilter, string> = { ...TX_TYPE_NAMES, reimbursement: 'Reembolsos', cash: 'Gastos en efectivo' };
 
 /** The filter's fields besides the search, each kept in its own parameter. */
 export type FilterField = 'accountId' | 'categoryId' | 'type' | 'payeeId';

@@ -46,6 +46,8 @@ export type AccountSaveResult =
   | { ok: false; reason: 'exists'; existing: Account };
 
 export interface TransactionView extends Transaction {
+  /** A row from the bank, as opposed to a cash expense (`MovementView`). */
+  kind: 'bank';
   category: Category | null;
   payee: Payee | null;
   account: Account;
@@ -67,11 +69,16 @@ export interface TransactionView extends Transaction {
 
 /** A cash expense with its category. */
 export interface CashExpenseView extends CashExpense {
+  /** A cash expense, as opposed to a row from the bank (`MovementView`). */
+  kind: 'cash';
   /** Null when the category was deleted. */
   category: Category | null;
   /** Whether the cash held on its date can't pay it ("Sin efectivo"): it then counts nowhere. */
   uncovered: boolean;
 }
+
+/** One row of Movimientos: a transaction from the bank or a cash expense, told apart by `kind`. */
+export type MovementView = TransactionView | CashExpenseView;
 
 export interface CashExpenseDraft {
   /** Above 0. */
@@ -148,8 +155,11 @@ export interface TransactionFilter {
   accountId?: Id;
   /** A category's id, or null for "sin categoría": the imported expenses and income without a category. */
   categoryId?: Id | null;
-  /** A type, or `'reimbursement'`: the incomes that pay back at least one expense ("Reembolsos"). */
-  type?: TxType | 'reimbursement';
+  /**
+   * A type, `'reimbursement'`: the incomes that pay back at least one expense ("Reembolsos"), or
+   * `'cash'`: the cash expenses ("Gastos en efectivo"). Every other type lists only the bank's rows.
+   */
+  type?: TxType | 'reimbursement' | 'cash';
   payeeId?: Id;
   /** On or after this date (the transaction's date, inclusive). */
   from?: IsoDate;
@@ -557,6 +567,14 @@ export interface DataRepository {
 
   /** Transactions of a month, or of all months when `period` is null, newest first; with a filter, only those matching it. */
   listTransactions(period: Month | null, filter?: TransactionFilter): Promise<TransactionView[]>;
+  /**
+   * What Movimientos lists: the transactions as `listTransactions` gives them and the cash
+   * expenses of the period, newest first, a day's cash expenses before its bank rows. A cash
+   * expense matches the search by its note or category name, and the category filter by its
+   * category; it has no account, payee or "sin categoría", so those filters leave it out, and
+   * of the types only `'cash'` lists it.
+   */
+  listMovements(period: Month | null, filter?: TransactionFilter): Promise<MovementView[]>;
   /** The dates of the oldest and the newest transaction, balance adjustments included; null when there are none. */
   transactionDateRange(): Promise<{ first: IsoDate; last: IsoDate } | null>;
   getTransaction(id: Id): Promise<TransactionView | null>;

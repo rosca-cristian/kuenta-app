@@ -13,7 +13,7 @@ async function expectNoHorizontalScroll(page: Page) {
 async function applyFilters(page: Page, account: string, type: string) {
   await page.getByRole('button', { name: 'Filtros', exact: true }).click();
   await sheet(page).getByRole('group', { name: 'Cuenta' }).getByRole('button', { name: account }).click();
-  await sheet(page).getByRole('radio', { name: type }).check();
+  await sheet(page).getByRole('radio', { name: type, exact: true }).check();
   await sheet(page).getByRole('button', { name: 'Aplicar' }).click();
   await expect(sheet(page)).toHaveCount(0);
 }

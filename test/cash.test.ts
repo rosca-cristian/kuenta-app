@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { createDexieRepository } from '../src/data/dexie/dexieRepository';
 import { KuentaDb } from '../src/data/dexie/db';
-import type { DataRepository } from '../src/data/repository';
+import type { DataRepository, TransactionView } from '../src/data/repository';
+import { listNet } from '../src/domain/stats';
 import type { SampleMovement } from './support/bbvaXlsx';
 import { importFile } from './support/backupData';
 
@@ -265,5 +266,56 @@ describe('editing and deleting a cash expense', () => {
       ],
     });
     await expect(repo.deleteCashExpense(ids.e1)).rejects.toThrow('not found');
+  });
+});
+
+describe('Movimientos with cash expenses', () => {
+  const rows = (movements: Awaited<ReturnType<DataRepository['listMovements']>>) =>
+    movements.map((m) => (m.kind === 'cash' ? `cash:${m.note || m.category?.name}` : `bank:${m.note || m.bankConcept}`));
+
+  it('lists them on their dates, before the bank rows of the day, newest first', async () => {
+    const { repo } = await setup();
+    await cashData(repo);
+    expect(rows(await repo.listMovements('2026-10'))).toEqual([
+      'cash:Restaurantes',
+      'bank:Cajero Centro',
+      'bank:Recibido: Ana cena',
+      'bank:Bar Romera',
+      'cash:Cena',
+      'bank:Retirada cajero',
+    ]);
+    expect(rows(await repo.listMovements(null)).slice(0, 4)).toEqual(['bank:Cajero Norte', 'bank:Mercadona', 'cash:Ocio', 'cash:Restaurantes']);
+  });
+
+  it('leave the day nets and the summary as the bank has them', async () => {
+    const { repo } = await setup();
+    await cashData(repo);
+    const bank = (await repo.listMovements('2026-10')).filter((m) => m.kind === 'bank');
+    expect(bank.map((tx) => tx.id)).toEqual((await repo.listTransactions('2026-10')).map((tx) => tx.id));
+    expect(listNet(bank as TransactionView[])).toBe(listNet(await repo.listTransactions('2026-10')));
+  });
+
+  it('are found by their note and category name, by the category filter and by the type "Gastos en efectivo"', async () => {
+    const { repo, ocio } = await (async () => {
+      const s = await setup();
+      return { ...s, ...(await cashData(s.repo)) };
+    })();
+    expect(rows(await repo.listMovements(null, { text: 'cena' }))).toEqual(['bank:Recibido: Ana cena', 'cash:Cena']);
+    expect(rows(await repo.listMovements(null, { text: 'restaurantes' }))).toEqual(['cash:Restaurantes', 'cash:Cena']);
+    expect(rows(await repo.listMovements(null, { categoryId: ocio }))).toEqual(['cash:Ocio']);
+    expect(rows(await repo.listMovements(null, { type: 'cash' }))).toEqual(['cash:Ocio', 'cash:Restaurantes', 'cash:Cena']);
+    expect(rows(await repo.listMovements('2026-10', { type: 'expense' })).every((row) => row.startsWith('bank:'))).toBe(true);
+    // They have no account, payee or "sin categoría".
+    const accountId = (await repo.listAccounts())[0].id;
+    expect(rows(await repo.listMovements(null, { accountId })).some((row) => row.startsWith('cash:'))).toBe(false);
+    expect(rows(await repo.listMovements(null, { categoryId: null })).some((row) => row.startsWith('cash:'))).toBe(false);
+    expect(await repo.listTransactions(null, { type: 'cash' })).toEqual([]);
+  });
+
+  it('are never reimbursement candidates', async () => {
+    const { repo } = await setup();
+    await cashData(repo);
+    const candidates = await repo.reimbursementCandidates(await idOf(repo, 'Recibido: Ana cena'));
+    expect(candidates.every((candidate) => candidate.transaction.kind === 'bank')).toBe(true);
   });
 });
