@@ -109,6 +109,16 @@ describe('checking a cash expense', () => {
     expect(checkCashExpense(withdrawals, others, expense('new', '2026-10-12', 5000), before)).toEqual({ ok: false, available: 3000, later: true });
   });
 
+  it('says the cash held on its date when that is what falls short, even if later expenses leave less to spare', () => {
+    // 80 € held on the 3rd, of which only 20 € are spare once the 5th is paid.
+    const atFirst = [expense('e-5', '2026-10-05', 6000)];
+    expect(checkCashExpense(withdrawals, atFirst, expense('new', '2026-10-03', 12000), cashPocket(withdrawals, atFirst))).toEqual({
+      ok: false,
+      available: 10000,
+      later: false,
+    });
+  });
+
   it('checks an edit against the others, leaving the expense itself out', () => {
     const edited = { ...others[0], amount: 10000 };
     expect(checkCashExpense(withdrawals, [others[1]], edited, before)).toEqual({ ok: true });

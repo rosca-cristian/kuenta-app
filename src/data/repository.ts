@@ -87,8 +87,8 @@ export type CashExpenseChanges = Partial<CashExpenseDraft>;
 
 /**
  * The outcome of noting down or editing a cash expense. It's refused when the cash held on its
- * date can't pay it whole, or when paying it would leave a later cash expense without cash:
- * `available` is what an expense on that date could take, and `later` tells the second case.
+ * date can't pay it whole (`available` is that cash), or when paying it would leave a later cash
+ * expense without cash (`later`; `available` is what an expense on that date could take).
  */
 export type CashExpenseSaveResult = { ok: true; id: Id } | { ok: false; reason: 'notEnough'; available: Cents; later: boolean };
 

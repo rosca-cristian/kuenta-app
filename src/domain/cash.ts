@@ -103,8 +103,8 @@ export function cashAvailableOn(pocket: CashPocket, withdrawals: CashWithdrawal[
  * Whether a cash expense, new or edited, can be saved next to the `others`: the cash must pay it
  * whole, and no other expense the cash pays in `before` (the pocket as it is now) may be left
  * without. An edit of an expense already uncovered may leave it so. When refused, `available` is
- * what an expense on its date could take, and `later` tells that the cash held then would pay
- * it but a later expense would be left without.
+ * the cash held on its date when that can't pay it; otherwise `later` is set, and `available` is
+ * what an expense on that date could take without leaving a later one without cash.
  */
 export function checkCashExpense(
   withdrawals: CashWithdrawal[],
@@ -117,8 +117,8 @@ export function checkCashExpense(
   const leavesOthers = others.some((other) => after.uncovered.has(other.id) && !before.uncovered.has(other.id));
   if (!leavesOthers && !(mustCover && after.uncovered.has(expense.id))) return { ok: true };
   const rest = cashPocket(withdrawals, others);
-  const available = cashAvailableOn(rest, withdrawals, others, expense.date);
-  return { ok: false, available, later: cashHeldOn(rest, withdrawals, others, expense.date) >= expense.amount };
+  const held = cashHeldOn(rest, withdrawals, others, expense.date);
+  return held < expense.amount ? { ok: false, available: held, later: false } : { ok: false, available: cashAvailableOn(rest, withdrawals, others, expense.date), later: true };
 }
 
 /**

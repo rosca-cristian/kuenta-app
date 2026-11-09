@@ -8,6 +8,7 @@ import { useRepo, useRepoQuery } from '../../lib/repo';
 import { formatDate } from '../../domain/dates';
 import { signedAmount, type Category, type Id } from '../../domain/model';
 import { shapeByBankSign, transferAccountOf } from '../../domain/transfers';
+import type { WithdrawalCash } from '../../domain/cash';
 import type { AccountView, CashExpenseView, ReimbursementLinkView, RuleSuggestion, TransactionChanges, TransactionView } from '../../data/repository';
 import { QuickRuleSheet } from '../rules/QuickRuleSheet';
 import { ReimbursementForm } from './ReimbursementForm';
@@ -361,7 +362,7 @@ function LinkedTransactions({ title, links, onOpen }: { title: string; links: Re
 }
 
 /** The cash expenses a withdrawal paid, each with the part it paid; tapping one edits it. */
-function CashExpenses({ parts, onOpen }: { parts: { id: Id; amount: number }[]; onOpen: (expense: CashExpenseView) => void }) {
+function CashExpenses({ parts, onOpen }: { parts: WithdrawalCash['expenses']; onOpen: (expense: CashExpenseView) => void }) {
   const expenses = useRepoQuery((r) => Promise.all(parts.map((part) => r.getCashExpense(part.id))), [parts]);
   return (
     <ul className="overflow-hidden rounded-xl border border-line" aria-label="Gastos en efectivo">
