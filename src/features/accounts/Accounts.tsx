@@ -8,6 +8,7 @@ import { formatTypedAmount, parseTypedAmount } from '../../domain/money';
 import { Money, usePrivacyMode } from '../../lib/money';
 import type { AccountType } from '../../domain/model';
 import type { AccountDraft, AccountSaveResult, AccountView } from '../../data/repository';
+import { CashLine } from './Cash';
 
 const ACCOUNT_TYPES: { type: AccountType; label: string }[] = [
   { type: 'bank', label: 'Banco' },
@@ -33,9 +34,13 @@ type Editing =
 
 const SHEET_TITLES = { balance: 'Actualizar saldo', delete: 'Borrar cuenta' };
 
-/** Más → Cuentas: every account with its balance, to create, edit, update, archive and delete them. */
+/**
+ * Más → Cuentas: every account with its balance, to create, edit, update, archive and delete them,
+ * and the read-only "Efectivo" line once there's been cash, which opens the cash screen.
+ */
 export function Accounts() {
   const accounts = useRepoQuery((r) => r.listAccounts());
+  const cash = useRepoQuery((r) => r.cashPocket());
   const [editing, setEditing] = useState<Editing | null>(null);
   const close = () => setEditing(null);
   const edit = (account: AccountView) => setEditing({ mode: 'edit', account });
@@ -56,6 +61,7 @@ export function Accounts() {
       {accounts && (
         <div className="flex flex-col gap-4 px-4 pb-4">
           <AccountList title="Cuentas" accounts={active} onEdit={edit} />
+          {cash?.everHad && <CashLine cents={cash.total} className="min-h-14 rounded-2xl border border-line bg-card px-3 py-2" />}
           {archived.length > 0 && (
             <section>
               <h2 className="px-1 pb-1 text-sm font-medium text-muted">Archivadas</h2>

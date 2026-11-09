@@ -184,3 +184,75 @@ test('cash expenses in Movimientos: their rows, the filter, and editing and dele
   await expect(sheet(page)).toHaveCount(0);
   await expect(page.locator('main').getByRole('listitem')).toHaveCount(0);
 });
+
+test('the cash pocket: the "Efectivo" line in the total, the cash screen, and the reminder after 3 days', async ({ page }) => {
+  // Sunday 4 October 2026.
+  await page.clock.setFixedTime(new Date('2026-10-04T12:00:00'));
+  await page.goto('./');
+  await page.getByRole('button', { name: 'Empezar' }).click();
+  await page.getByRole('button', { name: 'Continuar' }).click();
+  await page.getByRole('link', { name: 'Importar' }).click();
+  await page.getByTestId('file-input').setInputFiles(
+    bbvaXlsxFile(
+      [
+        { valor: '01/10/2026', concepto: 'Mercadona', movimiento: 'Pago con tarjeta', importe: -20 },
+        { valor: '02/10/2026', concepto: 'Retirada cajero', movimiento: 'Retirada en cajero', importe: -50 },
+      ],
+      { startBalance: 1000 },
+    ),
+  );
+  await page.getByRole('button', { name: 'Importar 2' }).click();
+  await expect(page.getByTestId('balance-check')).toHaveText('✓ Cuadra');
+
+  // The bank holds 930 € and the wallet 50 €: both count in the total.
+  await page.getByRole('link', { name: 'Inicio' }).click();
+  await expect(page.getByTestId('total-balance')).toHaveText('980,00 €');
+  await expect(page.getByTestId('cash-line-amount')).toHaveText('50,00 €');
+  await expect(page.getByTestId('cash-reminder')).toHaveCount(0);
+  await expectNoHorizontalScroll(page);
+
+  // Three days after the withdrawal, Inicio reminds; "Más tarde" puts it off three days.
+  await page.clock.setFixedTime(new Date('2026-10-05T09:00:00'));
+  await page.reload();
+  await expect(page.getByTestId('cash-reminder')).toHaveText(/Tienes 50,00 € de efectivo sin repartir/);
+  await expectNoHorizontalScroll(page);
+  await page.getByRole('button', { name: 'Más tarde' }).click();
+  await expect(page.getByTestId('cash-reminder')).toHaveCount(0);
+  await page.clock.setFixedTime(new Date('2026-10-07T21:00:00'));
+  await page.reload();
+  await expect(page.getByTestId('total-balance')).toHaveText('980,00 €');
+  await expect(page.getByTestId('cash-reminder')).toHaveCount(0);
+  await page.clock.setFixedTime(new Date('2026-10-08T09:00:00'));
+  await page.reload();
+
+  // "Apuntar gastos" notes one down, and that's activity too.
+  await page.getByRole('button', { name: 'Apuntar gastos' }).click();
+  await expect(sheet(page).getByRole('heading', { name: 'Gasto en efectivo' })).toBeVisible();
+  await sheet(page).getByLabel('Importe').fill('8');
+  await sheet(page).getByRole('button', { name: 'Ocio', exact: true }).click();
+  await sheet(page).getByRole('button', { name: 'Guardar' }).click();
+  await expect(sheet(page)).toHaveCount(0);
+  await expect(page.getByTestId('cash-reminder')).toHaveCount(0);
+  await expect(page.getByTestId('cash-line-amount')).toHaveText('42,00 €');
+  await expect(page.getByTestId('total-balance')).toHaveText('972,00 €');
+
+  // The line opens the cash screen, also reachable from Cuentas.
+  await page.getByTestId('cash-line').click();
+  await expect(page.getByRole('heading', { name: 'Efectivo' })).toBeVisible();
+  await expect(page.getByTestId('cash-total')).toHaveText('42,00 €');
+  await expect(page.getByRole('list', { name: 'Retiradas con efectivo' })).toContainText(/Retirada cajero/i);
+  await expect(page.getByRole('list', { name: 'Retiradas con efectivo' })).toContainText('42,00 €');
+  await expect(page.getByRole('list', { name: 'Últimos gastos en efectivo' })).toContainText('Ocio');
+  await expectNoHorizontalScroll(page);
+  await page.getByRole('button', { name: 'Apuntar gasto en efectivo' }).click();
+  await expect(sheet(page).getByRole('heading', { name: 'Gasto en efectivo' })).toBeVisible();
+  await sheet(page).getByRole('button', { name: 'Cerrar' }).click();
+
+  await page.getByRole('link', { name: 'Volver' }).click();
+  await expect(page.getByRole('heading', { name: 'Cuentas' })).toBeVisible();
+  await expect(page.getByTestId('cash-line-amount')).toHaveText('42,00 €');
+
+  await page.getByRole('link', { name: 'Inicio' }).click();
+  await page.getByRole('button', { name: 'Ocultar importes' }).click();
+  await expect(page.getByTestId('cash-line-amount').getByTestId('hidden-amount')).toHaveCount(1);
+});

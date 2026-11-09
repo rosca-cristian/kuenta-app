@@ -319,3 +319,80 @@ describe('Movimientos with cash expenses', () => {
     expect(candidates.every((candidate) => candidate.transaction.kind === 'bank')).toBe(true);
   });
 });
+
+describe('the cash pocket as money held', () => {
+  it('adds the unspent cash to the total balance and net worth, leaving the bank account as it is', async () => {
+    const { repo } = await setup();
+    await cashData(repo);
+    const [bbva] = await repo.listAccounts();
+    // 2.000 € − 40 + 1.500 − 100 − 30 + 10 − 50 − 20 − 60 = 3.210 €, and 80 € of cash left (20 + 60).
+    expect(bbva.balance).toBe(321000);
+    const home = await repo.home('2026-11');
+    expect(home.cash).toBe(8000);
+    expect(home.totalBalance).toBe(329000);
+    const worth = await repo.netWorth();
+    expect(worth.points.map((p) => [p.month, p.netWorth])).toEqual([
+      ['2026-09', 346000],
+      // 3.290 € in the bank at the end of October, and 30 € of cash.
+      ['2026-10', 329000 + 3000],
+      ['2026-11', 321000 + 8000],
+    ]);
+    expect(worth.latest).toBe(home.totalBalance);
+  });
+
+  it('is hidden while it never had cash', async () => {
+    const { repo } = await setup();
+    await importFile(repo, [card('03/11/2026', 'Mercadona', -20)], 2000);
+    expect((await repo.home('2026-11')).cash).toBeNull();
+    expect(await repo.cashPocket()).toMatchObject({ total: 0, everHad: false, withdrawals: [], latest: [], uncovered: [] });
+  });
+
+  it('lists the withdrawals with cash left, oldest first, and the latest cash expenses, newest first', async () => {
+    const { repo } = await setup();
+    const { ids } = await cashData(repo);
+    const pocket = await repo.cashPocket();
+    expect(pocket.total).toBe(8000);
+    expect(pocket.everHad).toBe(true);
+    expect(pocket.withdrawals.map((w) => [w.transaction.id, w.left])).toEqual([
+      [ids.w2, 2000],
+      [ids.w3, 6000],
+    ]);
+    expect(pocket.latest.map((e) => e.id)).toEqual([ids.e3, ids.e2, ids.e1]);
+    expect(pocket.uncovered).toEqual([]);
+  });
+});
+
+describe("Inicio's cash reminder", () => {
+  it('shows the unspent cash 3 days after the last withdrawal or cash expense, and "Más tarde" puts it off 3 days', async () => {
+    const { repo, clock, db } = await setup();
+    await cashData(repo);
+    // The last withdrawal on 10 November, and the cash expenses were noted down on the 20th.
+    expect((await repo.home('2026-11')).cashReminder).toBeNull();
+    clock.now = new Date('2026-11-23T09:00:00');
+    expect((await repo.home('2026-11')).cashReminder).toBe(8000);
+
+    const before = (await db.settings.get('lastChangeAt'))?.value;
+    await repo.postponeCashReminder();
+    expect((await repo.home('2026-11')).cashReminder).toBeNull();
+    expect((await db.settings.get('lastChangeAt'))?.value).toBe(before);
+    clock.now = new Date('2026-11-25T22:00:00');
+    expect((await repo.home('2026-11')).cashReminder).toBeNull();
+    clock.now = new Date('2026-11-26T08:00:00');
+    expect((await repo.home('2026-11')).cashReminder).toBe(8000);
+
+    // Noting down a cash expense puts it off too.
+    await added(repo, { amount: 1000, categoryId: await categoryId(repo, 'Ocio'), date: '2026-11-26' });
+    expect((await repo.home('2026-11')).cashReminder).toBeNull();
+  });
+
+  it("keeps when it was put off through a restore: it belongs to this phone", async () => {
+    const { repo, db } = await setup();
+    await cashData(repo);
+    const backup = await repo.exportBackup();
+    await repo.postponeCashReminder();
+    const at = (await db.settings.get('cashReminderAt'))?.value;
+    await repo.restoreBackup(backup);
+    expect((await db.settings.get('cashReminderAt'))?.value).toBe(at);
+    expect(backup.data.settings.some((row) => row.key === 'cashReminderAt')).toBe(false);
+  });
+});

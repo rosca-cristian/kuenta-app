@@ -77,6 +77,20 @@ export interface CashExpenseView extends CashExpense {
   uncovered: boolean;
 }
 
+/** The cash screen: the unspent cash and where it stands. */
+export interface CashPocketView {
+  /** The unspent cash of every withdrawal. */
+  total: Cents;
+  /** Whether the pocket ever had cash: a withdrawal from `cashFromDate` on. Without, the "Efectivo" line is hidden. */
+  everHad: boolean;
+  /** The withdrawals with cash left, oldest first: what the next cash expenses take from. */
+  withdrawals: { transaction: TransactionView; left: Cents }[];
+  /** The last cash expenses by date, newest first, up to 10. */
+  latest: CashExpenseView[];
+  /** The cash expenses the cash held on their date can't pay ("Sin efectivo"), newest first. */
+  uncovered: CashExpenseView[];
+}
+
 /** One row of Movimientos: a transaction from the bank or a cash expense, told apart by `kind`. */
 export type MovementView = TransactionView | CashExpenseView;
 
@@ -210,8 +224,16 @@ export interface ImportOutcome {
 }
 
 export interface HomeData {
-  /** The sum of every account's balance, archived ones included. */
+  /** The sum of every account's balance, archived ones included, and the unspent cash. */
   totalBalance: Cents;
+  /** The unspent cash, Inicio's "Efectivo" line; null while the pocket never had any. */
+  cash: Cents | null;
+  /**
+   * The unspent cash to remind the user of ("Tienes X € de efectivo sin repartir"): there's some,
+   * and 3 days passed since the last withdrawal, the last cash expense noted down and the last
+   * "Más tarde". Null otherwise.
+   */
+  cashReminder: Cents | null;
   summary: MonthSummary;
   /** The non-archived accounts, in order. */
   accounts: AccountView[];
@@ -624,6 +646,13 @@ export interface DataRepository {
   updateCashExpense(id: Id, changes: CashExpenseChanges): Promise<CashExpenseSaveResult>;
   /** Deletes a cash expense: its cash goes back to the pocket. Throws for an unknown one. */
   deleteCashExpense(id: Id): Promise<void>;
+  /** The cash screen: the unspent cash, the withdrawals with some left and the latest and uncovered cash expenses. */
+  cashPocket(): Promise<CashPocketView>;
+  /**
+   * "Más tarde" on Inicio's cash reminder: hides it for 3 days. It belongs to this phone
+   * (`cashReminderAt`), so it doesn't count as a data change and backups leave it out.
+   */
+  postponeCashReminder(): Promise<void>;
 
   /** Every payee, sorted by name, with its number of transactions. */
   listPayees(): Promise<PayeeView[]>;

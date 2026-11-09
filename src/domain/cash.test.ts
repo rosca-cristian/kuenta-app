@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { cashAvailableOn, cashHeldOn, cashPocket, checkCashExpense, isWithdrawal, withCash, type CashWithdrawal } from './cash';
+import { cashAvailableOn, cashHeldOn, cashPocket, cashReminderDue, checkCashExpense, isWithdrawal, withCash, type CashWithdrawal } from './cash';
 import type { CashExpense, Transaction } from './model';
 
 const withdrawal = (id: string, date: string, amount: number): CashWithdrawal => ({ id, date, amount });
@@ -168,5 +168,17 @@ describe('the stats with cash', () => {
 
   it('count only the cash expenses of a date range', () => {
     expect(withCash(txs, pocket, expenses, { from: '2026-11-01', to: '2026-11-30' }).map((tx) => tx.id)).toEqual(['w-1', 'old', 'shop']);
+  });
+});
+
+describe("Inicio's cash reminder", () => {
+  it('shows 3 days after the latest withdrawal, cash expense or "Más tarde", while there is cash left', () => {
+    expect(cashReminderDue(5000, ['2026-10-10', null, null], '2026-10-12')).toBe(false);
+    expect(cashReminderDue(5000, ['2026-10-10', null, null], '2026-10-13')).toBe(true);
+    expect(cashReminderDue(5000, ['2026-10-10', '2026-10-12', null], '2026-10-14')).toBe(false);
+    expect(cashReminderDue(5000, ['2026-10-10', '2026-10-12', '2026-10-14'], '2026-10-16')).toBe(false);
+    expect(cashReminderDue(5000, ['2026-10-10', '2026-10-12', '2026-10-14'], '2026-10-17')).toBe(true);
+    expect(cashReminderDue(0, ['2026-10-01', null, null], '2026-10-20')).toBe(false);
+    expect(cashReminderDue(5000, [null, null, null], '2026-10-20')).toBe(false);
   });
 });

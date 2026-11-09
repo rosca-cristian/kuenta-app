@@ -12,7 +12,7 @@ import { savingsProgress, targetFor } from '../../domain/savings';
 import { leftToPayBack, netOfReimbursements } from '../../domain/reimbursements';
 import { countingMonthOf, inCountingMonths, isNextMonthDay } from '../../domain/countingMonth';
 import { netWorthSeries } from '../../domain/balances';
-import { cashCategoryOf, cashPocket, checkCashExpense, isWithdrawal, withCash, type CashPocket } from '../../domain/cash';
+import { cashCategoryOf, cashHeldOn, cashPocket, cashReminderDue, checkCashExpense, isWithdrawal, withCash, type CashPocket } from '../../domain/cash';
 import { addDays, addMonths, daysBetween, isIsoDate, isMonth, monthOf, today, type IsoDate, type Month } from '../../domain/dates';
 import { normalizeText } from '../../domain/text';
 import { BACKUP_SETTINGS, countsOf, createBackup, isBackupDue, readBackup, type BackupCounts, type BackupFile } from '../../domain/backup';
@@ -42,6 +42,7 @@ import type {
   CashExpenseChanges,
   CashExpenseSaveResult,
   CashExpenseView,
+  CashPocketView,
   MovementView,
   CategoryChanges,
   CategoryDraft,
@@ -117,6 +118,12 @@ const STARTER_RULES_OFFER = 'starterRulesOffer';
 
 /** The data setting holding the first day whose cash withdrawals go to the cash pocket. */
 const CASH_FROM_DATE = 'cashFromDate';
+
+/** The device setting holding when Inicio's cash reminder was last put off ("Más tarde"). */
+const CASH_REMINDER_AT = 'cashReminderAt';
+
+/** How many cash expenses the cash screen lists as the latest. */
+const LATEST_CASH_EXPENSES = 10;
 type StarterRulesOffer = 'pending' | 'done';
 
 /** How far back, in days, "Es un reembolso" looks for the expenses an income pays back, and each "Ver gastos anteriores" more. */
@@ -1233,6 +1240,26 @@ export function createDexieRepository(options: DexieRepositoryOptions = {}): Dat
       return result;
     },
 
+    async cashPocket(): Promise<CashPocketView> {
+      return db.transaction('r', [db.settings, db.categories, db.transactions, db.cashExpenses, db.accounts, db.payees, db.reimbursements], async () => {
+        const { withdrawals, expenses, pocket } = await cashState();
+        const withLeft = withdrawals.filter((tx) => pocket.withdrawals.get(tx.id)!.left > 0).sort((a, b) => a.date.localeCompare(b.date) || a.id.localeCompare(b.id));
+        const newestFirst = await cashViews([...expenses].sort((a, b) => b.date.localeCompare(a.date) || b.createdAt.localeCompare(a.createdAt)));
+        return {
+          total: pocket.left,
+          everHad: withdrawals.length > 0,
+          withdrawals: (await toViews(withLeft)).map((transaction) => ({ transaction, left: pocket.withdrawals.get(transaction.id)!.left })),
+          latest: newestFirst.slice(0, LATEST_CASH_EXPENSES),
+          uncovered: newestFirst.filter((expense) => expense.uncovered),
+        };
+      });
+    },
+
+    async postponeCashReminder() {
+      await db.settings.put({ key: CASH_REMINDER_AT, value: stamp() });
+      changed();
+    },
+
     async deleteCashExpense(id) {
       await db.transaction('rw', db.cashExpenses, async () => {
         if (!(await db.cashExpenses.get(id))) throw new Error(`Cash expense ${id} not found`);
@@ -1400,7 +1427,7 @@ export function createDexieRepository(options: DexieRepositoryOptions = {}): Dat
     async home(month): Promise<HomeData> {
       const allAccounts = await repository.listAccounts();
       const accountId = await importAccountId();
-      const [monthTxs, counted, lastImport, chain, currentBudgets, goals, savings, forecastTxs, backup, cash] = await Promise.all([
+      const [monthTxs, counted, lastImport, chain, currentBudgets, goals, savings, forecastTxs, backup, cash, reminderAt] = await Promise.all([
         transactionsIn(month),
         countedIn(month),
         db.importBatches.orderBy('importedAt').reverse().filter((batch) => !batch.undone).first(),
@@ -1414,10 +1441,17 @@ export function createDexieRepository(options: DexieRepositoryOptions = {}): Dat
         db.transactions.where('date').between(`${addMonths(month, -2)}-01`, `${addMonths(month, 1)}-01`).toArray(),
         repository.backupStatus(),
         cashState(),
+        setting<string | null>(CASH_REMINDER_AT, null),
       ]);
+      const left = cash.pocket.left;
+      const dayOf = (stamp: string | null | undefined) => (stamp ? today(new Date(stamp)) : null);
+      const lastExpense = cash.expenses.map((expense) => expense.createdAt).sort().at(-1);
+      const lastWithdrawal = cash.withdrawals.map((tx) => tx.date).sort().at(-1) ?? null;
       return {
-        // Archived accounts still hold money: they count in the total, but aren't listed.
-        totalBalance: allAccounts.reduce((sum, account) => sum + account.balance, 0),
+        // Archived accounts still hold money: they count in the total, but aren't listed. So does unspent cash.
+        totalBalance: allAccounts.reduce((sum, account) => sum + account.balance, 0) + left,
+        cash: cash.withdrawals.length > 0 ? left : null,
+        cashReminder: cashReminderDue(left, [lastWithdrawal, dayOf(lastExpense), dayOf(reminderAt)], today(now())) ? left : null,
         // Reimbursements make expenses smaller and aren't income, and a late salary counts in the next month;
         // balances, goals and the forecast take the bank's amounts and dates.
         summary: monthSummary(counted, month),
@@ -1449,9 +1483,13 @@ export function createDexieRepository(options: DexieRepositoryOptions = {}): Dat
     },
 
     async netWorth(): Promise<NetWorthView> {
-      return db.transaction('r', db.accounts, db.transactions, async () => {
-        const [accounts, txs] = await Promise.all([db.accounts.toArray(), db.transactions.toArray()]);
-        const points = netWorthSeries(accounts, txs, today(now()));
+      return db.transaction('r', [db.accounts, db.transactions, db.settings, db.categories, db.cashExpenses], async () => {
+        const [accounts, txs, { withdrawals, expenses, pocket }] = await Promise.all([db.accounts.toArray(), db.transactions.toArray(), cashState()]);
+        // Unspent cash is money the user holds: each point adds the cash held on its date.
+        const points = netWorthSeries(accounts, txs, today(now())).map((point) => ({
+          ...point,
+          netWorth: point.netWorth + cashHeldOn(pocket, withdrawals, expenses, point.date),
+        }));
         const latest = points.at(-1)?.netWorth ?? null;
         const previous = points.at(-2)?.netWorth ?? null;
         return { points, latest, change: latest !== null && previous !== null ? latest - previous : null };
