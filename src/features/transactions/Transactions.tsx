@@ -171,7 +171,7 @@ export function Transactions() {
         action={
           <div className="flex shrink-0 items-center">
             <PrivacyButton />
-            <ExportCsvButton transactions={current && bankRows(current)} />
+            <ExportCsvButton transactions={current} />
           </div>
         }
       />

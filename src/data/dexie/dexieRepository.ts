@@ -1768,10 +1768,11 @@ export function createDexieRepository(options: DexieRepositoryOptions = {}): Dat
         db.importBatches,
         db.reimbursements,
         db.savingsTargets,
+        db.cashExpenses,
         db.settings,
       ];
       return db.transaction('r', tables, async () => {
-        const [accounts, categories, payees, transactions, rules, budgetLimits, goals, importBatches, reimbursements, savingsTargets, settings] = await Promise.all([
+        const [accounts, categories, payees, transactions, rules, budgetLimits, goals, importBatches, reimbursements, savingsTargets, cashExpenses, settings] = await Promise.all([
           db.accounts.toArray(),
           db.categories.toArray(),
           db.payees.toArray(),
@@ -1782,6 +1783,7 @@ export function createDexieRepository(options: DexieRepositoryOptions = {}): Dat
           db.importBatches.toArray(),
           db.reimbursements.toArray(),
           db.savingsTargets.toArray(),
+          db.cashExpenses.toArray(),
           db.settings.toArray(),
         ]);
         const data = {
@@ -1796,6 +1798,7 @@ export function createDexieRepository(options: DexieRepositoryOptions = {}): Dat
           // A link that counts nowhere stays out, so the copy always reads back.
           reimbursements: liveLinks(reimbursements, new Map(transactions.map((tx) => [tx.id, tx]))),
           savingsTargets,
+          cashExpenses,
           settings,
         };
         return createBackup(data, stamp(), appVersion);
@@ -1831,6 +1834,7 @@ export function createDexieRepository(options: DexieRepositoryOptions = {}): Dat
         db.importBatches,
         db.reimbursements,
         db.savingsTargets,
+        db.cashExpenses,
         db.settings,
       ];
       await db.transaction('rw', tables, async () => {
@@ -1847,6 +1851,7 @@ export function createDexieRepository(options: DexieRepositoryOptions = {}): Dat
         await db.importBatches.bulkAdd(data.importBatches);
         await db.reimbursements.bulkAdd(data.reimbursements);
         await db.savingsTargets.bulkAdd(data.savingsTargets);
+        await db.cashExpenses.bulkAdd(data.cashExpenses);
         await db.settings.bulkPut([
           ...device,
           ...data.settings.filter((row) => BACKUP_SETTINGS.includes(row.key)),

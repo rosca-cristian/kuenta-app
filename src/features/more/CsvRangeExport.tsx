@@ -8,7 +8,7 @@ const inputClass = 'min-h-11 w-full rounded-xl border border-line bg-card-2 px-3
 
 /**
  * Copias de seguridad's "Exportar movimientos (CSV)": the transactions dated from "Desde" to
- * "Hasta", both included, in Movimientos' CSV format. The range starts as the whole history:
+ * "Hasta", both included, cash expenses too, in Movimientos' CSV format. The range starts as the whole history:
  * the first transaction's date to today, or to the newest transaction's date when that's later
  * (a value date in the future). A CSV can't be restored, so it isn't a backup.
  */
@@ -21,7 +21,7 @@ export function CsvRangeExport() {
   // Until the range is known, the dates aren't their defaults yet: nothing to count or complain about.
   const loading = (picked.from === undefined || picked.to === undefined) && range === undefined;
   const valid = from !== '' && to !== '' && from <= to;
-  const transactions = useRepoQuery((r) => (valid ? r.listTransactions(null, { from, to }) : Promise.resolve([])), [from, to, valid]);
+  const transactions = useRepoQuery((r) => (valid ? r.listMovements(null, { from, to }) : Promise.resolve([])), [from, to, valid]);
 
   const problem = loading
     ? null

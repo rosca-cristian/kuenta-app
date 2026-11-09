@@ -2,13 +2,13 @@ import { Button } from '../../ui/components';
 import { useServices } from '../../lib/repo';
 import { today } from '../../domain/dates';
 import { csvFileName, transactionsCsv } from '../../domain/csv';
-import type { TransactionView } from '../../data/repository';
+import type { MovementView } from '../../data/repository';
 
 /**
- * Movimientos' "Exportar CSV": downloads the transactions the list shows, in its order.
+ * Movimientos' "Exportar CSV": downloads the rows the list shows, cash expenses included, in its order.
  * Disabled while they load and when there's nothing to export.
  */
-export function ExportCsvButton({ transactions }: { transactions: TransactionView[] | undefined }) {
+export function ExportCsvButton({ transactions }: { transactions: MovementView[] | undefined }) {
   const { platform } = useServices();
 
   async function exportCsv() {

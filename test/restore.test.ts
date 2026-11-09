@@ -31,6 +31,7 @@ async function tables(db: KuentaDb) {
     importBatches: byId(await db.importBatches.toArray()),
     reimbursements: byId(await db.reimbursements.toArray()),
     savingsTargets: byId(await db.savingsTargets.toArray()),
+    cashExpenses: byId(await db.cashExpenses.toArray()),
     settings: Object.fromEntries((await db.settings.toArray()).map((setting) => [setting.key, setting.value])),
   };
 }
@@ -42,6 +43,18 @@ async function richBackup() {
   const backup = await source.repo.exportBackup();
   return { source, backup, text: backupJson(backup) };
 }
+
+/** A backup's data as a copy from before format 4 has it: no "Contar el efectivo desde". */
+const withoutCashFromDate = <T extends { settings: BackupFile['data']['settings'] }>(data: T): T => ({
+  ...data,
+  settings: data.settings.filter((setting) => setting.key !== 'cashFromDate'),
+});
+
+/** The settings a copy from before format 4 reads back with: cash counts from the first day of the copy's month. */
+const migratedSettings = (backup: BackupFile) => [
+  ...withoutCashFromDate(backup.data).settings,
+  { key: 'cashFromDate', value: `${backup.exportedAt.slice(0, 7)}-01` },
+];
 
 function read(repo: DataRepository, text: string): BackupFile {
   const result = repo.readBackup(text);
@@ -67,19 +80,20 @@ describe('restoring a backup', () => {
     await target.repo.restoreBackup(read(target.repo, text));
 
     const [before, after] = [await tables(source.db), await tables(target.db)];
-    const all = ['accounts', 'categories', 'payees', 'transactions', 'rules', 'budgetLimits', 'goals', 'importBatches', 'reimbursements', 'savingsTargets'] as const;
+    const all = ['accounts', 'categories', 'payees', 'transactions', 'rules', 'budgetLimits', 'goals', 'importBatches', 'reimbursements', 'savingsTargets', 'cashExpenses'] as const;
     for (const table of all) {
       expect(after[table], table).toEqual(before[table]);
     }
     expect(after.reimbursements).toHaveLength(1);
     expect(after.savingsTargets).toHaveLength(2);
-    const { importAccountId, starterDataVersion, starterRulesOffer, onboardingDone } = before.settings;
+    const { importAccountId, starterDataVersion, starterRulesOffer, onboardingDone, cashFromDate } = before.settings;
     expect(starterRulesOffer).toBe('done');
     expect(after.settings).toEqual({
       importAccountId,
       starterDataVersion,
       starterRulesOffer,
       onboardingDone,
+      cashFromDate,
       lastBackupAt: new Date('2026-10-20T10:00:00').toISOString(),
       lastChangeAt: new Date('2026-10-20T10:00:00').toISOString(),
     });
@@ -91,7 +105,7 @@ describe('restoring a backup', () => {
     expect(await target.repo.listTransactions(null)).toEqual(await source.repo.listTransactions(null));
     expect(await target.repo.spending('2026-10')).toEqual(await source.repo.spending('2026-10'));
     expect(await target.repo.savings('2026-10')).toEqual(await source.repo.savings('2026-10'));
-    expect(await target.repo.getSettings()).toEqual({ onboardingDone: true, importAccountId, persistRequested: false, privacyMode: false, cashFromDate: null });
+    expect(await target.repo.getSettings()).toEqual({ onboardingDone: true, importAccountId, persistRequested: false, privacyMode: false, cashFromDate: '2026-10-01' });
   });
 
   it("sets up a new phone from the first-run screen: onboarding done with the backup's import account", async () => {
@@ -104,7 +118,7 @@ describe('restoring a backup', () => {
     await target.repo.setPersistRequested();
 
     const importAccountId = backup.data.settings.find((s) => s.key === 'importAccountId')!.value;
-    expect(await target.repo.getSettings()).toEqual({ onboardingDone: true, importAccountId, persistRequested: true, privacyMode: false, cashFromDate: null });
+    expect(await target.repo.getSettings()).toEqual({ onboardingDone: true, importAccountId, persistRequested: true, privacyMode: false, cashFromDate: '2026-10-01' });
     expect(await target.repo.listAccounts()).toEqual(await source.repo.listAccounts());
     expect(await target.repo.listTransactions(null)).toEqual(await source.repo.listTransactions(null));
     // No starter data of its own: the categories are exactly the backup's.
@@ -230,6 +244,7 @@ describe('reading a backup', () => {
       goals: 3,
       reimbursements: 1,
       savingsTarget: true,
+      cashExpenses: 0,
     });
     expect(result.ok && { exportedAt: result.summary.exportedAt, ...(await source.repo.dataCounts()) }).toEqual(result.ok && result.summary);
   });
@@ -237,7 +252,7 @@ describe('reading a backup', () => {
   const refusals: [string, (text: string) => string, unknown][] = [
     ['text that is not JSON', () => 'Fecha;Tipo;Cuenta\n20/10/2026;Gasto;BBVA', { reason: 'not-kuenta' }],
     ['JSON from another app', (text) => edited(text, (file) => void (file.app = 'otra')), { reason: 'not-kuenta' }],
-    ['a newer format', (text) => edited(text, (file) => void (file.format = 4)), { reason: 'newer' }],
+    ['a newer format', (text) => edited(text, (file) => void (file.format = 5)), { reason: 'newer' }],
     [
       'a wrong type in a table',
       (text) => edited(text, (file) => void (file.data.transactions[1].amount = '12,50')),
@@ -370,17 +385,18 @@ describe('reading a backup', () => {
   it('restores a format 1 copy, made before reimbursements and monthly savings targets, with none', async () => {
     const { source, backup } = await richBackup();
     // What Kuenta wrote before format 2: the same tables but reimbursements and monthly savings targets.
-    const { reimbursements, savingsTargets, ...data } = backup.data;
+    const { reimbursements, savingsTargets, cashExpenses, ...data } = backup.data;
     expect(reimbursements).toHaveLength(1);
     expect(savingsTargets).toHaveLength(2);
-    const formatOne = JSON.stringify({ ...backup, format: 1, data }, null, 2);
+    expect(cashExpenses).toEqual([]);
+    const formatOne = JSON.stringify({ ...backup, format: 1, data: withoutCashFromDate(data) }, null, 2);
 
     // A phone with links of its own: restoring the copy leaves none.
     const target = await setup();
     await richData(target.repo, target.db);
     expect(await target.db.reimbursements.count()).toBe(1);
     const result = target.repo.readBackup(formatOne);
-    expect(result.ok && result.backup).toEqual({ ...backup, format: 3, data: { ...backup.data, reimbursements: [], savingsTargets: [] } });
+    expect(result.ok && result.backup).toEqual({ ...backup, data: { ...backup.data, reimbursements: [], savingsTargets: [], settings: migratedSettings(backup) } });
     expect(result.ok && result.summary).toMatchObject({ reimbursements: 0, savingsTarget: false });
     await target.repo.restoreBackup(read(target.repo, formatOne));
     const after = await tables(target.db);
@@ -395,16 +411,17 @@ describe('reading a backup', () => {
   it('restores a format 2 copy, made before monthly savings targets, with none', async () => {
     const { source, backup } = await richBackup();
     // What Kuenta wrote before format 3: the same tables but monthly savings targets.
-    const { savingsTargets, ...data } = backup.data;
+    const { savingsTargets, cashExpenses, ...data } = backup.data;
     expect(savingsTargets).toHaveLength(2);
-    const formatTwo = JSON.stringify({ ...backup, format: 2, data }, null, 2);
+    expect(cashExpenses).toEqual([]);
+    const formatTwo = JSON.stringify({ ...backup, format: 2, data: withoutCashFromDate(data) }, null, 2);
 
     // A phone with a target of its own: restoring the copy leaves none.
     const target = await setup();
     await richData(target.repo, target.db);
     expect(await target.db.savingsTargets.count()).toBe(2);
     const result = target.repo.readBackup(formatTwo);
-    expect(result.ok && result.backup).toEqual({ ...backup, data: { ...backup.data, savingsTargets: [] } });
+    expect(result.ok && result.backup).toEqual({ ...backup, data: { ...backup.data, savingsTargets: [], settings: migratedSettings(backup) } });
     expect(result.ok && result.summary).toMatchObject({ reimbursements: 1, savingsTarget: false });
     await target.repo.restoreBackup(read(target.repo, formatTwo));
     const after = await tables(target.db);

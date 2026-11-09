@@ -1,19 +1,20 @@
 import { z } from 'zod';
 import type { IsoDate } from './dates';
-import type { Account, BudgetLimit, Category, Goal, ImportBatch, Payee, Reimbursement, Rule, SavingsTarget, Setting, Transaction } from './model';
+import { normalizeText } from './text';
+import type { Account, BudgetLimit, CashExpense, Category, Goal, ImportBatch, Payee, Reimbursement, Rule, SavingsTarget, Setting, Transaction } from './model';
 
 /**
  * The backup format version, independent of the Dexie schema version. A change to the format
  * raises it and adds a migration from the previous one, so older copies keep restoring.
  */
-export const BACKUP_FORMAT = 3;
+export const BACKUP_FORMAT = 4;
 
 /**
  * The settings that describe the user's data, the only ones a backup carries. The others belong
- * to the device (`persistRequested`, `privacyMode`, `lastBackupAt`, `lastChangeAt`): restoring
- * them on another phone would bring stale state.
+ * to the device (`persistRequested`, `privacyMode`, `lastBackupAt`, `lastChangeAt`, `cashReminderAt`):
+ * restoring them on another phone would bring stale state.
  */
-export const BACKUP_SETTINGS: readonly string[] = ['importAccountId', 'starterDataVersion', 'starterRulesOffer', 'onboardingDone'];
+export const BACKUP_SETTINGS: readonly string[] = ['importAccountId', 'starterDataVersion', 'starterRulesOffer', 'onboardingDone', 'cashFromDate'];
 
 /** Every table's rows, as stored in IndexedDB: same field names, cents as integers, dates as strings. */
 export interface BackupData {
@@ -29,6 +30,8 @@ export interface BackupData {
   reimbursements: Reimbursement[];
   /** Since format 3; a format 1 or 2 file restores with none. */
   savingsTargets: SavingsTarget[];
+  /** Since format 4; a format 1 to 3 file restores with none. */
+  cashExpenses: CashExpense[];
   /** Only the data settings (`BACKUP_SETTINGS`). */
   settings: Setting[];
 }
@@ -93,6 +96,7 @@ export interface BackupCounts {
   reimbursements: number;
   /** Whether there's a monthly savings target: one above 0 from some month. */
   savingsTarget: boolean;
+  cashExpenses: number;
 }
 
 /** A backup's date and counts, shown before restoring it. */
@@ -189,6 +193,7 @@ const FIELD_NAMES: Record<string, string> = {
   starterDataVersion: 'versión de los datos iniciales',
   starterRulesOffer: 'oferta de reglas iniciales',
   onboardingDone: 'primer uso completado',
+  cashFromDate: 'contar el efectivo desde',
 };
 
 /** A damaged field's name in Spanish (`amount` → "importe"); as it is in the file when Kuenta doesn't know it. */
@@ -218,6 +223,22 @@ const MIGRATIONS: ((file: Record<string, unknown>) => Record<string, unknown>)[]
   }),
   // 2 → 3: the monthly savings targets, which format 2 didn't have.
   (file) => ({ ...file, format: 3, data: isObject(file.data) ? { ...file.data, savingsTargets: [] } : file.data }),
+  // 3 → 4: cash expenses, which format 3 didn't have. Cash counts from the month of the copy, so
+  // the withdrawals before it keep counting as spent and the past stays as it was.
+  (file) => ({
+    ...file,
+    format: 4,
+    data: isObject(file.data)
+      ? {
+          ...file.data,
+          cashExpenses: [],
+          settings:
+            Array.isArray(file.data.settings) && typeof file.exportedAt === 'string' && !file.data.settings.some((row) => isObject(row) && row.key === 'cashFromDate')
+              ? [...file.data.settings, { key: 'cashFromDate', value: `${file.exportedAt.slice(0, 7)}-01` }]
+              : file.data.settings,
+        }
+      : file.data,
+  }),
 ];
 
 const id = z.string().min(1);
@@ -321,12 +342,15 @@ const reimbursementSchema = z.object({ id, incomeId: id, expenseId: id, amount: 
 
 const savingsTargetSchema = z.object({ id, fromMonth: month, amount: cents.nonnegative() });
 
+const cashExpenseSchema = z.object({ id, amount: cents.positive(), categoryId: id, date: isoDate, note: z.string(), createdAt: timestamp, updatedAt: timestamp });
+
 /** The data settings' values; any other setting (a device's, or one Kuenta doesn't know) is dropped on reading. */
 const settingSchema = z.discriminatedUnion('key', [
   z.object({ key: z.literal('importAccountId'), value: id }),
   z.object({ key: z.literal('starterDataVersion'), value: z.number().int().nonnegative() }),
   z.object({ key: z.literal('starterRulesOffer'), value: z.enum(['pending', 'done']) }),
   z.object({ key: z.literal('onboardingDone'), value: z.boolean() }),
+  z.object({ key: z.literal('cashFromDate'), value: isoDate }),
 ]);
 
 const backupSchema = z.object({
@@ -345,6 +369,7 @@ const backupSchema = z.object({
     importBatches: z.array(importBatchSchema),
     reimbursements: z.array(reimbursementSchema),
     savingsTargets: z.array(savingsTargetSchema),
+    cashExpenses: z.array(cashExpenseSchema),
     settings: z
       .array(z.object({ key: z.string(), value: z.unknown() }))
       .transform((settings) => settings.filter((setting) => BACKUP_SETTINGS.includes(setting.key)))
@@ -363,6 +388,7 @@ const TABLES: readonly BackupTable[] = [
   'importBatches',
   'reimbursements',
   'savingsTargets',
+  'cashExpenses',
   'settings',
 ];
 
@@ -431,6 +457,7 @@ function damageIn(data: BackupData): BackupDamage | null {
     ['importBatches', 'accountId', 'accounts', data.importBatches.map((batch) => batch.accountId)],
     ['reimbursements', 'incomeId', 'transactions', data.reimbursements.map((link) => link.incomeId)],
     ['reimbursements', 'expenseId', 'transactions', data.reimbursements.map((link) => link.expenseId)],
+    ['cashExpenses', 'categoryId', 'categories', data.cashExpenses.map((expense) => expense.categoryId)],
     ['settings', 'importAccountId', 'accounts', data.settings.filter((s) => s.key === 'importAccountId').map((s) => s.value as string)],
   ];
   for (const [table, field, target, values] of references) {
@@ -440,7 +467,21 @@ function damageIn(data: BackupData): BackupDamage | null {
   if (!data.settings.some((setting) => setting.key === 'importAccountId')) {
     return { kind: 'invalid', table: 'settings', row: null, field: 'importAccountId' };
   }
-  return reimbursementDamage(data);
+  return reimbursementDamage(data) ?? cashExpenseDamage(data);
+}
+
+/**
+ * The first cash expense whose category doesn't say what the cash paid for: an income category
+ * or "Efectivo" itself. Null when there's none. Cash expenses the cash can't pay are fine: the
+ * app keeps them ("Sin efectivo").
+ */
+function cashExpenseDamage(data: BackupData): BackupDamage | null {
+  const categories = new Map(data.categories.map((category) => [category.id, category]));
+  for (const [row, expense] of data.cashExpenses.entries()) {
+    const category = categories.get(expense.categoryId)!;
+    if (category.kind !== 'expense' || normalizeText(category.name) === 'efectivo') return { kind: 'invalid', table: 'cashExpenses', row, field: 'categoryId' };
+  }
+  return null;
 }
 
 /**
@@ -481,6 +522,7 @@ export function countsOf(data: BackupData): BackupCounts {
     goals: data.goals.length,
     reimbursements: new Set(data.reimbursements.map((link) => link.incomeId)).size,
     savingsTarget: data.savingsTargets.some((target) => target.amount > 0),
+    cashExpenses: data.cashExpenses.length,
   };
 }
 
