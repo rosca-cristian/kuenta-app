@@ -8,6 +8,7 @@ import { useRepo, useRepoQuery } from '../../lib/repo';
 import type { Category, CategoryKind, Id } from '../../domain/model';
 import type { CategoryDraft, CategorySaveResult } from '../../data/repository';
 import { isNextMonthDay } from '../../domain/countingMonth';
+import { cashCategoryOf } from '../../domain/cash';
 
 const KINDS: { kind: CategoryKind; label: string; title: string }[] = [
   { kind: 'expense', label: 'Gasto', title: 'Gastos' },
@@ -258,9 +259,13 @@ function DeleteForm({
   const repo = useRepo();
   const usage = useRepoQuery((r) => r.categoryUsage(category.id), [category.id]);
   // '' stands for "Sin categoría".
-  const [moveTo, setMoveTo] = useState<Id | ''>('');
+  const [picked, setPicked] = useState<Id | ''>('');
   const [busy, setBusy] = useState(false);
-  const others = categories.filter((other) => other.id !== category.id);
+  // Its cash expenses must say what the cash paid for: then only another expense category than "Efectivo" will do.
+  const cashOnly = (usage?.cashExpenses ?? 0) > 0;
+  const cashId = cashCategoryOf(categories)?.id;
+  const others = categories.filter((other) => other.id !== category.id && (!cashOnly || (other.kind === 'expense' && other.id !== cashId)));
+  const moveTo = cashOnly && !others.some((other) => other.id === picked) ? others[0]?.id ?? '' : picked;
 
   async function remove() {
     setBusy(true);
@@ -272,19 +277,26 @@ function DeleteForm({
 
   return (
     <div className="flex flex-col gap-4">
-      {usage.transactions > 0 ? (
+      {usage.transactions > 0 || cashOnly ? (
         <>
           <p className="text-sm">
-            «{category.name}» tiene {countText(usage.transactions, 'movimiento', 'movimientos')}. Elige a dónde pasan.
+            «{category.name}» tiene{' '}
+            {[
+              usage.transactions > 0 && countText(usage.transactions, 'movimiento', 'movimientos'),
+              cashOnly && countText(usage.cashExpenses, 'gasto en efectivo', 'gastos en efectivo'),
+            ]
+              .filter(Boolean)
+              .join(' y ')}
+            . Elige a dónde pasan.
           </p>
           <label className="flex flex-col gap-1 text-sm text-muted">
             Mover movimientos a
             <select
               value={moveTo}
-              onChange={(event) => setMoveTo(event.target.value)}
+              onChange={(event) => setPicked(event.target.value)}
               className="min-h-11 rounded-xl border border-line bg-card-2 px-3 text-base text-text outline-none focus:border-accent"
             >
-              <option value="">Sin categoría</option>
+              {!cashOnly && <option value="">Sin categoría</option>}
               {KINDS.map(({ kind, title }) => (
                 <optgroup key={kind} label={title}>
                   {others
@@ -310,11 +322,14 @@ function DeleteForm({
         </Alert>
       )}
       {usage.budget && <Alert tone="warn">También se borrará su presupuesto, incluido el de meses anteriores.</Alert>}
+      {cashOnly && others.length === 0 && (
+        <Alert tone="warn">Sus gastos en efectivo necesitan otra categoría de gasto. Crea una antes de borrar esta.</Alert>
+      )}
       <div className="flex gap-3">
         <Button variant="secondary" className="flex-1" onClick={onCancel} disabled={busy}>
           Cancelar
         </Button>
-        <Button variant="danger" className="flex-1" onClick={remove} disabled={busy}>
+        <Button variant="danger" className="flex-1" onClick={remove} disabled={busy || (cashOnly && others.length === 0)}>
           Borrar
         </Button>
       </div>

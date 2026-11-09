@@ -12,6 +12,7 @@ import { suggestedRuleText } from '../../domain/rules';
 import { ruleSubjectOf, type ImportWarning, type PlannedRow } from '../../domain/importPlan';
 import type { Category, Id, ImportBatch } from '../../domain/model';
 import { QuickRuleSheet } from '../rules/QuickRuleSheet';
+import { uncoveredWarning } from '../accounts/cashText';
 import type { ImportOutcome, ImportPreview } from '../../data/repository';
 
 type State =
@@ -405,10 +406,11 @@ function Result({ outcome, onDone }: { outcome: ImportOutcome; onDone: () => voi
 function History() {
   const { repo } = useServices();
   const imports = useRepoQuery((r) => r.listImports());
-  const [undoing, setUndoing] = useState<{ batch: ImportBatch; edited: number } | null>(null);
+  const [undoing, setUndoing] = useState<{ batch: ImportBatch; edited: number; uncovered: number } | null>(null);
 
   async function askUndo(batch: ImportBatch) {
-    setUndoing({ batch, edited: await repo.editedCountInImport(batch.id) });
+    const [edited, uncovered] = await Promise.all([repo.editedCountInImport(batch.id), repo.cashExpensesUncoveredBy({ undoImport: batch.id })]);
+    setUndoing({ batch, edited, uncovered });
   }
 
   async function confirmUndo() {
@@ -457,6 +459,7 @@ function History() {
                   : `${undoing.edited} movimientos importados se han editado desde entonces; se borrarán igualmente.`}
               </Alert>
             )}
+            {undoing.uncovered > 0 && <Alert tone="warn">{uncoveredWarning(undoing.uncovered)}</Alert>}
             <Button variant="danger" onClick={confirmUndo}>
               Deshacer importación
             </Button>

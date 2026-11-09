@@ -46,6 +46,8 @@ export type AccountSaveResult =
   | { ok: false; reason: 'exists'; existing: Account };
 
 export interface TransactionView extends Transaction {
+  /** A row from the bank, as opposed to a cash expense (`MovementView`). */
+  kind: 'bank';
   category: Category | null;
   payee: Payee | null;
   account: Account;
@@ -67,11 +69,43 @@ export interface TransactionView extends Transaction {
 
 /** A cash expense with its category. */
 export interface CashExpenseView extends CashExpense {
+  /** A cash expense, as opposed to a row from the bank (`MovementView`). */
+  kind: 'cash';
   /** Null when the category was deleted. */
   category: Category | null;
   /** Whether the cash held on its date can't pay it ("Sin efectivo"): it then counts nowhere. */
   uncovered: boolean;
 }
+
+/** The cash screen: the unspent cash and where it stands. */
+export interface CashPocketView {
+  /** The unspent cash of every withdrawal. */
+  total: Cents;
+  /**
+   * Whether the pocket ever had cash: there's a withdrawal from `cashFromDate` on, or a cash
+   * expense (whose withdrawal may be gone). Without, the "Efectivo" line is hidden.
+   */
+  everHad: boolean;
+  /** The withdrawals with cash left, oldest first: what the next cash expenses take from. */
+  withdrawals: { transaction: TransactionView; left: Cents }[];
+  /** The last cash expenses by date, newest first, up to 10. */
+  latest: CashExpenseView[];
+  /** The cash expenses the cash held on their date can't pay ("Sin efectivo"), newest first. */
+  uncovered: CashExpenseView[];
+}
+
+/**
+ * Something that can take cash out of the pocket, as the warnings ask about it: undoing an import,
+ * changing a transaction (its category, or making it a transfer or not) and moving "Contar el
+ * efectivo desde".
+ */
+export type CashChange =
+  | { undoImport: Id }
+  | { transactionId: Id; changes: TransactionChanges }
+  | { cashFromDate: IsoDate };
+
+/** One row of Movimientos: a transaction from the bank or a cash expense, told apart by `kind`. */
+export type MovementView = TransactionView | CashExpenseView;
 
 export interface CashExpenseDraft {
   /** Above 0. */
@@ -148,8 +182,11 @@ export interface TransactionFilter {
   accountId?: Id;
   /** A category's id, or null for "sin categoría": the imported expenses and income without a category. */
   categoryId?: Id | null;
-  /** A type, or `'reimbursement'`: the incomes that pay back at least one expense ("Reembolsos"). */
-  type?: TxType | 'reimbursement';
+  /**
+   * A type, `'reimbursement'`: the incomes that pay back at least one expense ("Reembolsos"), or
+   * `'cash'`: the cash expenses ("Gastos en efectivo"). Every other type lists only the bank's rows.
+   */
+  type?: TxType | 'reimbursement' | 'cash';
   payeeId?: Id;
   /** On or after this date (the transaction's date, inclusive). */
   from?: IsoDate;
@@ -163,6 +200,8 @@ export interface Settings {
   persistRequested: boolean;
   /** Privacy mode: every amount on screen shows as "•••• €". It belongs to this phone, not to backups. */
   privacyMode: boolean;
+  /** The first day whose cash withdrawals go to the cash pocket ("Contar el efectivo desde"); null before the first run. */
+  cashFromDate: IsoDate | null;
 }
 
 export interface ImportPreview {
@@ -200,8 +239,16 @@ export interface ImportOutcome {
 }
 
 export interface HomeData {
-  /** The sum of every account's balance, archived ones included. */
+  /** The sum of every account's balance, archived ones included, and the unspent cash. */
   totalBalance: Cents;
+  /** The unspent cash, Inicio's "Efectivo" line; null while the pocket never had any (`CashPocketView.everHad`). */
+  cash: Cents | null;
+  /**
+   * The unspent cash to remind the user of ("Tienes X € de efectivo sin repartir"): there's some,
+   * and 3 days passed since the last withdrawal, the last cash expense noted down and the last
+   * "Más tarde". Null otherwise.
+   */
+  cashReminder: Cents | null;
   summary: MonthSummary;
   /** The non-archived accounts, in order. */
   accounts: AccountView[];
@@ -285,6 +332,8 @@ export interface CategoryUsage {
   rules: number;
   /** Whether it has a budget in any month: every limit goes with it. */
   budget: boolean;
+  /** Cash expenses with the category: they need an expense category other than "Efectivo" to go to. */
+  cashExpenses: number;
 }
 
 export interface RuleDraft {
@@ -505,7 +554,8 @@ export interface DataRepository {
    * Deletes a category in one transaction: its transactions move to `moveTo` (null for
    * "Sin categoría") without counting as the user's edits, the rules that set it lose
    * that action and are disabled, so the user can repoint them, and its budget limits of
-   * every month are deleted.
+   * every month are deleted. Its cash expenses move to `moveTo` too, which must then be an
+   * expense category other than "Efectivo" (throws otherwise).
    */
   deleteCategory(id: Id, moveTo: Id | null): Promise<void>;
 
@@ -557,6 +607,14 @@ export interface DataRepository {
 
   /** Transactions of a month, or of all months when `period` is null, newest first; with a filter, only those matching it. */
   listTransactions(period: Month | null, filter?: TransactionFilter): Promise<TransactionView[]>;
+  /**
+   * What Movimientos lists: the transactions as `listTransactions` gives them and the cash
+   * expenses of the period, newest first, a day's cash expenses before its bank rows. A cash
+   * expense matches the search by its note or category name, and the category filter by its
+   * category; it has no account, payee or "sin categoría", so those filters leave it out, and
+   * of the types only `'cash'` lists it.
+   */
+  listMovements(period: Month | null, filter?: TransactionFilter): Promise<MovementView[]>;
   /** The dates of the oldest and the newest transaction, balance adjustments included; null when there are none. */
   transactionDateRange(): Promise<{ first: IsoDate; last: IsoDate } | null>;
   getTransaction(id: Id): Promise<TransactionView | null>;
@@ -606,6 +664,20 @@ export interface DataRepository {
   updateCashExpense(id: Id, changes: CashExpenseChanges): Promise<CashExpenseSaveResult>;
   /** Deletes a cash expense: its cash goes back to the pocket. Throws for an unknown one. */
   deleteCashExpense(id: Id): Promise<void>;
+  /** How many cash expenses the cash pays now and wouldn't after the change ("N gastos en efectivo se quedarán sin efectivo"). */
+  cashExpensesUncoveredBy(change: CashChange): Promise<number>;
+  /**
+   * Moves "Contar el efectivo desde": withdrawals from that day on go to the cash pocket, earlier
+   * ones count as spent. Throws for something that isn't a date. Saving the same day changes nothing.
+   */
+  setCashFromDate(date: IsoDate): Promise<void>;
+  /** The cash screen: the unspent cash, the withdrawals with some left and the latest and uncovered cash expenses. */
+  cashPocket(): Promise<CashPocketView>;
+  /**
+   * "Más tarde" on Inicio's cash reminder: hides it for 3 days. It belongs to this phone
+   * (`cashReminderAt`), so it doesn't count as a data change and backups leave it out.
+   */
+  postponeCashReminder(): Promise<void>;
 
   /** Every payee, sorted by name, with its number of transactions. */
   listPayees(): Promise<PayeeView[]>;

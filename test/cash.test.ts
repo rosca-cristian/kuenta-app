@@ -1,7 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import { createDexieRepository } from '../src/data/dexie/dexieRepository';
 import { KuentaDb } from '../src/data/dexie/db';
-import type { DataRepository } from '../src/data/repository';
+import type { DataRepository, TransactionView } from '../src/data/repository';
+import { listNet } from '../src/domain/stats';
+import { backupJson } from '../src/domain/backup';
+import { transactionsCsv } from '../src/domain/csv';
 import type { SampleMovement } from './support/bbvaXlsx';
 import { importFile } from './support/backupData';
 
@@ -265,5 +268,311 @@ describe('editing and deleting a cash expense', () => {
       ],
     });
     await expect(repo.deleteCashExpense(ids.e1)).rejects.toThrow('not found');
+  });
+});
+
+describe('Movimientos with cash expenses', () => {
+  const rows = (movements: Awaited<ReturnType<DataRepository['listMovements']>>) =>
+    movements.map((m) => (m.kind === 'cash' ? `cash:${m.note || m.category?.name}` : `bank:${m.note || m.bankConcept}`));
+
+  it('lists them on their dates, before the bank rows of the day, newest first', async () => {
+    const { repo } = await setup();
+    await cashData(repo);
+    expect(rows(await repo.listMovements('2026-10'))).toEqual([
+      'cash:Restaurantes',
+      'bank:Cajero Centro',
+      'bank:Recibido: Ana cena',
+      'bank:Bar Romera',
+      'cash:Cena',
+      'bank:Retirada cajero',
+    ]);
+    expect(rows(await repo.listMovements(null)).slice(0, 4)).toEqual(['bank:Cajero Norte', 'bank:Mercadona', 'cash:Ocio', 'cash:Restaurantes']);
+  });
+
+  it('leave the day nets and the summary as the bank has them', async () => {
+    const { repo } = await setup();
+    await cashData(repo);
+    const bank = (await repo.listMovements('2026-10')).filter((m) => m.kind === 'bank');
+    expect(bank.map((tx) => tx.id)).toEqual((await repo.listTransactions('2026-10')).map((tx) => tx.id));
+    expect(listNet(bank as TransactionView[])).toBe(listNet(await repo.listTransactions('2026-10')));
+  });
+
+  it('are found by their note and category name, by the category filter and by the type "Gastos en efectivo"', async () => {
+    const { repo, ocio } = await (async () => {
+      const s = await setup();
+      return { ...s, ...(await cashData(s.repo)) };
+    })();
+    expect(rows(await repo.listMovements(null, { text: 'cena' }))).toEqual(['bank:Recibido: Ana cena', 'cash:Cena']);
+    expect(rows(await repo.listMovements(null, { text: 'restaurantes' }))).toEqual(['cash:Restaurantes', 'cash:Cena']);
+    expect(rows(await repo.listMovements(null, { categoryId: ocio }))).toEqual(['cash:Ocio']);
+    expect(rows(await repo.listMovements(null, { type: 'cash' }))).toEqual(['cash:Ocio', 'cash:Restaurantes', 'cash:Cena']);
+    expect(rows(await repo.listMovements('2026-10', { type: 'expense' })).every((row) => row.startsWith('bank:'))).toBe(true);
+    // They have no account, payee or "sin categoría".
+    const accountId = (await repo.listAccounts())[0].id;
+    expect(rows(await repo.listMovements(null, { accountId })).some((row) => row.startsWith('cash:'))).toBe(false);
+    expect(rows(await repo.listMovements(null, { categoryId: null })).some((row) => row.startsWith('cash:'))).toBe(false);
+    expect(await repo.listTransactions(null, { type: 'cash' })).toEqual([]);
+  });
+
+  it('are never reimbursement candidates', async () => {
+    const { repo } = await setup();
+    await cashData(repo);
+    const candidates = await repo.reimbursementCandidates(await idOf(repo, 'Recibido: Ana cena'));
+    expect(candidates.every((candidate) => candidate.transaction.kind === 'bank')).toBe(true);
+  });
+});
+
+describe('the cash pocket as money held', () => {
+  it('adds the unspent cash to the total balance and net worth, leaving the bank account as it is', async () => {
+    const { repo } = await setup();
+    await cashData(repo);
+    const [bbva] = await repo.listAccounts();
+    // 2.000 € − 40 + 1.500 − 100 − 30 + 10 − 50 − 20 − 60 = 3.210 €, and 80 € of cash left (20 + 60).
+    expect(bbva.balance).toBe(321000);
+    const home = await repo.home('2026-11');
+    expect(home.cash).toBe(8000);
+    expect(home.totalBalance).toBe(329000);
+    const worth = await repo.netWorth();
+    expect(worth.points.map((p) => [p.month, p.netWorth])).toEqual([
+      ['2026-09', 346000],
+      // 3.290 € in the bank at the end of October, and 30 € of cash.
+      ['2026-10', 329000 + 3000],
+      ['2026-11', 321000 + 8000],
+    ]);
+    expect(worth.latest).toBe(home.totalBalance);
+  });
+
+  it('is hidden while it never had cash', async () => {
+    const { repo } = await setup();
+    await importFile(repo, [card('03/11/2026', 'Mercadona', -20)], 2000);
+    expect((await repo.home('2026-11')).cash).toBeNull();
+    expect(await repo.cashPocket()).toMatchObject({ total: 0, everHad: false, withdrawals: [], latest: [], uncovered: [] });
+  });
+
+  it('lists the withdrawals with cash left, oldest first, and the latest cash expenses, newest first', async () => {
+    const { repo } = await setup();
+    const { ids } = await cashData(repo);
+    const pocket = await repo.cashPocket();
+    expect(pocket.total).toBe(8000);
+    expect(pocket.everHad).toBe(true);
+    expect(pocket.withdrawals.map((w) => [w.transaction.id, w.left])).toEqual([
+      [ids.w2, 2000],
+      [ids.w3, 6000],
+    ]);
+    expect(pocket.latest.map((e) => e.id)).toEqual([ids.e3, ids.e2, ids.e1]);
+    expect(pocket.uncovered).toEqual([]);
+  });
+});
+
+describe("Inicio's cash reminder", () => {
+  it('shows the unspent cash 3 days after the last withdrawal or cash expense, and "Más tarde" puts it off 3 days', async () => {
+    const { repo, clock, db } = await setup();
+    await cashData(repo);
+    // The last withdrawal on 10 November, and the cash expenses were noted down on the 20th.
+    expect((await repo.home('2026-11')).cashReminder).toBeNull();
+    clock.now = new Date('2026-11-23T09:00:00');
+    expect((await repo.home('2026-11')).cashReminder).toBe(8000);
+
+    const before = (await db.settings.get('lastChangeAt'))?.value;
+    await repo.postponeCashReminder();
+    expect((await repo.home('2026-11')).cashReminder).toBeNull();
+    expect((await db.settings.get('lastChangeAt'))?.value).toBe(before);
+    clock.now = new Date('2026-11-25T22:00:00');
+    expect((await repo.home('2026-11')).cashReminder).toBeNull();
+    clock.now = new Date('2026-11-26T08:00:00');
+    expect((await repo.home('2026-11')).cashReminder).toBe(8000);
+
+    // Noting down a cash expense puts it off too.
+    await added(repo, { amount: 1000, categoryId: await categoryId(repo, 'Ocio'), date: '2026-11-26' });
+    expect((await repo.home('2026-11')).cashReminder).toBeNull();
+  });
+
+  it("keeps when it was put off through a restore: it belongs to this phone", async () => {
+    const { repo, db } = await setup();
+    await cashData(repo);
+    const backup = await repo.exportBackup();
+    await repo.postponeCashReminder();
+    const at = (await db.settings.get('cashReminderAt'))?.value;
+    await repo.restoreBackup(backup);
+    expect((await db.settings.get('cashReminderAt'))?.value).toBe(at);
+    expect(backup.data.settings.some((row) => row.key === 'cashReminderAt')).toBe(false);
+  });
+});
+
+describe('keeping cash expenses when their cash goes away', () => {
+  it('counts the cash expenses undoing an import would leave without cash, and they count again once reimported', async () => {
+    const { repo } = await setup();
+    const { ids } = await cashData(repo);
+    const batch = (await repo.listImports())[0];
+    expect(await repo.cashExpensesUncoveredBy({ undoImport: batch.id })).toBe(3);
+    await repo.undoImport(batch.id);
+    expect((await repo.cashPocket()).uncovered.map((e) => e.id)).toEqual([ids.e3, ids.e2, ids.e1]);
+    // The "Efectivo" line stays, so the cash screen with them can still be reached.
+    expect((await repo.cashPocket()).everHad).toBe(true);
+    expect((await repo.home('2026-11')).cash).toBe(0);
+    expect((await repo.listMovements(null, { type: 'cash' })).every((m) => m.kind === 'cash' && m.uncovered)).toBe(true);
+    await importFile(repo, movements, 2000);
+    expect((await repo.cashPocket()).uncovered).toEqual([]);
+    expect((await repo.home('2026-11')).summary.expenses).toBe(3000);
+  });
+
+  it("counts those changing a withdrawal's category or making it a transfer would leave without cash", async () => {
+    const { repo } = await setup();
+    const { ids, ocio } = await cashData(repo);
+    // Without the first withdrawal, the 80 € dinner on 5 October has no cash; the second one pays the rest.
+    expect(await repo.cashExpensesUncoveredBy({ transactionId: ids.w1, changes: { categoryId: ocio } })).toBe(1);
+    expect(await repo.cashExpensesUncoveredBy({ transactionId: ids.w3, changes: { categoryId: ocio } })).toBe(0);
+    const { id: revolut } = (await repo.createAccount({ name: 'Revolut', type: 'bank', icon: 'banknote', color: 'cyan' })) as { id: string };
+    expect(await repo.cashExpensesUncoveredBy({ transactionId: ids.w2, changes: { transferAccountId: revolut } })).toBe(1);
+    // Saved, they're kept and marked.
+    await repo.updateTransaction(ids.w1, { categoryId: ocio });
+    expect(await repo.getCashExpense(ids.e1)).toMatchObject({ uncovered: true });
+    expect(await repo.getCashExpense(ids.e2)).toMatchObject({ uncovered: false });
+    // And back in "Efectivo", the cash pays them again.
+    await repo.updateTransaction(ids.w1, { categoryId: await categoryId(repo, 'Efectivo') });
+    expect(await repo.getCashExpense(ids.e1)).toMatchObject({ uncovered: false });
+  });
+
+  it('never lets rules change them', async () => {
+    const { repo } = await setup();
+    const { ids, ocio } = await cashData(repo);
+    await repo.createRule({ name: 'Todo ocio', match: { value: 'a' }, actions: { categoryId: ocio } });
+    await repo.applyRules();
+    await repo.acceptStarterRulesOffer();
+    expect(await repo.getCashExpense(ids.e1)).toMatchObject({ category: { name: 'Restaurantes' }, note: 'Cena' });
+  });
+
+  it('moves them with the category deleted, only to another expense category than "Efectivo"', async () => {
+    const { repo } = await setup();
+    const { ids, restaurantes, ocio } = await cashData(repo);
+    expect(await repo.categoryUsage(restaurantes)).toMatchObject({ transactions: 1, cashExpenses: 2 });
+    await expect(repo.deleteCategory(restaurantes, null)).rejects.toThrow('another expense category');
+    await expect(repo.deleteCategory(restaurantes, await categoryId(repo, 'Efectivo'))).rejects.toThrow('another expense category');
+    await expect(repo.deleteCategory(restaurantes, await categoryId(repo, 'Nómina'))).rejects.toThrow('another expense category');
+    await repo.deleteCategory(restaurantes, ocio);
+    expect(await repo.getCashExpense(ids.e1)).toMatchObject({ categoryId: ocio });
+    expect(await repo.getCashExpense(ids.e2)).toMatchObject({ categoryId: ocio });
+  });
+});
+
+describe('Contar el efectivo desde', () => {
+  it('moves where the pocket starts, warning of the cash expenses it would leave without cash', async () => {
+    const { repo, db, clock } = await setup();
+    const { ids } = await cashData(repo);
+    expect((await repo.getSettings()).cashFromDate).toBe('2026-10-01');
+    expect(await repo.cashExpensesUncoveredBy({ cashFromDate: '2026-10-10' })).toBe(1);
+    clock.now = new Date('2026-11-21T10:00:00');
+    await repo.setCashFromDate('2026-10-10');
+    expect((await db.settings.get('lastChangeAt'))?.value).toBe(clock.now.toISOString());
+    expect(await repo.getCashExpense(ids.e1)).toMatchObject({ uncovered: true });
+    // The first withdrawal counts as spent again.
+    expect((await repo.spending('2026-10')).entries.map((e) => [e.category?.name, e.amount])).toEqual([
+      ['Efectivo', 10000],
+      ['Restaurantes', 2000 + 4000],
+    ]);
+
+    // Earlier, the September withdrawal goes to the pocket too.
+    expect(await repo.cashExpensesUncoveredBy({ cashFromDate: '2026-09-01' })).toBe(0);
+    clock.now = new Date('2026-11-22T10:00:00');
+    await repo.setCashFromDate('2026-10-10');
+    expect((await db.settings.get('lastChangeAt'))?.value).not.toBe(clock.now.toISOString());
+    await expect(repo.setCashFromDate('2026-10-32')).rejects.toThrow('Not a date');
+  });
+});
+
+describe('cash expenses in backups', () => {
+  async function fresh() {
+    const name = `kuenta-cash-test-${++dbCount}`;
+    return { name, repo: createDexieRepository({ name, now: () => new Date('2026-11-20T10:00:00'), appVersion: '1.2.3' }), db: new KuentaDb(name) };
+  }
+
+  it('travel in a backup with "Contar el efectivo desde" and come back with a restore, counting as before', async () => {
+    const { repo, db } = await setup();
+    const { ids } = await cashData(repo);
+    const backup = await repo.exportBackup();
+    expect(backup.format).toBe(4);
+    expect(backup.data.cashExpenses).toEqual(await db.cashExpenses.toArray());
+    expect(backup.data.settings).toContainEqual({ key: 'cashFromDate', value: '2026-10-01' });
+
+    const target = await fresh();
+    const read = target.repo.readBackup(backupJson(backup));
+    if (!read.ok) throw new Error(JSON.stringify(read.error));
+    expect(read.summary.cashExpenses).toBe(3);
+    await target.repo.restoreBackup(read.backup);
+    expect(await target.db.cashExpenses.toArray()).toEqual(await db.cashExpenses.toArray());
+    expect((await target.repo.getSettings()).cashFromDate).toBe('2026-10-01');
+    expect((await target.repo.home('2026-10')).summary).toEqual((await repo.home('2026-10')).summary);
+    expect((await target.repo.getTransaction(ids.w1))!.cash).toEqual((await repo.getTransaction(ids.w1))!.cash);
+    expect(await target.repo.dataCounts()).toMatchObject({ cashExpenses: 3 });
+  });
+
+  it('replace the cash expenses already on the phone', async () => {
+    const { repo, db } = await setup();
+    await cashData(repo);
+    const target = await setup();
+    await cashData(target.repo);
+    const read = target.repo.readBackup(backupJson(await repo.exportBackup()));
+    if (!read.ok) throw new Error(JSON.stringify(read.error));
+    await target.repo.restoreBackup(read.backup);
+    expect((await target.db.cashExpenses.toArray()).map((e) => e.id).sort()).toEqual((await db.cashExpenses.toArray()).map((e) => e.id).sort());
+  });
+
+  it('are none in a format 3 copy, which counts cash from its own month so the past stays as it was', async () => {
+    const { repo } = await setup();
+    await cashData(repo);
+    const backup = await repo.exportBackup();
+    const { cashExpenses, ...data } = backup.data;
+    expect(cashExpenses).toHaveLength(3);
+    const formatThree = JSON.stringify({ ...backup, format: 3, data: { ...data, settings: data.settings.filter((s) => s.key !== 'cashFromDate') } });
+
+    const target = await fresh();
+    const read = target.repo.readBackup(formatThree);
+    if (!read.ok) throw new Error(JSON.stringify(read.error));
+    expect(read.backup.format).toBe(4);
+    expect(read.backup.data.cashExpenses).toEqual([]);
+    expect(read.backup.data.settings).toContainEqual({ key: 'cashFromDate', value: '2026-11-01' });
+    await target.repo.restoreBackup(read.backup);
+    // October's withdrawals count as spent, as they did when the copy was made.
+    expect((await target.repo.spending('2026-10')).entries.map((e) => [e.category?.name, e.amount])).toEqual([
+      ['Efectivo', 15000],
+      ['Restaurantes', 2000],
+    ]);
+  });
+
+  it.each([
+    ['an amount not above 0', (file: BackupJson) => void (file.data.cashExpenses[1].amount = 0), { kind: 'invalid', table: 'cashExpenses', row: 1, field: 'amount' }],
+    ['an amount not in whole cents', (file: BackupJson) => void (file.data.cashExpenses[0].amount = 12.5), { kind: 'invalid', table: 'cashExpenses', row: 0, field: 'amount' }],
+    ['a date that is not one', (file: BackupJson) => void (file.data.cashExpenses[0].date = '2026-13-01'), { kind: 'invalid', table: 'cashExpenses', row: 0, field: 'date' }],
+    ['a missing category', (file: BackupJson) => void (file.data.cashExpenses[2].categoryId = 'gone'), { kind: 'reference', table: 'cashExpenses', field: 'categoryId', target: 'categories' }],
+    ['the "Efectivo" category', (file: BackupJson) => void (file.data.cashExpenses[2].categoryId = categoryNamed(file, 'Efectivo')), { kind: 'invalid', table: 'cashExpenses', row: 2, field: 'categoryId' }],
+    ['an income category', (file: BackupJson) => void (file.data.cashExpenses[0].categoryId = categoryNamed(file, 'Nómina')), { kind: 'invalid', table: 'cashExpenses', row: 0, field: 'categoryId' }],
+    ['a repeated id', (file: BackupJson) => void (file.data.cashExpenses[1].id = file.data.cashExpenses[0].id), { kind: 'duplicate', table: 'cashExpenses', field: 'id' }],
+    ['no start date', (file: BackupJson) => void (file.data.settings = file.data.settings.filter((s) => s.key !== 'cashFromDate')), { kind: 'invalid', table: 'settings', row: null, field: 'cashFromDate' }],
+    ['a start date that is not a date', (file: BackupJson) => void (file.data.settings.find((s) => s.key === 'cashFromDate')!.value = 'octubre'), { kind: 'invalid', table: 'settings', row: expect.any(Number), field: 'value' }],
+  ])('refuse a copy with a cash expense with %s', async (_, damage, expected) => {
+    const { repo } = await setup();
+    await cashData(repo);
+    const file = JSON.parse(backupJson(await repo.exportBackup())) as BackupJson;
+    damage(file);
+    expect(repo.readBackup(JSON.stringify(file))).toEqual({ ok: false, error: { reason: 'damaged', damage: expected } });
+  });
+});
+
+type BackupJson = { data: { cashExpenses: Record<string, unknown>[]; categories: { id: string; name: string }[]; settings: { key: string; value: unknown }[] } };
+const categoryNamed = (file: BackupJson, name: string) => file.data.categories.find((c) => c.name === name)!.id;
+
+describe('cash in the CSV', () => {
+  it('lists cash expenses as their own lines and names the withdrawals', async () => {
+    const { repo } = await setup();
+    await cashData(repo);
+    const lines = transactionsCsv(await repo.listMovements('2026-10')).trim().split('\r\n');
+    expect(lines.filter((line) => line.includes('efectivo'))).toEqual([
+      '02/10/2026;Retirada de efectivo;BBVA;;Efectivo;Retirada Cajero;;-100,00;;Retirada cajero',
+      '05/10/2026;Gasto en efectivo;Efectivo;;Restaurantes;;Cena;-80,00;;',
+      '15/10/2026;Retirada de efectivo;BBVA;;Efectivo;Cajero Centro;;-50,00;;Cajero Centro',
+      '16/10/2026;Gasto en efectivo;Efectivo;;Restaurantes;;;-40,00;;',
+    ]);
+    // The September withdrawal, from before cash counted, is still an ordinary expense.
+    expect(transactionsCsv(await repo.listMovements('2026-09'))).toContain('25/09/2026;Gasto;BBVA;;Efectivo;Cajero Sol;;-40,00;;Cajero Sol');
   });
 });

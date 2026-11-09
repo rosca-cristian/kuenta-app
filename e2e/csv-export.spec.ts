@@ -53,6 +53,9 @@ test('export what Movimientos shows as a CSV for Spanish Excel, disabled for an 
 
   // A search over all months exports only its matches.
   await page.getByRole('searchbox', { name: 'Buscar movimientos' }).fill('mercadona');
+  // The search reaches the URL after a pause: wait for it, or October's two rows, still listed while
+  // all months load, could pass for the search's two.
+  await expect(page).toHaveURL(/q=mercadona/);
   // The period lives in the URL, which the router applies in a transition: click, then wait for it.
   await page.getByRole('radio', { name: 'Todos los meses' }).click();
   await expect(page.getByRole('radio', { name: 'Todos los meses' })).toBeChecked();

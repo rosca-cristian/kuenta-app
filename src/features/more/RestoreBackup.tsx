@@ -18,6 +18,7 @@ const TABLE_NAMES: Record<BackupTable, [string, string]> = {
   importBatches: ['una importación', 'importaciones'],
   reimbursements: ['un reembolso', 'reembolsos'],
   savingsTargets: ['un ahorro mensual', 'ahorro mensual'],
+  cashExpenses: ['un gasto en efectivo', 'gastos en efectivo'],
   settings: ['un ajuste', 'ajustes'],
 };
 
@@ -51,7 +52,7 @@ export function backupErrorText(error: BackupError): string {
 
 const plural = (count: number, one: string, many: string) => `${count} ${count === 1 ? one : many}`;
 
-/** "3 cuentas, 845 movimientos, …, ahorro mensual: sí". */
+/** "3 cuentas, 845 movimientos, …, ahorro mensual: sí, 12 gastos en efectivo". */
 function countsText(counts: BackupCounts): string {
   return [
     plural(counts.accounts, 'cuenta', 'cuentas'),
@@ -63,6 +64,7 @@ function countsText(counts: BackupCounts): string {
     plural(counts.goals, 'meta de ahorro', 'metas de ahorro'),
     plural(counts.reimbursements, 'reembolso', 'reembolsos'),
     `ahorro mensual: ${counts.savingsTarget ? 'sí' : 'no'}`,
+    plural(counts.cashExpenses, 'gasto en efectivo', 'gastos en efectivo'),
   ].join(', ');
 }
 

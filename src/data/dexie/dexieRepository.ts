@@ -12,7 +12,7 @@ import { savingsProgress, targetFor } from '../../domain/savings';
 import { leftToPayBack, netOfReimbursements } from '../../domain/reimbursements';
 import { countingMonthOf, inCountingMonths, isNextMonthDay } from '../../domain/countingMonth';
 import { netWorthSeries } from '../../domain/balances';
-import { cashCategoryOf, cashPocket, checkCashExpense, isWithdrawal, withCash, type CashPocket } from '../../domain/cash';
+import { cashCategoryOf, cashHeldOn, cashPocket, cashReminderDue, checkCashExpense, isWithdrawal, withCash, type CashPocket } from '../../domain/cash';
 import { addDays, addMonths, daysBetween, isIsoDate, isMonth, monthOf, today, type IsoDate, type Month } from '../../domain/dates';
 import { normalizeText } from '../../domain/text';
 import { BACKUP_SETTINGS, countsOf, createBackup, isBackupDue, readBackup, type BackupCounts, type BackupFile } from '../../domain/backup';
@@ -41,7 +41,10 @@ import type {
   BudgetsView,
   CashExpenseChanges,
   CashExpenseSaveResult,
+  CashChange,
   CashExpenseView,
+  CashPocketView,
+  MovementView,
   CategoryChanges,
   CategoryDraft,
   CategorySaveResult,
@@ -116,6 +119,12 @@ const STARTER_RULES_OFFER = 'starterRulesOffer';
 
 /** The data setting holding the first day whose cash withdrawals go to the cash pocket. */
 const CASH_FROM_DATE = 'cashFromDate';
+
+/** The device setting holding when Inicio's cash reminder was last put off ("Más tarde"). */
+const CASH_REMINDER_AT = 'cashReminderAt';
+
+/** How many cash expenses the cash screen lists as the latest. */
+const LATEST_CASH_EXPENSES = 10;
 type StarterRulesOffer = 'pending' | 'done';
 
 /** How far back, in days, "Es un reembolso" looks for the expenses an income pays back, and each "Ver gastos anteriores" more. */
@@ -552,6 +561,7 @@ export function createDexieRepository(options: DexieRepositoryOptions = {}): Dat
       const countingMonth = countingMonthOf(tx, categoryMap);
       return {
         ...tx,
+        kind: 'bank' as const,
         account: accountMap.get(tx.accountId)!,
         toAccount: tx.toAccountId ? accountMap.get(tx.toAccountId) ?? null : null,
         category: tx.categoryId ? categoryMap.get(tx.categoryId) ?? null : null,
@@ -596,6 +606,13 @@ export function createDexieRepository(options: DexieRepositoryOptions = {}): Dat
       await db.cashExpenses.put(expense);
       return { ok: true, id: expense.id };
     });
+  }
+
+  /** The cash expenses with their category and whether the cash pays them. */
+  async function cashViews(expenses: CashExpense[]): Promise<CashExpenseView[]> {
+    const [categories, { pocket }] = await Promise.all([db.categories.toArray(), cashState()]);
+    const byId = new Map(categories.map((category) => [category.id, category]));
+    return expenses.map((expense) => ({ ...expense, kind: 'cash', category: byId.get(expense.categoryId) ?? null, uncovered: pocket.uncovered.has(expense.id) }));
   }
 
   /** A month's transactions, by their date. */
@@ -668,6 +685,7 @@ export function createDexieRepository(options: DexieRepositoryOptions = {}): Dat
         importAccountId: await setting<Id | null>('importAccountId', null),
         persistRequested: await setting('persistRequested', false),
         privacyMode: await setting('privacyMode', false),
+        cashFromDate: await setting<IsoDate | null>(CASH_FROM_DATE, null),
       };
     },
 
@@ -879,14 +897,24 @@ export function createDexieRepository(options: DexieRepositoryOptions = {}): Dat
         db.rules.filter((rule) => rule.actions.categoryId === id).count(),
         limitsOf(id).filter((limit) => limit.amount > 0).count(),
       ]);
-      return { transactions, rules, budget: budgets > 0 };
+      const cashExpenses = await db.cashExpenses.filter((expense) => expense.categoryId === id).count();
+      return { transactions, rules, budget: budgets > 0, cashExpenses };
     },
 
     async deleteCategory(id, moveTo) {
-      await db.transaction('rw', [db.categories, db.transactions, db.rules, db.budgetLimits], async () => {
+      await db.transaction('rw', [db.categories, db.transactions, db.rules, db.budgetLimits, db.cashExpenses], async () => {
         if (!(await db.categories.get(id))) throw new Error(`Category ${id} not found`);
         if (moveTo === id || (moveTo !== null && !(await db.categories.get(moveTo)))) {
           throw new Error(`Can't move the transactions of category ${id} to ${moveTo}`);
+        }
+        // A cash expense always says what the cash paid for: it moves to another expense category.
+        const cash = db.cashExpenses.filter((expense) => expense.categoryId === id);
+        if ((await cash.count()) > 0) {
+          const target = moveTo === null ? undefined : await db.categories.get(moveTo);
+          if (target?.kind !== 'expense' || target.id === cashCategoryOf(await db.categories.toArray())?.id) {
+            throw new Error(`The cash expenses of category ${id} need another expense category, not ${moveTo}`);
+          }
+          await cash.modify({ categoryId: moveTo!, updatedAt: stamp() });
         }
         // Only the category changes: the user's edited marker and every amount stay as they were.
         await db.transactions.where('categoryId').equals(id).modify({ categoryId: moveTo, updatedAt: stamp() });
@@ -1059,6 +1087,39 @@ export function createDexieRepository(options: DexieRepositoryOptions = {}): Dat
       return text === '' ? views : views.filter((tx) => matchesText(tx, text));
     },
 
+    async listMovements(period, filter: TransactionFilter = {}) {
+      const { accountId, categoryId, type, payeeId, from, to } = filter;
+      const bank = type === 'cash' ? [] : repository.listTransactions(period, filter);
+      const cashListed = (type === undefined || type === 'cash') && accountId === undefined && categoryId !== null && payeeId === undefined;
+      const expenses = !cashListed
+        ? []
+        : await (period === null ? db.cashExpenses.toArray() : db.cashExpenses.where('date').between(`${period}-01`, `${addMonths(period, 1)}-01`).toArray());
+      const text = normalizeText(filter.text ?? '');
+      const cash = (await cashViews(expenses)).filter(
+        (expense) =>
+          (categoryId === undefined || expense.categoryId === categoryId) &&
+          (from === undefined || expense.date >= from) &&
+          (to === undefined || expense.date <= to) &&
+          (text === '' || normalizeText(`${expense.note} ${expense.category?.name ?? ''}`).includes(text)),
+      );
+      // Newest first; within a day, the cash expenses (the last noted down first) before the bank's rows.
+      const byDay = new Map<string, MovementView[]>();
+      for (const expense of cash.sort((a, b) => b.date.localeCompare(a.date) || b.createdAt.localeCompare(a.createdAt))) {
+        byDay.set(expense.date, [...(byDay.get(expense.date) ?? []), expense]);
+      }
+      const movements: MovementView[] = [];
+      for (const tx of await bank) {
+        for (const [date, day] of byDay) {
+          if (date < tx.date) break;
+          movements.push(...day);
+          byDay.delete(date);
+        }
+        movements.push(tx);
+      }
+      for (const day of byDay.values()) movements.push(...day);
+      return movements;
+    },
+
     async transactionDateRange() {
       return db.transaction('r', db.transactions, async () => {
         const [first, last] = await Promise.all([db.transactions.orderBy('date').first(), db.transactions.orderBy('date').last()]);
@@ -1167,9 +1228,7 @@ export function createDexieRepository(options: DexieRepositoryOptions = {}): Dat
     async getCashExpense(id): Promise<CashExpenseView | null> {
       return db.transaction('r', [db.settings, db.categories, db.transactions, db.cashExpenses], async () => {
         const expense = await db.cashExpenses.get(id);
-        if (!expense) return null;
-        const [category, { pocket }] = await Promise.all([db.categories.get(expense.categoryId), cashState()]);
-        return { ...expense, category: category ?? null, uncovered: pocket.uncovered.has(id) };
+        return expense ? (await cashViews([expense]))[0] : null;
       });
     },
 
@@ -1191,6 +1250,66 @@ export function createDexieRepository(options: DexieRepositoryOptions = {}): Dat
       const result = await saveCashExpense({ ...existing, ...update, updatedAt: stamp() });
       if (result.ok) await dataChanged();
       return result;
+    },
+
+    async cashPocket(): Promise<CashPocketView> {
+      return db.transaction('r', [db.settings, db.categories, db.transactions, db.cashExpenses, db.accounts, db.payees, db.reimbursements], async () => {
+        const { withdrawals, expenses, pocket } = await cashState();
+        const withLeft = withdrawals.filter((tx) => pocket.withdrawals.get(tx.id)!.left > 0).sort((a, b) => a.date.localeCompare(b.date) || a.id.localeCompare(b.id));
+        const newestFirst = await cashViews([...expenses].sort((a, b) => b.date.localeCompare(a.date) || b.createdAt.localeCompare(a.createdAt)));
+        return {
+          total: pocket.left,
+          everHad: withdrawals.length > 0 || expenses.length > 0,
+          withdrawals: (await toViews(withLeft)).map((transaction) => ({ transaction, left: pocket.withdrawals.get(transaction.id)!.left })),
+          latest: newestFirst.slice(0, LATEST_CASH_EXPENSES),
+          uncovered: newestFirst.filter((expense) => expense.uncovered),
+        };
+      });
+    },
+
+    async cashExpensesUncoveredBy(change: CashChange) {
+      const tables = [db.settings, db.categories, db.transactions, db.cashExpenses, db.accounts];
+      return db.transaction('r', tables, async () => {
+        const [categories, from, expenses, current] = await Promise.all([
+          db.categories.toArray(),
+          setting<IsoDate | null>(CASH_FROM_DATE, null),
+          db.cashExpenses.toArray(),
+          cashState(),
+        ]);
+        const cashId = cashCategoryOf(categories)?.id ?? null;
+        let withdrawals: Transaction[] = current.withdrawals;
+        if ('undoImport' in change) {
+          withdrawals = withdrawals.filter((tx) => tx.importBatchId !== change.undoImport);
+        } else if ('cashFromDate' in change) {
+          const inCategory = cashId === null ? [] : await db.transactions.where('categoryId').equals(cashId).toArray();
+          withdrawals = inCategory.filter((tx) => isWithdrawal(tx, cashId, change.cashFromDate));
+        } else {
+          const tx = await db.transactions.get(change.transactionId);
+          if (!tx) throw new Error(`Transaction ${change.transactionId} not found`);
+          const { transferAccountId, categoryId } = change.changes;
+          const shape = transferAccountId === undefined ? {} : await transferChange(tx, transferAccountId);
+          // As updateTransaction saves it: a transfer has no category; one that stops being one may get one.
+          const changed = { ...tx, ...shape, ...((shape.type ?? tx.type) !== 'transfer' && categoryId !== undefined ? { categoryId } : {}) };
+          withdrawals = [...withdrawals.filter((w) => w.id !== tx.id), ...(isWithdrawal(changed, cashId, from) ? [changed] : [])];
+        }
+        const after = cashPocket(withdrawals, expenses);
+        return expenses.filter((expense) => after.uncovered.has(expense.id) && !current.pocket.uncovered.has(expense.id)).length;
+      });
+    },
+
+    async setCashFromDate(date) {
+      if (!isIsoDate(date)) throw new Error(`Not a date: ${date}`);
+      const edited = await db.transaction('rw', db.settings, async () => {
+        if ((await setting<IsoDate | null>(CASH_FROM_DATE, null)) === date) return false;
+        await db.settings.put({ key: CASH_FROM_DATE, value: date });
+        return true;
+      });
+      if (edited) await dataChanged();
+    },
+
+    async postponeCashReminder() {
+      await db.settings.put({ key: CASH_REMINDER_AT, value: stamp() });
+      changed();
     },
 
     async deleteCashExpense(id) {
@@ -1360,7 +1479,7 @@ export function createDexieRepository(options: DexieRepositoryOptions = {}): Dat
     async home(month): Promise<HomeData> {
       const allAccounts = await repository.listAccounts();
       const accountId = await importAccountId();
-      const [monthTxs, counted, lastImport, chain, currentBudgets, goals, savings, forecastTxs, backup, cash] = await Promise.all([
+      const [monthTxs, counted, lastImport, chain, currentBudgets, goals, savings, forecastTxs, backup, cash, reminderAt] = await Promise.all([
         transactionsIn(month),
         countedIn(month),
         db.importBatches.orderBy('importedAt').reverse().filter((batch) => !batch.undone).first(),
@@ -1374,10 +1493,18 @@ export function createDexieRepository(options: DexieRepositoryOptions = {}): Dat
         db.transactions.where('date').between(`${addMonths(month, -2)}-01`, `${addMonths(month, 1)}-01`).toArray(),
         repository.backupStatus(),
         cashState(),
+        setting<string | null>(CASH_REMINDER_AT, null),
       ]);
+      const left = cash.pocket.left;
+      const dayOf = (stamp: string | null | undefined) => (stamp ? today(new Date(stamp)) : null);
+      const lastExpense = cash.expenses.map((expense) => expense.createdAt).sort().at(-1);
+      const lastWithdrawal = cash.withdrawals.map((tx) => tx.date).sort().at(-1) ?? null;
       return {
-        // Archived accounts still hold money: they count in the total, but aren't listed.
-        totalBalance: allAccounts.reduce((sum, account) => sum + account.balance, 0),
+        // Archived accounts still hold money: they count in the total, but aren't listed. So does unspent cash.
+        totalBalance: allAccounts.reduce((sum, account) => sum + account.balance, 0) + left,
+        // Shown once there's been cash, so cash expenses left without it can still be reached.
+        cash: cash.withdrawals.length > 0 || cash.expenses.length > 0 ? left : null,
+        cashReminder: cashReminderDue(left, [lastWithdrawal, dayOf(lastExpense), dayOf(reminderAt)], today(now())) ? left : null,
         // Reimbursements make expenses smaller and aren't income, and a late salary counts in the next month;
         // balances, goals and the forecast take the bank's amounts and dates.
         summary: monthSummary(counted, month),
@@ -1409,9 +1536,13 @@ export function createDexieRepository(options: DexieRepositoryOptions = {}): Dat
     },
 
     async netWorth(): Promise<NetWorthView> {
-      return db.transaction('r', db.accounts, db.transactions, async () => {
-        const [accounts, txs] = await Promise.all([db.accounts.toArray(), db.transactions.toArray()]);
-        const points = netWorthSeries(accounts, txs, today(now()));
+      return db.transaction('r', [db.accounts, db.transactions, db.settings, db.categories, db.cashExpenses], async () => {
+        const [accounts, txs, { withdrawals, expenses, pocket }] = await Promise.all([db.accounts.toArray(), db.transactions.toArray(), cashState()]);
+        // Unspent cash is money the user holds: each point adds the cash held on its date.
+        const points = netWorthSeries(accounts, txs, today(now())).map((point) => ({
+          ...point,
+          netWorth: point.netWorth + cashHeldOn(pocket, withdrawals, expenses, point.date),
+        }));
         const latest = points.at(-1)?.netWorth ?? null;
         const previous = points.at(-2)?.netWorth ?? null;
         return { points, latest, change: latest !== null && previous !== null ? latest - previous : null };
@@ -1638,10 +1769,11 @@ export function createDexieRepository(options: DexieRepositoryOptions = {}): Dat
         db.importBatches,
         db.reimbursements,
         db.savingsTargets,
+        db.cashExpenses,
         db.settings,
       ];
       return db.transaction('r', tables, async () => {
-        const [accounts, categories, payees, transactions, rules, budgetLimits, goals, importBatches, reimbursements, savingsTargets, settings] = await Promise.all([
+        const [accounts, categories, payees, transactions, rules, budgetLimits, goals, importBatches, reimbursements, savingsTargets, cashExpenses, settings] = await Promise.all([
           db.accounts.toArray(),
           db.categories.toArray(),
           db.payees.toArray(),
@@ -1652,6 +1784,7 @@ export function createDexieRepository(options: DexieRepositoryOptions = {}): Dat
           db.importBatches.toArray(),
           db.reimbursements.toArray(),
           db.savingsTargets.toArray(),
+          db.cashExpenses.toArray(),
           db.settings.toArray(),
         ]);
         const data = {
@@ -1666,6 +1799,7 @@ export function createDexieRepository(options: DexieRepositoryOptions = {}): Dat
           // A link that counts nowhere stays out, so the copy always reads back.
           reimbursements: liveLinks(reimbursements, new Map(transactions.map((tx) => [tx.id, tx]))),
           savingsTargets,
+          cashExpenses,
           settings,
         };
         return createBackup(data, stamp(), appVersion);
@@ -1701,6 +1835,7 @@ export function createDexieRepository(options: DexieRepositoryOptions = {}): Dat
         db.importBatches,
         db.reimbursements,
         db.savingsTargets,
+        db.cashExpenses,
         db.settings,
       ];
       await db.transaction('rw', tables, async () => {
@@ -1717,6 +1852,7 @@ export function createDexieRepository(options: DexieRepositoryOptions = {}): Dat
         await db.importBatches.bulkAdd(data.importBatches);
         await db.reimbursements.bulkAdd(data.reimbursements);
         await db.savingsTargets.bulkAdd(data.savingsTargets);
+        await db.cashExpenses.bulkAdd(data.cashExpenses);
         await db.settings.bulkPut([
           ...device,
           ...data.settings.filter((row) => BACKUP_SETTINGS.includes(row.key)),

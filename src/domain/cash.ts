@@ -1,5 +1,5 @@
 import type { Cents } from './money';
-import type { IsoDate } from './dates';
+import { daysBetween, type IsoDate } from './dates';
 import { normalizeText } from './text';
 import type { CashExpense, Category, Id, Transaction } from './model';
 
@@ -160,4 +160,17 @@ export function withCash(transactions: Transaction[], pocket: CashPocket, expens
   const counted = transactions.map((tx) => (pocket.withdrawals.has(tx.id) ? { ...tx, amount: 0 } : tx));
   const covered = expenses.filter((e) => !pocket.uncovered.has(e.id) && (!range || (e.date >= range.from && e.date <= range.to)));
   return [...counted, ...covered.sort(paymentOrder).map(asCountedExpense)];
+}
+
+/** Days after the last cash activity before Inicio reminds the user of their unspent cash. */
+export const CASH_REMINDER_DAYS = 3;
+
+/**
+ * Whether to remind the user of their unspent cash on `today`: there's some left, and 3 days
+ * passed since the latest of `activity` (the last withdrawal, the last cash expense noted down
+ * and the last "Más tarde", as days; nulls are left out).
+ */
+export function cashReminderDue(left: Cents, activity: (IsoDate | null)[], today: IsoDate): boolean {
+  const latest = activity.filter((day): day is IsoDate => day !== null).sort().at(-1);
+  return left > 0 && latest !== undefined && daysBetween(latest, today) >= CASH_REMINDER_DAYS;
 }

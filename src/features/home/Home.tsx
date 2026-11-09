@@ -12,6 +12,8 @@ import type { SavingsProgress } from '../../domain/savings';
 import { SavingsMeter } from '../goals/SavingsMeter';
 import { transactionsLink } from '../transactions/filters';
 import { RestoredAlert } from '../more/RestoreBackup';
+import { CashLine } from '../accounts/Cash';
+import { CashExpenseSheet } from '../transactions/CashExpenseSheet';
 
 /** Days without importing before Inicio reminds the user. */
 export const IMPORT_REMINDER_DAYS = 8;
@@ -87,6 +89,7 @@ export function Home() {
             {home.budgetsOver === 1 ? '1 presupuesto superado' : `${home.budgetsOver} presupuestos superados`}
           </Alert>
         )}
+        {home.cashReminder !== null && <CashReminder cents={home.cashReminder} />}
         {home.backupDue && (
           <Alert tone="warn" onClick={() => navigate('/mas/copias')}>
             Haz una copia de seguridad
@@ -106,6 +109,11 @@ export function Home() {
                 <span className="tabular-nums"><Money cents={account.balance} /></span>
               </li>
             ))}
+            {home.cash !== null && (
+              <li>
+                <CashLine cents={home.cash} />
+              </li>
+            )}
           </ul>
         </Card>
         {home.savings && <MonthSavings progress={home.savings} />}
@@ -113,6 +121,31 @@ export function Home() {
         {home.goals.length > 0 && <GoalsProgress goals={home.goals} />}
       </div>
     </>
+  );
+}
+
+/**
+ * "Tienes X € de efectivo sin repartir", 3 days after the last cash activity: "Apuntar gastos"
+ * opens a new cash expense, "Más tarde" hides it for 3 days.
+ */
+function CashReminder({ cents }: { cents: number }) {
+  const repo = useRepo();
+  const [noting, setNoting] = useState(false);
+  return (
+    <div className="rounded-2xl border border-line bg-card p-4" data-testid="cash-reminder">
+      <p>
+        Tienes <Money cents={cents} className="tabular-nums" /> de efectivo sin repartir
+      </p>
+      <div className="mt-3 flex gap-2">
+        <Button className="flex-1" onClick={() => setNoting(true)}>
+          Apuntar gastos
+        </Button>
+        <Button variant="secondary" className="flex-1" onClick={() => void repo.postponeCashReminder()}>
+          Más tarde
+        </Button>
+      </div>
+      <CashExpenseSheet expense={noting ? 'new' : null} onClose={() => setNoting(false)} />
+    </div>
   );
 }
 

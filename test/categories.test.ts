@@ -160,8 +160,8 @@ describe('what deleting a category affects', () => {
     await repo.updateTransaction(fruteria.id, { categoryId: supermercado.id });
 
     // Mercadona, Carrefour, Alcampo, Lidl and Dia are starter rules for Supermercado.
-    expect(await repo.categoryUsage(supermercado.id)).toEqual({ transactions: 3, rules: 5, budget: false });
-    expect(await repo.categoryUsage((await categoryNamed(repo, 'Viajes')).id)).toEqual({ transactions: 0, rules: 0, budget: false });
+    expect(await repo.categoryUsage(supermercado.id)).toEqual({ transactions: 3, rules: 5, budget: false, cashExpenses: 0 });
+    expect(await repo.categoryUsage((await categoryNamed(repo, 'Viajes')).id)).toEqual({ transactions: 0, rules: 0, budget: false, cashExpenses: 0 });
   });
 
   it('says whether it has a budget, in this month or an earlier one', async () => {
@@ -173,7 +173,7 @@ describe('what deleting a category affects', () => {
     await repo.setBudgetLimit(ocio.id, 5000, '2026-09');
     await repo.setBudgetLimit(ocio.id, 0, '2026-10');
 
-    expect(await repo.categoryUsage(viajes.id)).toEqual({ transactions: 0, rules: 0, budget: true });
+    expect(await repo.categoryUsage(viajes.id)).toEqual({ transactions: 0, rules: 0, budget: true, cashExpenses: 0 });
     expect((await repo.categoryUsage(ocio.id)).budget).toBe(true);
     expect((await repo.categoryUsage((await categoryNamed(repo, 'Compras')).id)).budget).toBe(false);
   });

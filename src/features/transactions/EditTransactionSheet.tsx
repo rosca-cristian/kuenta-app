@@ -13,6 +13,7 @@ import type { AccountView, CashExpenseView, ReimbursementLinkView, RuleSuggestio
 import { QuickRuleSheet } from '../rules/QuickRuleSheet';
 import { ReimbursementForm } from './ReimbursementForm';
 import { CashExpenseForm } from './CashExpenseForm';
+import { uncoveredWarning } from '../accounts/cashText';
 import { transactionTitle } from './titles';
 
 /** A rule to propose once the edit sheet closes: the suggestion plus what the question shows. */
@@ -133,6 +134,15 @@ function EditForm({
   const [note, setNote] = useState(tx.note);
   const [transferTo, setTransferTo] = useState<Id | null>(savedTransferTo);
   const [pickingAccount, setPickingAccount] = useState(false);
+  // What changing the category or the transfer would do to the cash expenses a withdrawal pays.
+  const shapeChanged = categoryId !== tx.categoryId || transferTo !== savedTransferTo;
+  const uncovered = useRepoQuery(
+    (r) =>
+      shapeChanged && tx.source === 'import'
+        ? r.cashExpensesUncoveredBy({ transactionId: tx.id, changes: { categoryId, ...(transferTo !== savedTransferTo ? { transferAccountId: transferTo } : {}) } })
+        : Promise.resolve(0),
+    [tx.id, categoryId, transferTo, shapeChanged],
+  );
 
   // What the transaction is with the choices made so far, by the bank's sign on the import account.
   const bankAmount = signedAmount(tx, importAccount.id);
@@ -300,6 +310,11 @@ function EditForm({
       {tx.reimbursement && transferTo !== null && (
         <p className="text-sm text-warn" data-testid="reimbursement-goes">
           Se quitará el reembolso
+        </p>
+      )}
+      {!!uncovered && (
+        <p className="text-sm text-warn" data-testid="cash-uncovered">
+          {uncoveredWarning(uncovered)}
         </p>
       )}
       <Button onClick={save}>Guardar</Button>
