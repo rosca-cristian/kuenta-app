@@ -33,8 +33,8 @@ export function CashLine({ cents, size = 36, className = '' }: { cents: number; 
 }
 
 /**
- * Más → Cuentas → Efectivo: the unspent cash, the withdrawals that still have some, the latest
- * cash expenses and "Apuntar gasto en efectivo". Tapping a withdrawal or an expense opens its sheet.
+ * Más → Cuentas → Efectivo: the unspent cash, the cash expenses without cash ("Sin efectivo"), the
+ * withdrawals that still have some, the latest cash expenses and "Apuntar gasto en efectivo". Tapping a withdrawal or an expense opens its sheet.
  */
 export function Cash() {
   const pocket = useRepoQuery((r) => r.cashPocket());
@@ -55,6 +55,14 @@ export function Cash() {
               Apuntar gasto en efectivo
             </Button>
           </Card>
+
+          {pocket.uncovered.length > 0 && (
+            <section>
+              <h2 className="px-1 pb-1 text-sm font-medium text-warn">Sin efectivo</h2>
+              <p className="px-1 pb-2 text-sm text-muted">No hay efectivo de esas fechas para pagarlos: no cuentan hasta que lo haya.</p>
+              <CashExpenseList title="Sin efectivo" expenses={pocket.uncovered} onOpen={setNoting} />
+            </section>
+          )}
 
           <section>
             <h2 className="px-1 pb-1 text-sm font-medium text-muted">Retiradas con efectivo</h2>

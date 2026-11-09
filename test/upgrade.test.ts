@@ -108,7 +108,7 @@ describe('updating a Part 1 install', () => {
       expect(view.payee).toEqual(data.payees.find((p) => p.id === original.payeeId));
     }
     expect(await repo.listImports()).toHaveLength(1);
-    expect(await repo.getSettings()).toEqual({ onboardingDone: true, importAccountId: data.account.id, persistRequested: true, privacyMode: false });
+    expect(await repo.getSettings()).toEqual({ onboardingDone: true, importAccountId: data.account.id, persistRequested: true, privacyMode: false, cashFromDate: '2026-10-01' });
   });
 
   it('adds the new starter categories and the starter rules, once', async () => {

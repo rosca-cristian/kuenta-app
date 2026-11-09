@@ -41,6 +41,7 @@ import type {
   BudgetsView,
   CashExpenseChanges,
   CashExpenseSaveResult,
+  CashChange,
   CashExpenseView,
   CashPocketView,
   MovementView,
@@ -684,6 +685,7 @@ export function createDexieRepository(options: DexieRepositoryOptions = {}): Dat
         importAccountId: await setting<Id | null>('importAccountId', null),
         persistRequested: await setting('persistRequested', false),
         privacyMode: await setting('privacyMode', false),
+        cashFromDate: await setting<IsoDate | null>(CASH_FROM_DATE, null),
       };
     },
 
@@ -895,14 +897,24 @@ export function createDexieRepository(options: DexieRepositoryOptions = {}): Dat
         db.rules.filter((rule) => rule.actions.categoryId === id).count(),
         limitsOf(id).filter((limit) => limit.amount > 0).count(),
       ]);
-      return { transactions, rules, budget: budgets > 0 };
+      const cashExpenses = await db.cashExpenses.filter((expense) => expense.categoryId === id).count();
+      return { transactions, rules, budget: budgets > 0, cashExpenses };
     },
 
     async deleteCategory(id, moveTo) {
-      await db.transaction('rw', [db.categories, db.transactions, db.rules, db.budgetLimits], async () => {
+      await db.transaction('rw', [db.categories, db.transactions, db.rules, db.budgetLimits, db.cashExpenses], async () => {
         if (!(await db.categories.get(id))) throw new Error(`Category ${id} not found`);
         if (moveTo === id || (moveTo !== null && !(await db.categories.get(moveTo)))) {
           throw new Error(`Can't move the transactions of category ${id} to ${moveTo}`);
+        }
+        // A cash expense always says what the cash paid for: it moves to another expense category.
+        const cash = db.cashExpenses.filter((expense) => expense.categoryId === id);
+        if ((await cash.count()) > 0) {
+          const target = moveTo === null ? undefined : await db.categories.get(moveTo);
+          if (target?.kind !== 'expense' || target.id === cashCategoryOf(await db.categories.toArray())?.id) {
+            throw new Error(`The cash expenses of category ${id} need another expense category, not ${moveTo}`);
+          }
+          await cash.modify({ categoryId: moveTo!, updatedAt: stamp() });
         }
         // Only the category changes: the user's edited marker and every amount stay as they were.
         await db.transactions.where('categoryId').equals(id).modify({ categoryId: moveTo, updatedAt: stamp() });
@@ -1253,6 +1265,46 @@ export function createDexieRepository(options: DexieRepositoryOptions = {}): Dat
           uncovered: newestFirst.filter((expense) => expense.uncovered),
         };
       });
+    },
+
+    async cashExpensesUncoveredBy(change: CashChange) {
+      const tables = [db.settings, db.categories, db.transactions, db.cashExpenses, db.accounts];
+      return db.transaction('r', tables, async () => {
+        const [categories, from, expenses, current] = await Promise.all([
+          db.categories.toArray(),
+          setting<IsoDate | null>(CASH_FROM_DATE, null),
+          db.cashExpenses.toArray(),
+          cashState(),
+        ]);
+        const cashId = cashCategoryOf(categories)?.id ?? null;
+        let withdrawals: Transaction[] = current.withdrawals;
+        if ('undoImport' in change) {
+          withdrawals = withdrawals.filter((tx) => tx.importBatchId !== change.undoImport);
+        } else if ('cashFromDate' in change) {
+          const inCategory = cashId === null ? [] : await db.transactions.where('categoryId').equals(cashId).toArray();
+          withdrawals = inCategory.filter((tx) => isWithdrawal(tx, cashId, change.cashFromDate));
+        } else {
+          const tx = await db.transactions.get(change.transactionId);
+          if (!tx) throw new Error(`Transaction ${change.transactionId} not found`);
+          const { transferAccountId, categoryId } = change.changes;
+          const shape = transferAccountId === undefined ? {} : await transferChange(tx, transferAccountId);
+          // As updateTransaction saves it: a transfer has no category; one that stops being one may get one.
+          const changed = { ...tx, ...shape, ...((shape.type ?? tx.type) !== 'transfer' && categoryId !== undefined ? { categoryId } : {}) };
+          withdrawals = [...withdrawals.filter((w) => w.id !== tx.id), ...(isWithdrawal(changed, cashId, from) ? [changed] : [])];
+        }
+        const after = cashPocket(withdrawals, expenses);
+        return expenses.filter((expense) => after.uncovered.has(expense.id) && !current.pocket.uncovered.has(expense.id)).length;
+      });
+    },
+
+    async setCashFromDate(date) {
+      if (!isIsoDate(date)) throw new Error(`Not a date: ${date}`);
+      const edited = await db.transaction('rw', db.settings, async () => {
+        if ((await setting<IsoDate | null>(CASH_FROM_DATE, null)) === date) return false;
+        await db.settings.put({ key: CASH_FROM_DATE, value: date });
+        return true;
+      });
+      if (edited) await dataChanged();
     },
 
     async postponeCashReminder() {

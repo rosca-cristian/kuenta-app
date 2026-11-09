@@ -256,3 +256,69 @@ test('the cash pocket: the "Efectivo" line in the total, the cash screen, and th
   await page.getByRole('button', { name: 'Ocultar importes' }).click();
   await expect(page.getByTestId('cash-line-amount').getByTestId('hidden-amount')).toHaveCount(1);
 });
+
+test('undoing the import of a withdrawal keeps its cash expenses "Sin efectivo", and they count again once reimported', async ({ page }) => {
+  await page.clock.setFixedTime(new Date('2026-10-20T12:00:00'));
+  await page.goto('./');
+  await page.getByRole('button', { name: 'Empezar' }).click();
+  await page.getByRole('button', { name: 'Continuar' }).click();
+  const file = bbvaXlsxFile(
+    [
+      { valor: '02/10/2026', concepto: 'Retirada cajero', movimiento: 'Retirada en cajero', importe: -50 },
+      { valor: '15/10/2026', concepto: 'Mercadona', movimiento: 'Pago con tarjeta', importe: -20 },
+    ],
+    { startBalance: 1000 },
+  );
+  await page.getByRole('link', { name: 'Importar' }).click();
+  await page.getByTestId('file-input').setInputFiles(file);
+  await page.getByRole('button', { name: 'Importar 2' }).click();
+  await expect(page.getByTestId('balance-check')).toHaveText('✓ Cuadra');
+
+  await openMovimientos(page);
+  await row(page, 'Retirada cajero').click();
+  await sheet(page).getByRole('button', { name: 'Apuntar gasto en efectivo' }).click();
+  await sheet(page).getByLabel('Importe').fill('30');
+  await sheet(page).getByRole('button', { name: 'Restaurantes', exact: true }).click();
+  await sheet(page).getByRole('textbox', { name: 'Nota' }).fill('Cena');
+  await sheet(page).getByRole('button', { name: 'Guardar' }).click();
+  await expect(sheet(page).getByTestId('cash-spread')).toHaveText('Repartido 30,00 € de 50,00 €');
+
+  // Taking the withdrawal out of "Efectivo" warns before saving.
+  await sheet(page).getByRole('button', { name: 'Efectivo', exact: true }).click();
+  await expect(sheet(page).getByTestId('cash-uncovered')).toHaveText('1 gasto en efectivo se quedará sin efectivo.');
+  await sheet(page).getByRole('button', { name: 'Cerrar' }).click();
+
+  await page.getByRole('link', { name: 'Inicio' }).click();
+  await expect(page.getByTestId('month-expenses')).toHaveText('50,00 €');
+
+  // Undoing the import warns, and keeps the dinner without cash.
+  await page.getByRole('link', { name: 'Importar' }).click();
+  await page.getByRole('button', { name: 'Deshacer', exact: true }).click();
+  await expect(sheet(page)).toContainText('1 gasto en efectivo se quedará sin efectivo.');
+  await page.getByRole('button', { name: 'Deshacer importación' }).click();
+  await openMovimientos(page);
+  await expect(row(page, 'Cena').getByTestId('cash-mark')).toHaveText('Sin efectivo');
+  await page.getByRole('link', { name: 'Inicio' }).click();
+  await expect(page.getByTestId('month-expenses')).toHaveText('0,00 €');
+
+  // Reimported, the cash pays it again.
+  await page.getByRole('link', { name: 'Importar' }).click();
+  await page.getByTestId('file-input').setInputFiles(file);
+  await page.getByRole('button', { name: 'Importar 2' }).click();
+  await expect(page.getByTestId('balance-check')).toHaveText('✓ Cuadra');
+  await page.getByRole('link', { name: 'Inicio' }).click();
+  await expect(page.getByTestId('month-expenses')).toHaveText('50,00 €');
+  await openMovimientos(page);
+  await expect(row(page, 'Cena').getByTestId('cash-mark')).toHaveText('Efectivo');
+
+  // Moving "Contar el efectivo desde" after the withdrawal warns, and it counts as spent again.
+  await page.getByRole('link', { name: 'Más' }).click();
+  await expect(page.getByTestId('cash-from-date')).toHaveText('01/10/2026');
+  await page.getByTestId('cash-from-date').click();
+  await sheet(page).getByLabel('Fecha').fill('2026-10-05');
+  await expect(sheet(page)).toContainText('1 gasto en efectivo se quedará sin efectivo.');
+  await sheet(page).getByRole('button', { name: 'Guardar' }).click();
+  await expect(page.getByTestId('cash-from-date')).toHaveText('05/10/2026');
+  await page.getByRole('link', { name: 'Inicio' }).click();
+  await expect(page.getByTestId('month-expenses')).toHaveText('70,00 €');
+});

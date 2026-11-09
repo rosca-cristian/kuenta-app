@@ -98,7 +98,10 @@ function BankRow({ tx, onOpen }: { tx: TransactionView; onOpen: () => void }) {
   );
 }
 
-/** A cash expense's row, marked "Efectivo": its note or else its category, and what it cost. Tapping it opens its sheet. */
+/**
+ * A cash expense's row, marked "Efectivo" ("Sin efectivo" when the cash can't pay it): its note or
+ * else its category, and what it cost. Tapping it opens its sheet.
+ */
 function CashRow({ expense, onOpen }: { expense: CashExpenseView; onOpen: () => void }) {
   const categoryName = expense.category?.name ?? 'Categoría borrada';
   return (
@@ -107,8 +110,8 @@ function CashRow({ expense, onOpen }: { expense: CashExpenseView; onOpen: () => 
       <span className="min-w-0 flex-1">
         <span className="block truncate">{expense.note || categoryName}</span>
         <span className="flex min-w-0 items-center gap-1 text-xs text-muted">
-          <span className="shrink-0 rounded-full bg-card-2 px-1.5" data-testid="cash-mark">
-            Efectivo
+          <span className={`shrink-0 rounded-full bg-card-2 px-1.5 ${expense.uncovered ? 'text-warn' : ''}`} data-testid="cash-mark">
+            {expense.uncovered ? 'Sin efectivo' : 'Efectivo'}
           </span>
           {expense.note && <span className="truncate">{categoryName}</span>}
         </span>

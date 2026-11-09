@@ -91,6 +91,16 @@ export interface CashPocketView {
   uncovered: CashExpenseView[];
 }
 
+/**
+ * Something that can take cash out of the pocket, as the warnings ask about it: undoing an import,
+ * changing a transaction (its category, or making it a transfer or not) and moving "Contar el
+ * efectivo desde".
+ */
+export type CashChange =
+  | { undoImport: Id }
+  | { transactionId: Id; changes: TransactionChanges }
+  | { cashFromDate: IsoDate };
+
 /** One row of Movimientos: a transaction from the bank or a cash expense, told apart by `kind`. */
 export type MovementView = TransactionView | CashExpenseView;
 
@@ -187,6 +197,8 @@ export interface Settings {
   persistRequested: boolean;
   /** Privacy mode: every amount on screen shows as "•••• €". It belongs to this phone, not to backups. */
   privacyMode: boolean;
+  /** The first day whose cash withdrawals go to the cash pocket ("Contar el efectivo desde"); null before the first run. */
+  cashFromDate: IsoDate | null;
 }
 
 export interface ImportPreview {
@@ -317,6 +329,8 @@ export interface CategoryUsage {
   rules: number;
   /** Whether it has a budget in any month: every limit goes with it. */
   budget: boolean;
+  /** Cash expenses with the category: they need an expense category other than "Efectivo" to go to. */
+  cashExpenses: number;
 }
 
 export interface RuleDraft {
@@ -537,7 +551,8 @@ export interface DataRepository {
    * Deletes a category in one transaction: its transactions move to `moveTo` (null for
    * "Sin categoría") without counting as the user's edits, the rules that set it lose
    * that action and are disabled, so the user can repoint them, and its budget limits of
-   * every month are deleted.
+   * every month are deleted. Its cash expenses move to `moveTo` too, which must then be an
+   * expense category other than "Efectivo" (throws otherwise).
    */
   deleteCategory(id: Id, moveTo: Id | null): Promise<void>;
 
@@ -646,6 +661,13 @@ export interface DataRepository {
   updateCashExpense(id: Id, changes: CashExpenseChanges): Promise<CashExpenseSaveResult>;
   /** Deletes a cash expense: its cash goes back to the pocket. Throws for an unknown one. */
   deleteCashExpense(id: Id): Promise<void>;
+  /** How many cash expenses the cash pays now and wouldn't after the change ("N gastos en efectivo se quedarán sin efectivo"). */
+  cashExpensesUncoveredBy(change: CashChange): Promise<number>;
+  /**
+   * Moves "Contar el efectivo desde": withdrawals from that day on go to the cash pocket, earlier
+   * ones count as spent. Throws for something that isn't a date. Saving the same day changes nothing.
+   */
+  setCashFromDate(date: IsoDate): Promise<void>;
   /** The cash screen: the unspent cash, the withdrawals with some left and the latest and uncovered cash expenses. */
   cashPocket(): Promise<CashPocketView>;
   /**

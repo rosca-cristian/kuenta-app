@@ -396,3 +396,80 @@ describe("Inicio's cash reminder", () => {
     expect(backup.data.settings.some((row) => row.key === 'cashReminderAt')).toBe(false);
   });
 });
+
+describe('keeping cash expenses when their cash goes away', () => {
+  it('counts the cash expenses undoing an import would leave without cash, and they count again once reimported', async () => {
+    const { repo } = await setup();
+    const { ids } = await cashData(repo);
+    const batch = (await repo.listImports())[0];
+    expect(await repo.cashExpensesUncoveredBy({ undoImport: batch.id })).toBe(3);
+    await repo.undoImport(batch.id);
+    expect((await repo.cashPocket()).uncovered.map((e) => e.id)).toEqual([ids.e3, ids.e2, ids.e1]);
+    expect((await repo.listMovements(null, { type: 'cash' })).every((m) => m.kind === 'cash' && m.uncovered)).toBe(true);
+    await importFile(repo, movements, 2000);
+    expect((await repo.cashPocket()).uncovered).toEqual([]);
+    expect((await repo.home('2026-11')).summary.expenses).toBe(3000);
+  });
+
+  it("counts those changing a withdrawal's category or making it a transfer would leave without cash", async () => {
+    const { repo } = await setup();
+    const { ids, ocio } = await cashData(repo);
+    // Without the first withdrawal, the 80 € dinner on 5 October has no cash; the second one pays the rest.
+    expect(await repo.cashExpensesUncoveredBy({ transactionId: ids.w1, changes: { categoryId: ocio } })).toBe(1);
+    expect(await repo.cashExpensesUncoveredBy({ transactionId: ids.w3, changes: { categoryId: ocio } })).toBe(0);
+    const { id: revolut } = (await repo.createAccount({ name: 'Revolut', type: 'bank', icon: 'banknote', color: 'cyan' })) as { id: string };
+    expect(await repo.cashExpensesUncoveredBy({ transactionId: ids.w2, changes: { transferAccountId: revolut } })).toBe(1);
+    // Saved, they're kept and marked.
+    await repo.updateTransaction(ids.w1, { categoryId: ocio });
+    expect(await repo.getCashExpense(ids.e1)).toMatchObject({ uncovered: true });
+    expect(await repo.getCashExpense(ids.e2)).toMatchObject({ uncovered: false });
+    // And back in "Efectivo", the cash pays them again.
+    await repo.updateTransaction(ids.w1, { categoryId: await categoryId(repo, 'Efectivo') });
+    expect(await repo.getCashExpense(ids.e1)).toMatchObject({ uncovered: false });
+  });
+
+  it('never lets rules change them', async () => {
+    const { repo } = await setup();
+    const { ids, ocio } = await cashData(repo);
+    await repo.createRule({ name: 'Todo ocio', match: { value: 'a' }, actions: { categoryId: ocio } });
+    await repo.applyRules();
+    expect(await repo.getCashExpense(ids.e1)).toMatchObject({ category: { name: 'Restaurantes' }, note: 'Cena' });
+  });
+
+  it('moves them with the category deleted, only to another expense category than "Efectivo"', async () => {
+    const { repo } = await setup();
+    const { ids, restaurantes, ocio } = await cashData(repo);
+    expect(await repo.categoryUsage(restaurantes)).toMatchObject({ transactions: 1, cashExpenses: 2 });
+    await expect(repo.deleteCategory(restaurantes, null)).rejects.toThrow('another expense category');
+    await expect(repo.deleteCategory(restaurantes, await categoryId(repo, 'Efectivo'))).rejects.toThrow('another expense category');
+    await expect(repo.deleteCategory(restaurantes, await categoryId(repo, 'Nómina'))).rejects.toThrow('another expense category');
+    await repo.deleteCategory(restaurantes, ocio);
+    expect(await repo.getCashExpense(ids.e1)).toMatchObject({ categoryId: ocio });
+    expect(await repo.getCashExpense(ids.e2)).toMatchObject({ categoryId: ocio });
+  });
+});
+
+describe('Contar el efectivo desde', () => {
+  it('moves where the pocket starts, warning of the cash expenses it would leave without cash', async () => {
+    const { repo, db, clock } = await setup();
+    const { ids } = await cashData(repo);
+    expect((await repo.getSettings()).cashFromDate).toBe('2026-10-01');
+    expect(await repo.cashExpensesUncoveredBy({ cashFromDate: '2026-10-10' })).toBe(1);
+    clock.now = new Date('2026-11-21T10:00:00');
+    await repo.setCashFromDate('2026-10-10');
+    expect((await db.settings.get('lastChangeAt'))?.value).toBe(clock.now.toISOString());
+    expect(await repo.getCashExpense(ids.e1)).toMatchObject({ uncovered: true });
+    // The first withdrawal counts as spent again.
+    expect((await repo.spending('2026-10')).entries.map((e) => [e.category?.name, e.amount])).toEqual([
+      ['Efectivo', 10000],
+      ['Restaurantes', 2000 + 4000],
+    ]);
+
+    // Earlier, the September withdrawal goes to the pocket too.
+    expect(await repo.cashExpensesUncoveredBy({ cashFromDate: '2026-09-01' })).toBe(0);
+    clock.now = new Date('2026-11-22T10:00:00');
+    await repo.setCashFromDate('2026-10-10');
+    expect((await db.settings.get('lastChangeAt'))?.value).not.toBe(clock.now.toISOString());
+    await expect(repo.setCashFromDate('2026-10-32')).rejects.toThrow('Not a date');
+  });
+});
