@@ -69,6 +69,18 @@ _Avoid_: Savings target, pot, hucha
 How much the user wants to save each month: the month's income minus its expenses, as Inicio counts them. A target applies from a month onwards, like a budget; changing it never rewrites earlier months. Shown in the Spanish UI as "Ahorro mensual".
 _Avoid_: savings goal (that's a Goal, "Meta de ahorro"), budget
 
+**Cash withdrawal**:
+An imported expense in the "Efectivo" category dated on or after "Contar el efectivo desde": money taken out of the bank as cash. It doesn't count as spending; the cash expenses it pays for do (ADR-0002). Older withdrawals count as spent, as before.
+_Avoid_: ATM transaction, cash transfer
+
+**Cash expense**:
+Something paid with cash, entered by hand: an amount, an expense category, a date and an optional note. The only hand-entered transaction (ADR-0002). It's paid from the cash pocket and counts like an imported expense; when no cash covers it, it's "Sin efectivo" and counts nowhere.
+_Avoid_: manual transaction, split
+
+**Cash pocket**:
+All the cash the user holds: the cash withdrawals minus the cash expenses paid from them, oldest withdrawal first. Shown in the Spanish UI as "Efectivo", it adds to the user's money but isn't an account and can't be edited.
+_Avoid_: cash account, wallet
+
 **Budget**:
 A monthly spending limit for one expense category. A limit applies from a month onwards, and setting a new one replaces it from that month on without rewriting earlier months. Spending is measured as the category's expenses minus its income in the month; transfers and uncategorized transactions never count. Shown in the Spanish UI as "Presupuesto".
 _Avoid_: Spending goal, cap

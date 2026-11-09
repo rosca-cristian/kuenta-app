@@ -5,6 +5,6 @@ Kuenta never asks the user to enter transactions by hand: every transaction is a
 ## Consequences
 
 - Balances always agree with the bank, because the opening balance is derived from the bank's running balance ("Disponible") and every bank row is imported.
-- Cash spending is only visible as the withdrawal (category "Efectivo"), and the data lags the bank by up to a week plus booking delays.
+- Cash spending is only visible as the withdrawal (category "Efectivo"), until ADR-0002 lets the user enter what the cash paid for; and the data lags the bank by up to a week plus booking delays.
 - Non-imported accounts (Revolut, savings, investments) only see what arrives from BBVA as transfers; their balance can be corrected with a balance adjustment.
 - Adding manual entry later is possible, but it brings back reconciliation; see the matching rules in the superseded `docs/especificacion.md` (git history) for a worked design.
