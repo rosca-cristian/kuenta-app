@@ -7,9 +7,10 @@ import type { NetWorthPoint } from '../domain/balances';
 import type { BudgetStatus, BudgetTotals } from '../domain/budgets';
 import type { GoalProgress } from '../domain/goals';
 import type { SavingsProgress } from '../domain/savings';
+import type { WithdrawalCash } from '../domain/cash';
 import type { Subscription, SubscriptionTotals } from '../domain/subscriptions';
 import type { BackupCounts, BackupFile, BackupReadResult } from '../domain/backup';
-import type { Account, AccountType, Category, CategoryKind, Goal, Id, ImportBatch, Payee, Rule, RuleActions, RuleMatch, Transaction, TxType } from '../domain/model';
+import type { Account, AccountType, CashExpense, Category, CategoryKind, Goal, Id, ImportBatch, Payee, Rule, RuleActions, RuleMatch, Transaction, TxType } from '../domain/model';
 import type { ReadError } from '../import/bbva/reader';
 
 export interface AccountView extends Account {
@@ -56,7 +57,40 @@ export interface TransactionView extends Transaction {
    * category set to count in the next month (`countingMonthOf`). Null for every other transaction.
    */
   countingMonth: Month | null;
+  /**
+   * For a cash withdrawal (an imported expense in "Efectivo" from `cashFromDate` on): how much of
+   * it the cash expenses took ("Repartido"), what's left and those expenses with their part,
+   * oldest first. Null for every other transaction.
+   */
+  cash: WithdrawalCash | null;
 }
+
+/** A cash expense with its category. */
+export interface CashExpenseView extends CashExpense {
+  /** Null when the category was deleted. */
+  category: Category | null;
+  /** Whether the cash held on its date can't pay it ("Sin efectivo"): it then counts nowhere. */
+  uncovered: boolean;
+}
+
+export interface CashExpenseDraft {
+  /** Above 0. */
+  amount: Cents;
+  /** An expense category other than "Efectivo". */
+  categoryId: Id;
+  /** Never in the future. */
+  date: IsoDate;
+  note?: string;
+}
+
+export type CashExpenseChanges = Partial<CashExpenseDraft>;
+
+/**
+ * The outcome of noting down or editing a cash expense. It's refused when the cash held on its
+ * date can't pay it whole (`available` is that cash), or when paying it would leave a later cash
+ * expense without cash (`later`; `available` is what an expense on that date could take).
+ */
+export type CashExpenseSaveResult = { ok: true; id: Id } | { ok: false; reason: 'notEnough'; available: Cents; later: boolean };
 
 /** One reimbursement as either of its two transactions sees it. */
 export interface ReimbursementLinkView {
@@ -556,6 +590,22 @@ export interface DataRepository {
    * nothing. Balances never change: only income and spending count it.
    */
   setReimbursements(incomeId: Id, parts: ReimbursementPart[]): Promise<void>;
+
+  /** A cash expense with its category, or null when there's none with that id. */
+  getCashExpense(id: Id): Promise<CashExpenseView | null>;
+  /**
+   * Notes down a cash expense, paid from the cash pocket (`CashExpenseSaveResult`). Throws for an
+   * amount that isn't above 0 or whole cents, a date in the future or not a date, and a
+   * category that isn't an expense one or is "Efectivo".
+   */
+  addCashExpense(draft: CashExpenseDraft): Promise<CashExpenseSaveResult>;
+  /**
+   * Edits a cash expense, refused and throwing as `addCashExpense`. One already without cash may
+   * stay so. Saving what it already has changes nothing and doesn't count as a data change.
+   */
+  updateCashExpense(id: Id, changes: CashExpenseChanges): Promise<CashExpenseSaveResult>;
+  /** Deletes a cash expense: its cash goes back to the pocket. Throws for an unknown one. */
+  deleteCashExpense(id: Id): Promise<void>;
 
   /** Every payee, sorted by name, with its number of transactions. */
   listPayees(): Promise<PayeeView[]>;

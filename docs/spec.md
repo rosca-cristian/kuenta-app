@@ -224,14 +224,26 @@ interface Reimbursement {   // a part of an imported income paying back an impor
 }
 // At most one per income and expense. In backups since format 2.
 
+interface CashExpense {     // something paid with cash, noted down by hand (ADR-0002, §3.2)
+  id: Id;
+  amount: Cents;             // > 0
+  categoryId: Id;            // an expense category other than "Efectivo"
+  date: string;              // 'YYYY-MM-DD', never in the future
+  note: string;
+  createdAt: string; updatedAt: string;
+}
+// Paid from the cash pocket; which withdrawal pays it is computed, never stored.
+
 interface Setting { key: string; value: unknown }
 // keys: importAccountId, starterDataVersion, starterRulesOffer, privacyMode, lastBackupAt, lastChangeAt,
-//       onboardingDone, persistRequested
+//       onboardingDone, persistRequested, cashFromDate ('YYYY-MM-DD': the first day whose withdrawals
+//       go to the cash pocket; set to the first day of the month at onboarding, or on the first
+//       start of Dexie version 7 for an existing install)
 ```
 
 ### Dexie indexes
 
-Version 1 (part 1) has every table below except `rules`, `budgetLimits`, `goals` and `reimbursements`; version 2 (part 2) adds `rules`; version 3 (part 4) adds `budgetLimits` and `goals`; version 4 adds `reimbursements` (existing installs start with none, and no transaction changes); version 5 adds no index, and sets `nextMonthFromDay` to null on every existing category; version 6 adds `savingsTargets` (existing installs start with none).
+Version 1 (part 1) has every table below except `rules`, `budgetLimits`, `goals` and `reimbursements`; version 2 (part 2) adds `rules`; version 3 (part 4) adds `budgetLimits` and `goals`; version 4 adds `reimbursements` (existing installs start with none, and no transaction changes); version 5 adds no index, and sets `nextMonthFromDay` to null on every existing category; version 6 adds `savingsTargets` (existing installs start with none); version 7 adds `cashExpenses` (existing installs start with none, and `cashFromDate` is set on startup).
 
 ```
 accounts:      id, order
@@ -244,6 +256,7 @@ budgetLimits:  id, [categoryId+fromMonth]
 goals:         id, accountId
 savingsTargets: id, fromMonth
 reimbursements: id, incomeId, expenseId
+cashExpenses:  id, date
 importBatches: id, importedAt
 settings:      key
 ```
@@ -277,8 +290,9 @@ Format, confirmed with real exports (October 2026). The file is what Google Shee
 - **Spending of a category in a month** = expenses in that category − income in that category. A Bizum received from a friend for a shared dinner, categorized as Restaurantes, reduces Restaurantes spending.
 - **Reimbursements**: an imported income (a Bizum from friends after a shared dinner, the parents paying back a purchase) can be linked to the imported expenses it pays back, each with a part. For income and spending (Inicio's summary and savings rate, Análisis → Gastos and Mensual, budgets, subscriptions) each expense counts as its amount minus the parts paid back of it, in the expense's own month, and each income as its amount minus the parts it spreads (0 when it pays back expenses whole), wherever the other side is dated. Balances, net worth, goals, the forecast, Movimientos and exports keep the bank's amounts: a reimbursement moves no money (the CSV adds the reimbursed part in its own column, §5.13). A link never outlives its transactions: undoing an import deletes, in the same transaction, every link to or from what it removes (the other side, even from another import, stays with fewer links or none), and making a linked income or expense a transfer deletes its links for good. Changing a category, payee or note keeps them. A link whose income or expense is gone or isn't one any more counts nowhere. Example: Bar Romera 73,50 € paid back by Bizum of 38,05 €, 9,85 € and 15,65 € leaves "Tu parte" 9,95 € in Restaurantes, and none of the Bizum is income.
 - **Counting month**: the month a transaction counts in for income and spending (Inicio's summary and savings rate, Análisis → Gastos and Mensual, budgets, subscriptions). It's its value date's month, except for an imported income in an income category with `nextMonthFromDay` = N, dated on day N or later: that one counts in the next month (December's in January), so a salary paid on the 29th for the month after counts there. A day past the month's last one counts as its last day ("a partir del día 31" is the 30th in November and the 28th or 29th in February). Expenses, transfers, balance adjustments and other incomes never move, and a reimbursement's income counts what it keeps in its counting month. Balances, net worth, goals, the forecast, Movimientos (its list, days and net), the uncategorized count and exports keep the bank's date. Análisis → Mensual shows a late salary of the current month only once its month is the current one, and starts at the first month anything counts in.
+- **Cash** (ADR-0002): a **cash withdrawal** is an imported expense in the "Efectivo" category (matched by normalized name) dated on or after `cashFromDate`. Its cash goes to the **cash pocket** and it counts as 0 for income and spending; earlier withdrawals keep counting as spent in "Efectivo". A **cash expense**, noted down by hand, counts instead, as an expense in its category on its own date. Each one is paid from the pocket: in date order, then in the order they were noted down, it takes from the oldest withdrawal with cash left that isn't later than it, spilling over into the next one. One the cash held on its date can't pay whole is *uncovered* ("Sin efectivo"): it takes nothing and counts nowhere until there's cash for it again (e.g. after reimporting a withdrawal), and it's never deleted. Noting down or editing a cash expense is refused when the cash held on its date can't pay it ("Solo tienes X € de efectivo a esa fecha") or when paying it would leave a later cash expense without cash. Like reimbursements and counting months, this applies to Inicio's summary and savings rate, Análisis → Gastos and Mensual, budgets, the monthly savings target, subscriptions and the forecast, after both. A withdrawal's sheet shows "Repartido X de Y", what its cash paid. Bank balances, Movimientos' totals and the bank's amounts never change. Example: 50 € withdrawn on the 2nd and 30 € on the 10th, then a 60 € dinner on the 12th: the dinner takes 50 € from the first and 10 € from the second, counts 60 € in Restaurantes, and neither withdrawal counts.
 - **Budget limit for month M** = the category's `BudgetLimit` with the most recent `fromMonth ≤ M`. Changing the limit in October doesn't rewrite September.
-- **Monthly savings target for month M** = the `SavingsTarget` with the most recent `fromMonth ≤ M`; none when it's 0 or there's none. A month's **savings** are exactly Inicio's for that month: income − expenses, reimbursements netted and incomes in their counting month, transfers and balance adjustments never counting. Progress = max(0, savings) / target. A month that's over is *met* when savings ≥ its target then, *missed* otherwise; the current month is *en curso* (and *Conseguido* once savings reach the target). The history lists, newest first, the months with a target among the last 12, none before the first month anything counts in (as Mensual); the streak counts the consecutive met months up to the one before the current month.
+- **Monthly savings target for month M** = the `SavingsTarget` with the most recent `fromMonth ≤ M`; none when it's 0 or there's none. A month's **savings** are exactly Inicio's for that month: income − expenses, reimbursements netted, incomes in their counting month and cash counted as above, transfers and balance adjustments never counting. Progress = max(0, savings) / target. A month that's over is *met* when savings ≥ its target then, *missed* otherwise; the current month is *en curso* (and *Conseguido* once savings reach the target). The history lists, newest first, the months with a target among the last 12, none before the first month anything counts in (as Mensual); the streak counts the consecutive met months up to the one before the current month.
 - **Net worth at month end** = sum of the balances of all accounts, archived and non-imported included.
 - **Expected charge** (for the forecast): an expense of the previous month whose payee had an expense in each of the two previous months and has none yet in the current month. Its amount is last month's amount.
 
@@ -458,7 +472,7 @@ All checked at a 390×844 viewport. Items marked 🧪 have a unit test.
 - 🧪 Direction *out* only matches negative Importe values.
 - 🧪 A rule with `transferAccountId = Revolut` turns `Revolut**5625*` (−200 €) into a transfer BBVA → Revolut of 200 €.
 - 🧪 By default a rule matches "concepto o movimiento contiene", so "recibido: alquiler" matches a Bizum whose Movimiento is `Recibido: alquiler`.
-- 🧪 Starter rules (editable, about 15): Mercadona, Carrefour, Alcampo, Lidl, Dia (concept *starts with* "dia ", so "Media Markt" doesn't match) → Supermercado; Uber Eats, Glovo, Just Eat → Restaurantes; Repsol, Waylet, Cepsa, gasolinera → Transporte; Amazon → Compras with payee "Amazon"; "abono de nómina" → Nómina; "comisión" → Comisiones e impuestos; "retirada", "cajero" → Efectivo (a cash withdrawal counts as spent the day it's withdrawn).
+- 🧪 Starter rules (editable, about 15): Mercadona, Carrefour, Alcampo, Lidl, Dia (concept *starts with* "dia ", so "Media Markt" doesn't match) → Supermercado; Uber Eats, Glovo, Just Eat → Restaurantes; Repsol, Waylet, Cepsa, gasolinera → Transporte; Amazon → Compras with payee "Amazon"; "abono de nómina" → Nómina; "comisión" → Comisiones e impuestos; "retirada", "cajero" → Efectivo (a cash withdrawal from `cashFromDate` on counts as 0, and what its cash paid counts instead; earlier ones count as spent the day they were withdrawn, §3.2).
 - 🧪 A rule created by the user is placed before the starter rules.
 - 🧪 Applying a rule to existing transactions changes only those the user never edited (no category, payee or note change by hand); it reports how many it changed.
 - 🧪 Deleting a rule leaves the categories it set untouched.

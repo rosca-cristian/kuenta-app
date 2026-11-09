@@ -9,6 +9,12 @@ const pad = (n: number, width = 2) => String(n).padStart(width, '0');
 
 export const isMonth = (value: string): value is Month => /^\d{4}-(0[1-9]|1[0-2])$/.test(value);
 
+/** Whether `value` is an existing calendar day as 'YYYY-MM-DD'. */
+export function isIsoDate(value: string): value is IsoDate {
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value);
+  return match !== null && isValidDay(Number(match[1]), Number(match[2]), Number(match[3]));
+}
+
 export function isoDate(year: number, month: number, day: number): IsoDate {
   return `${pad(year, 4)}-${pad(month)}-${pad(day)}`;
 }
